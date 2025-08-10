@@ -1,0 +1,251 @@
+<div class="nemolore_settings" id="nemo-ext-nemolore" data-extension-name="NemoLore">
+    <div class="extension_block">
+        <h3>NemoLore</h3>
+    </div>
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle">
+            <b>NemoLore Settings</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_enabled">
+                    <input id="nemolore_enabled" type="checkbox">
+                    Enable NemoLore
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_highlight">
+                    <input id="nemolore_highlight" type="checkbox">
+                    Highlight Nouns
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_auto_lorebook">
+                    <input id="nemolore_auto_lorebook" type="checkbox">
+                    Create Lorebook on Chat Start
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_auto_mode">
+                    <input id="nemolore_auto_mode" type="checkbox">
+                    Auto Mode (periodic updates)
+                </label>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_update_interval">Update Interval (messages):</label>
+                <input id="nemolore_update_interval" type="number" class="text_pole">
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_notification_timeout">Notification Timeout (ms):</label>
+                <input id="nemolore_notification_timeout" type="number" class="text_pole">
+            </div>
+        </div>
+    </div>
+
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle">
+            <b>Message Summarization</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_enable_summarization">
+                    <input id="nemolore_enable_summarization" type="checkbox">
+                    Enable Summarization
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_auto_summarize">
+                    <input id="nemolore_auto_summarize" type="checkbox">
+                    Auto Summarize Messages
+                </label>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_connection_profile">Connection Profile:</label>
+                <select id="nemolore_connection_profile" class="text_pole">
+                    <option value="">Same as Current</option>
+                </select>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_completion_preset">Completion Preset:</label>
+                <select id="nemolore_completion_preset" class="text_pole">
+                    <option value="">Same as Current</option>
+                </select>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_prefill">Summarization Prefill:</label>
+                <input id="nemolore_prefill" type="text" class="text_pole">
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_summary_threshold">Summary Threshold (tokens):</label>
+                <input id="nemolore_summary_threshold" type="number" class="text_pole">
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_summary_max_length">Summary Max Length (tokens):</label>
+                <input id="nemolore_summary_max_length" type="number" class="text_pole">
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_running_memory_size">Running Memory Size (messages):</label>
+                <input id="nemolore_running_memory_size" type="number" class="text_pole" min="10" max="200">
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_show_summaries">
+                    <input id="nemolore_show_summaries" type="checkbox">
+                    Show Summaries in Chat
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_hide_messages_threshold">
+                    <input id="nemolore_hide_messages_threshold" type="checkbox">
+                    Hide Messages When Threshold Reached
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_include_time_location">
+                    <input id="nemolore_include_time_location" type="checkbox">
+                    Include Time/Location in Summary
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_include_npcs">
+                    <input id="nemolore_include_npcs" type="checkbox">
+                    Include NPCs in Summary
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_include_events">
+                    <input id="nemolore_include_events" type="checkbox">
+                    Include Events in Summary
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_include_dialogue">
+                    <input id="nemolore_include_dialogue" type="checkbox">
+                    Include Dialogue in Summary
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle">
+            <b>Core Memory System</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_enable_core_memories">
+                    <input id="nemolore_enable_core_memories" type="checkbox">
+                    Enable Core Memory Detection
+                </label>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_core_memory_start_count">Start Checking After (messages):</label>
+                <input id="nemolore_core_memory_start_count" type="number" class="text_pole" min="1" max="100">
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_core_memory_prompt_lorebook">
+                    <input id="nemolore_core_memory_prompt_lorebook" type="checkbox">
+                    Auto-Add to Core Memory Lorebook Entry
+                </label>
+            </div>
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_core_memory_replace_message">
+                    <input id="nemolore_core_memory_replace_message" type="checkbox">
+                    Replace Original Messages When Aging Out
+                </label>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_core_memory_animation_duration">Animation Duration (ms):</label>
+                <input id="nemolore_core_memory_animation_duration" type="number" class="text_pole" min="500" max="5000" step="100">
+            </div>
+            <div class="flex-container">
+                <small><strong>Core Memories</strong> are automatically detected when the AI identifies significant narrative moments using &lt;CORE_MEMORY&gt; tags. They receive special golden animations and are automatically collected into a single "Core Memories" lorebook entry.</small>
+            </div>
+            <div class="flex-container">
+                <small><strong>How it works:</strong> When the first core memory is detected, a "Core Memories" lorebook entry is created. Each subsequent core memory is automatically appended to this entry as a chronological list.</small>
+            </div>
+            <div class="flex-container">
+                <small><strong>Detection:</strong> The AI will identify moments like character deaths, major revelations, relationship changes, or other pivotal story events.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle">
+            <b>Vectorization & Semantic Search</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <div class="flex-container">
+                <label class="checkbox_label" for="nemolore_enable_vectorization">
+                    <input id="nemolore_enable_vectorization" type="checkbox">
+                    Enable Vectorization
+                </label>
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_vectorization_source">Vectorization Source:</label>
+                <select id="nemolore_vectorization_source" class="text_pole">
+                    <option value="openai">OpenAI</option>
+                    <option value="google">Google Gemini</option>
+                    <option value="cohere">Cohere</option>
+                    <option value="transformers">Transformers.js (Local)</option>
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="vllm">vLLM</option>
+                    <option value="webllm">WebLLM</option>
+                </select>
+            </div>
+            <div class="flex-container" id="nemolore_openai_model_container" style="display: none;">
+                <label for="nemolore_openai_model">OpenAI Model:</label>
+                <select id="nemolore_openai_model" class="text_pole">
+                    <option value="text-embedding-ada-002">text-embedding-ada-002</option>
+                    <option value="text-embedding-3-small">text-embedding-3-small</option>
+                    <option value="text-embedding-3-large">text-embedding-3-large</option>
+                </select>
+            </div>
+            <div class="flex-container" id="nemolore_google_model_container" style="display: none;">
+                <label for="nemolore_google_model">Google Model:</label>
+                <select id="nemolore_google_model" class="text_pole">
+                    <option value="text-embedding-004">text-embedding-004</option>
+                    <option value="gemini-embedding-001">gemini-embedding-001</option>
+                    <option value="embedding-001">embedding-001</option>
+                </select>
+            </div>
+            <div class="flex-container" id="nemolore_cohere_model_container" style="display: none;">
+                <label for="nemolore_cohere_model">Cohere Model:</label>
+                <select id="nemolore_cohere_model" class="text_pole">
+                    <option value="embed-v4.0">embed-v4.0</option>
+                    <option value="embed-english-v3.0">embed-english-v3.0</option>
+                    <option value="embed-multilingual-v3.0">embed-multilingual-v3.0</option>
+                    <option value="embed-english-light-v3.0">embed-english-light-v3.0</option>
+                </select>
+            </div>
+            <div class="flex-container" id="nemolore_ollama_model_container" style="display: none;">
+                <label for="nemolore_ollama_model">Ollama Model:</label>
+                <input id="nemolore_ollama_model" type="text" class="text_pole" placeholder="e.g. mxbai-embed-large" />
+            </div>
+            <div class="flex-container" id="nemolore_vllm_model_container" style="display: none;">
+                <label for="nemolore_vllm_model">vLLM Model:</label>
+                <input id="nemolore_vllm_model" type="text" class="text_pole" placeholder="e.g. intfloat/e5-mistral-7b-instruct" />
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_vector_search_limit">Max Relevant Messages:</label>
+                <input id="nemolore_vector_search_limit" type="number" class="text_pole" min="1" max="10">
+            </div>
+            <div class="flex-container">
+                <label for="nemolore_vector_similarity_threshold">Similarity Threshold:</label>
+                <input id="nemolore_vector_similarity_threshold" type="number" class="text_pole" min="0.1" max="1.0" step="0.1">
+            </div>
+            <div class="flex-container">
+                <small><strong>Vectorization</strong> stores excluded messages for semantic search. When enabled, highly relevant past messages can be retrieved and injected into context based on current conversation topics.</small>
+            </div>
+            <div class="flex-container">
+                <small><strong>Google Gemini</strong> (recommended): Use your existing Google AI API key configured in SillyTavern's main settings. Supports text-embedding-004 and other Gemini embedding models.</small>
+            </div>
+            <div class="flex-container">
+                <small><strong>Requirements:</strong> Configure your chosen vectorization source in SillyTavern's main Vector Storage settings first.</small>
+            </div>
+        </div>
+    </div>
+</div>
