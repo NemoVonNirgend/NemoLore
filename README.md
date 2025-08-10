@@ -1,181 +1,237 @@
-# NemoLore - Memory Management & Automated Lorebook Creation
+# NemoLore - Advanced Memory Management & Lore Expansion
 
-NemoLore is a comprehensive SillyTavern extension that provides intelligent memory management and automated lorebook creation capabilities. It features advanced noun detection, interactive highlighting, and AI-powered content generation to enhance your roleplay experience.
+NemoLore is a comprehensive SillyTavern extension designed to enhance roleplay through intelligent **memory management**, **narrative consistency**, and **automated lore expansion**. It provides advanced noun detection, interactive highlighting, AI-powered summarization, core memory tracking, and semantic search capabilities.
 
-## Features
+## Core Pillars
 
-### 🎯 Intelligent Noun Detection
-- Advanced pattern recognition for proper nouns, names, locations, and fictional entities
-- Context-aware filtering to exclude common words
-- Support for fantasy/fictional naming conventions
-- Configurable minimum length and exclusion rules
+### 1. 🧠 Memory Management
+- **Message Summarization**: Intelligent compression of chat history to preserve context
+- **Core Memory Detection**: Automatic identification and preservation of pivotal story moments
+- **Vectorized Storage**: Semantic search through excluded messages for relevant context retrieval
+- **Running Memory System**: Configurable sliding window of recent conversation context
 
-### ✨ Interactive Chat Enhancement
-- Real-time highlighting of detected nouns in chat messages
-- Click-to-interact functionality for highlighted terms
-- Hover effects and visual feedback
-- Non-intrusive integration with existing chat UI
+### 2. 🎯 Coherence & Consistency  
+- **Entity Tracking**: Persistent monitoring of characters, locations, and story elements
+- **Relationship Mapping**: Dynamic tracking of character interactions and developments
+- **Continuity Validation**: Cross-reference new content against established lore
+- **Timeline Management**: Chronological organization of events and memories
 
-### 📚 Automated Lorebook Management
-- Automatic lorebook creation for new chats
-- AI-powered initial content generation based on character sheets
-- Context-aware lorebook entry creation
-- Seamless integration with SillyTavern's world info system
+### 3. 📚 Lore Expansion
+- **Interactive Noun Highlighting**: Real-time detection and highlighting of story elements
+- **Automated Lorebook Creation**: AI-powered generation of comprehensive world information
+- **Dynamic Entry Updates**: Progressive enhancement of existing lore based on story development  
+- **Contextual Content Generation**: Smart creation of relevant backstory and world details
 
-### 🤖 Smart Content Generation
-- Analyzes character information to create relevant lorebook entries
-- Generates entries for people, locations, items, and lore elements
-- Context-aware descriptions based on chat history
-- Configurable generation prompts and templates
+## Current Features
 
-### 🔄 Periodic Updates
-- Configurable message interval tracking
-- Optional automatic lorebook updates
-- Manual update prompts with user control
-- Progressive enhancement of existing entries
+### 🎯 Intelligent Detection & Highlighting
+- Advanced noun pattern recognition with context filtering
+- Mobile-friendly tap/hold interactions with haptic feedback
+- Accessibility support with keyboard navigation and screen readers
+- Real-time highlighting of story elements in chat messages
 
-### 🎛️ User-Friendly Interface
-- Clean, integrated settings panel
-- Non-blocking notification system
-- Customizable timeouts and intervals
-- Responsive design for all screen sizes
+### 📝 Message Summarization System
+- Configurable summarization with multiple API support (OpenAI, Google, Cohere, local models)
+- Smart threshold-based triggering to preserve important context
+- Running memory management with sliding window approach
+- Optional message hiding when summary threshold is reached
 
-## Installation
+### ✨ Core Memory Detection
+- Automatic identification of pivotal story moments via `<CORE_MEMORY>` tags
+- Golden visual animations for significant narrative beats  
+- Chronological collection into dedicated "Core Memories" lorebook entry
+- Configurable detection sensitivity and animation settings
 
-1. Download or clone this extension into your SillyTavern extensions directory:
-   ```
-   /public/scripts/extensions/third-party/NemoLore/
-   ```
+### 🔍 Vectorization & Semantic Search
+- Multiple embedding provider support (OpenAI, Google, Cohere, Transformers.js, Ollama, vLLM, WebLLM)
+- Intelligent retrieval of relevant past messages based on current context
+- Similarity threshold controls for precision vs. recall balancing
+- Integration with SillyTavern's vector storage infrastructure
 
-2. Restart SillyTavern or reload the page
+### 🎛️ Universal Interface Compatibility  
+- Intelligent UI detection with automatic fallback for vanilla SillyTavern
+- Modern drawer interface for enhanced themes
+- HTML5 details/summary fallback for universal browser support
+- Manual compatibility mode override
 
-3. The extension will automatically initialize and appear in your extensions settings
+## Comprehensive Development Roadmap
 
-## Usage
+### Phase 1: Enhanced Memory Management
 
-### Initial Setup
-1. Enable NemoLore in the extensions settings
-2. Configure your preferred settings (highlighting, auto-creation, intervals)
-3. Start a new chat or load an existing one
+#### Advanced Summarization Features
+- [ ] **Multi-tier Summarization**: Hierarchical summaries (immediate, short-term, long-term)
+- [ ] **Selective Summarization**: User-defined importance tags for message preservation
+- [ ] **Summary Templates**: Genre-specific summarization styles (fantasy, sci-fi, slice-of-life)
+- [ ] **Summary Branching**: Maintain alternate summary versions for different narrative paths
+- [ ] **Cross-chat Summary Linking**: Connect related summaries across multiple conversations
+- [ ] **Summary Visualization**: Timeline view of summarized events with interactive navigation
 
-### First Chat Experience
-1. When you start a new chat, NemoLore will prompt you to create a lorebook
-2. If you accept, it will analyze your character's information and generate initial entries
-3. The lorebook will be automatically linked to your chat
+#### Memory Persistence & Organization
+- [ ] **Persistent Memory Bank**: Long-term storage across chat sessions and characters
+- [ ] **Memory Categories**: Organized storage (relationships, events, secrets, worldbuilding)
+- [ ] **Memory Importance Scoring**: AI-driven ranking of memory significance
+- [ ] **Memory Decay Simulation**: Realistic memory fading with retrieval reinforcement
+- [ ] **Memory Conflict Resolution**: Handle contradictory information intelligently
+- [ ] **Memory Export/Import**: Share memory databases between users
 
-### Interactive Features
-1. **Noun Highlighting**: Detected nouns appear with colored highlighting
-2. **Click Interaction**: Click any highlighted noun to:
-   - View existing lorebook entries
-   - Create new entries for unrecognized terms
-   - Edit existing entries directly
+### Phase 2: Advanced Coherence & Consistency
 
-### Periodic Updates
-1. After the configured number of messages, NemoLore will offer to update your lorebook
-2. You can accept, decline, or enable automatic mode
-3. Updates analyze recent chat content to enhance existing entries
+#### Entity Relationship Management
+- [ ] **Dynamic Relationship Graphs**: Visual network of character connections and interactions
+- [ ] **Relationship Evolution Tracking**: Monitor how relationships change over time
+- [ ] **Social Dynamics Modeling**: Track group dynamics, alliances, conflicts
+- [ ] **Character Arc Progression**: Monitor character development and growth patterns
+- [ ] **Emotional State Tracking**: Persistent emotional context for characters
+- [ ] **Reputation Systems**: Track how characters are perceived by others
 
-## Configuration Options
+#### Consistency Validation Systems
+- [ ] **Continuity Checker**: Real-time validation against established facts
+- [ ] **Timeline Conflict Detection**: Identify and flag temporal inconsistencies  
+- [ ] **Character Behavior Analysis**: Detect out-of-character actions or dialogue
+- [ ] **World Rule Enforcement**: Maintain consistency with established world mechanics
+- [ ] **Fact Verification System**: Cross-reference new information with existing lore
+- [ ] **Inconsistency Resolution Assistant**: AI-powered suggestions for resolving conflicts
 
-### Basic Settings
-- **Enable NemoLore**: Master toggle for the extension
-- **Highlight Nouns in Chat**: Toggle noun highlighting display
-- **Auto-create Lorebook for New Chats**: Automatically create lorebooks
-- **Automatic Update Mode**: Enable hands-off lorebook updates
+### Phase 3: Intelligent Lore Expansion
 
-### Advanced Settings
-- **Update Interval**: Number of messages between update prompts (10-200)
-- **Notification Timeout**: How long notifications remain visible (1-30 seconds)
-- **Noun Detection Sensitivity**: Minimum word length and filtering options
+#### Advanced Content Generation
+- [ ] **Procedural Worldbuilding**: Generate consistent cultures, histories, geographies
+- [ ] **Character Background Generator**: Create detailed backstories from minimal prompts
+- [ ] **Location Detail Expansion**: Rich environmental descriptions with consistent details
+- [ ] **Event Chain Generation**: Create interconnected historical events and consequences
+- [ ] **Cultural System Creation**: Develop languages, customs, beliefs, traditions
+- [ ] **Economic & Political Systems**: Generate realistic governance and trade systems
 
-## Technical Details
+#### Smart Lore Integration
+- [ ] **Lore Dependency Mapping**: Track which lore elements depend on others
+- [ ] **Canon Hierarchy System**: Establish precedence for conflicting information
+- [ ] **Collaborative Lore Building**: Multi-user contribution and validation systems
+- [ ] **Lore Evolution Tracking**: Monitor how worldbuilding develops over time
+- [ ] **Reference Network Building**: Create citations and connections between lore entries
+- [ ] **Lore Completeness Analysis**: Identify gaps in worldbuilding coverage
 
-### Noun Detection Algorithm
-NemoLore uses multiple pattern recognition techniques:
-1. **Proper Noun Patterns**: Capitalized words and phrases
-2. **Mixed Case Detection**: CamelCase and unusual capitalizations  
-3. **Contextual Filtering**: Excludes common English words and sentence starters
-4. **Fantasy Name Recognition**: Special patterns for fictional names
+### Phase 4: Advanced AI Integration
 
-### Lorebook Integration
-- Creates unique lorebooks per chat with timestamp naming
-- Stores lorebook references in chat metadata
-- Uses SillyTavern's native world info system
-- Maintains compatibility with existing lorebook workflows
+#### Multi-Model Orchestration
+- [ ] **Specialized Model Routing**: Use different models for different tasks (summarization vs. generation)
+- [ ] **Model Performance Analytics**: Track which models work best for specific tasks
+- [ ] **Ensemble Decision Making**: Combine outputs from multiple models for better results
+- [ ] **Dynamic Model Selection**: Automatically choose optimal models based on context
+- [ ] **Custom Model Training**: Fine-tune models on user's specific narrative style
+- [ ] **Prompt Engineering Studio**: Visual interface for optimizing AI prompts
 
-### AI Generation
-- Uses SillyTavern's quiet prompt system for content generation
-- Analyzes character sheets, descriptions, and chat context
-- Generates structured JSON responses for reliable parsing
-- Includes error handling and fallback mechanisms
+#### Advanced Context Management
+- [ ] **Hierarchical Context Windows**: Multi-level context with different priorities
+- [ ] **Context Compression Algorithms**: More intelligent ways to preserve important information
+- [ ] **Attention Mechanism Visualization**: Show what the AI is focusing on
+- [ ] **Context Injection Strategies**: Smarter ways to insert relevant information
+- [ ] **Multi-modal Context**: Integration of images, audio, and other media types
+- [ ] **Context Personalization**: Adapt context strategies to individual user preferences
 
-## Troubleshooting
+### Phase 5: User Experience & Interface
 
-### Common Issues
+#### Advanced Visualization & Analytics
+- [ ] **Story Timeline Visualization**: Interactive timeline of events with filtering and search
+- [ ] **Character Relationship Maps**: Dynamic network graphs showing connections
+- [ ] **Lore Knowledge Graphs**: Visual representation of worldbuilding interconnections
+- [ ] **Memory Usage Analytics**: Statistics on memory system performance and usage
+- [ ] **Narrative Analysis Dashboard**: Insights into story patterns and developments
+- [ ] **Progress Tracking**: Visual indicators of character/story development
 
-**Extension doesn't load**
-- Check that all files are in the correct directory structure
-- Ensure SillyTavern is fully reloaded after installation
-- Check browser console for JavaScript errors
+#### Collaborative Features
+- [ ] **Multi-user Memory Sharing**: Shared memory banks for group roleplay
+- [ ] **Collaborative Lore Building**: Real-time co-creation of worldbuilding
+- [ ] **Permission & Access Control**: Fine-grained sharing controls for sensitive content
+- [ ] **Version Control for Lore**: Track changes and revert to previous versions
+- [ ] **Community Lore Libraries**: Public repositories of worldbuilding content
+- [ ] **Peer Review Systems**: Community validation of generated content
 
-**Nouns aren't being highlighted**
-- Verify highlighting is enabled in settings
-- Check that messages are being processed (new messages should highlight)
-- Ensure minimum word length settings aren't too restrictive
+### Phase 6: Integration & Extensibility
 
-**Lorebook creation fails**
-- Verify you have an active API connection
-- Check that world info permissions are properly configured
-- Look for error messages in the browser console
+#### SillyTavern Ecosystem Integration
+- [ ] **World Info Deep Integration**: Advanced compatibility with existing world info systems
+- [ ] **Character Card Enhancement**: Automatic character sheet expansion based on roleplay
+- [ ] **Chat Export Enhancement**: Include memory and lore data in chat exports  
+- [ ] **Theme Integration**: Adaptive UI that works with all SillyTavern themes
+- [ ] **Extension API**: Allow other extensions to interact with NemoLore data
+- [ ] **Backup & Sync Systems**: Cloud storage integration for cross-device access
 
-**Performance issues**
-- Consider reducing update frequency for very long chats
-- Disable highlighting for better performance on slower devices
-- Check chat length and lorebook size
+#### External Platform Connections
+- [ ] **Discord Bot Integration**: Bring NemoLore features to Discord roleplay
+- [ ] **Obsidian Plugin**: Export lore and memories to Obsidian knowledge bases
+- [ ] **World Anvil Integration**: Sync with popular worldbuilding platforms
+- [ ] **ChatGPT Plugin**: Standalone version for use with raw ChatGPT
+- [ ] **API Access**: REST API for integration with external tools
+- [ ] **Mobile Companion App**: Dedicated mobile interface for memory and lore management
 
-### Debug Information
+### Phase 7: Advanced Features & Specializations
 
-Enable browser developer tools to access console logs:
-- Look for `[NemoLore]` prefixed messages
-- Check for JavaScript errors during noun detection
-- Monitor API calls during lorebook generation
+#### Genre-Specific Enhancements
+- [ ] **Fantasy Roleplay Suite**: Magic systems, pantheons, mythology generation
+- [ ] **Sci-Fi Worldbuilding**: Technology trees, alien cultures, space politics
+- [ ] **Historical Simulation**: Accurate historical context and period details
+- [ ] **Horror Atmosphere**: Tension tracking, fear escalation, mystery management
+- [ ] **Romance Optimization**: Relationship development tracking and enhancement
+- [ ] **Mystery/Investigation**: Clue tracking, red herring management, revelation pacing
 
-## Compatibility
+#### Performance & Scalability
+- [ ] **Memory Optimization**: Efficient storage and retrieval for massive chat histories
+- [ ] **Distributed Processing**: Cloud-based processing for resource-intensive operations
+- [ ] **Caching Systems**: Smart caching to reduce API calls and improve responsiveness
+- [ ] **Background Processing**: Non-blocking operations that don't interrupt roleplay
+- [ ] **Progressive Enhancement**: Graceful degradation for users with limited resources
+- [ ] **Performance Profiling**: Built-in tools to optimize extension performance
 
-### SillyTavern Versions
-- Compatible with SillyTavern 1.10.0+
-- Tested with both stable and staging branches
-- Works with all major SillyTavern themes
+### Phase 8: AI Ethics & Safety
 
-### API Compatibility  
-- Works with all SillyTavern-supported APIs (OpenAI, Claude, local models, etc.)
-- Requires API access for content generation features
-- Noun highlighting works without API connection
+#### Content Safety & Filtering
+- [ ] **Content Moderation**: AI-powered filtering for inappropriate content generation
+- [ ] **Bias Detection**: Identify and mitigate biases in generated lore and summaries
+- [ ] **Privacy Protection**: Ensure sensitive information isn't inadvertently stored or shared
+- [ ] **Age-Appropriate Filtering**: Automatic content rating and filtering systems
+- [ ] **Cultural Sensitivity**: Awareness of cultural appropriation and stereotyping
+- [ ] **User Control Systems**: Granular control over AI behavior and content generation
 
-### Extension Compatibility
-- Compatible with other world info extensions
-- Works alongside existing lorebook managers
-- Non-conflicting with chat enhancement extensions
+#### Transparency & Explainability
+- [ ] **AI Decision Logging**: Track why the AI made specific choices
+- [ ] **Confidence Scoring**: Show how certain the AI is about generated content
+- [ ] **Source Attribution**: Track which parts of the memory informed AI decisions
+- [ ] **Human Override Systems**: Easy ways to correct or override AI decisions
+- [ ] **Audit Trail**: Complete history of AI actions for review and debugging
+- [ ] **Explainable AI Interface**: Visual explanations of AI reasoning processes
 
-## Future Development
+## Technical Architecture Goals
 
-NemoLore is designed to be expandable. Planned features include:
+### Modularity & Extensibility
+- Plugin-based architecture for easy feature addition
+- Clean separation between core functionality and specialized features
+- Standardized APIs for third-party extensions
+- Hot-swappable components for runtime customization
 
-- **Advanced Entity Recognition**: Better detection of relationships and concepts
-- **Multi-language Support**: Noun detection for non-English content
-- **Template System**: Customizable generation prompts and entry formats
-- **Export/Import**: Share lorebook templates and configurations
-- **Analytics Dashboard**: Track extension usage and lorebook growth
-- **Integration APIs**: Allow other extensions to interact with NemoLore
+### Performance & Efficiency
+- Lazy loading for resource-intensive features
+- Intelligent caching strategies to minimize API usage
+- Background processing with progress tracking
+- Memory-efficient data structures for large datasets
 
-## Contributing
+### Cross-Platform Compatibility
+- Browser-agnostic JavaScript implementation
+- Mobile-responsive design with touch optimization
+- Accessibility compliance with WCAG 2.1 AA standards
+- Progressive enhancement for varying device capabilities
 
-This extension is designed to be the foundation for a comprehensive memory management toolkit. Contributions, suggestions, and feedback are welcome.
+## Community & Ecosystem
 
-## License
+### User Community Features
+- [ ] **Community Templates**: Share and discover worldbuilding templates
+- [ ] **Best Practices Guide**: Community-driven documentation and tutorials
+- [ ] **Feature Request System**: Democratic voting on new feature development
+- [ ] **Beta Testing Program**: Early access to new features with feedback collection
+- [ ] **User Showcases**: Platform for sharing impressive memory/lore implementations
+- [ ] **Developer Documentation**: Comprehensive guides for extension development
 
-This project is open source and available under the MIT License.
+This roadmap represents a comprehensive vision for transforming NemoLore into the ultimate memory management and lore expansion toolkit for SillyTavern. Each phase builds upon the previous ones, creating a sophisticated system that enhances roleplay through intelligent automation while maintaining user control and creative freedom.
 
 ---
 
-**NemoLore** - Enhancing your SillyTavern experience through intelligent memory management and automated content creation.
+**NemoLore** - Transforming roleplay through intelligent memory management, narrative consistency, and dynamic lore expansion.

@@ -88,6 +88,9 @@ let nemoLoreSettings = {
     vectorSearchLimit: 3, // Max number of relevant messages to retrieve
     vectorSimilarityThreshold: 0.7, // Minimum similarity score for retrieval
     
+    // UI compatibility
+    forceCompatibilityMode: false, // Force fallback interface for compatibility
+    
     // Embedding model settings
     openaiModel: 'text-embedding-3-small', // OpenAI embedding model
     googleModel: 'text-embedding-004', // Google Gemini embedding model  
@@ -3659,48 +3662,297 @@ function getSelectedEmbeddingModel(source = null) {
 }
 
 // Settings UI initialization (called automatically by SillyTavern when settings.html loads)
+// Check UI compatibility and switch to fallback if needed
+async function checkUICompatibility() {
+    // Check for manual override in settings
+    if (nemoLoreSettings.forceCompatibilityMode) {
+        console.log(`[${MODULE_NAME}] Compatibility mode manually enabled in settings`);
+        enableFallbackInterface();
+        return true;
+    }
+    
+    // First check: Do other extensions already use inline-drawer successfully?
+    const existingDrawers = document.querySelectorAll('.inline-drawer');
+    if (existingDrawers.length > 0) {
+        // Check if any existing drawer is properly styled
+        for (const drawer of existingDrawers) {
+            const toggle = drawer.querySelector('.inline-drawer-toggle');
+            if (toggle && getComputedStyle(toggle).cursor === 'pointer') {
+                console.log(`[${MODULE_NAME}] Detected working inline-drawer from other extension, using modern interface`);
+                enableModernInterface();
+                return false;
+            }
+        }
+    }
+    
+    // Fallback test: Create our own test drawer
+    const testDrawer = document.createElement('div');
+    testDrawer.className = 'inline-drawer';
+    testDrawer.style.position = 'absolute';
+    testDrawer.style.left = '-9999px';
+    testDrawer.innerHTML = `
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable"></div>
+        </div>
+        <div class="inline-drawer-content"></div>
+    `;
+    
+    document.body.appendChild(testDrawer);
+    
+    // Wait for styles to apply
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Check if drawer styling is properly applied
+    const toggle = testDrawer.querySelector('.inline-drawer-toggle');
+    const icon = testDrawer.querySelector('.inline-drawer-icon');
+    const content = testDrawer.querySelector('.inline-drawer-content');
+    
+    // Check for Font Awesome by looking for ::before pseudo-element content
+    const iconStyles = icon ? getComputedStyle(icon, '::before') : null;
+    const hasFontAwesome = iconStyles && (iconStyles.content !== 'none' && iconStyles.content !== '');
+    
+    // Check if CSS classes are defined (not just font-size which could be inherited)
+    const hasDrawerClasses = toggle && getComputedStyle(toggle).position !== 'static';
+    
+    const hasDrawerSupport = (
+        toggle && 
+        icon && 
+        content &&
+        hasDrawerClasses &&
+        (hasFontAwesome || getComputedStyle(icon).fontFamily.includes('FontAwesome') || getComputedStyle(icon).fontWeight === '900')
+    );
+    
+    document.body.removeChild(testDrawer);
+    
+    if (!hasDrawerSupport) {
+        console.log(`[${MODULE_NAME}] Inline drawer support not detected, switching to fallback UI`);
+        enableFallbackInterface();
+        return true; // Using fallback
+    } else {
+        console.log(`[${MODULE_NAME}] Using modern drawer interface`);
+        enableModernInterface();
+        return false; // Using modern interface
+    }
+}
+
+function enableFallbackInterface() {
+    // Hide modern interface
+    const drawerInterfaces = document.querySelectorAll('.nemolore-drawer-interface');
+    drawerInterfaces.forEach(el => el.style.display = 'none');
+    
+    // Show fallback interface
+    const fallbackInterfaces = document.querySelectorAll('.nemolore-fallback-interface');
+    fallbackInterfaces.forEach(el => el.style.display = 'block');
+    
+    // Show compatibility notice
+    const notice = document.querySelector('.nemolore-compatibility-notice');
+    if (notice) {
+        notice.style.display = 'block';
+    }
+    
+    // Set up fallback model container toggling
+    setupFallbackModelToggling();
+    
+    // Set up fallback event bindings
+    setupFallbackEventBindings();
+}
+
+function enableModernInterface() {
+    // Hide fallback interface
+    const fallbackInterfaces = document.querySelectorAll('.nemolore-fallback-interface');
+    fallbackInterfaces.forEach(el => el.style.display = 'none');
+    
+    // Show modern interface
+    const drawerInterfaces = document.querySelectorAll('.nemolore-drawer-interface');
+    drawerInterfaces.forEach(el => el.style.display = 'block');
+    
+    // Hide compatibility notice
+    const notice = document.querySelector('.nemolore-compatibility-notice');
+    if (notice) {
+        notice.style.display = 'none';
+    }
+}
+
+// Set up model container toggling for fallback interface
+function setupFallbackModelToggling() {
+    const sourceSelect = document.getElementById('nemolore_vectorization_source_fallback');
+    if (sourceSelect) {
+        sourceSelect.addEventListener('change', (e) => {
+            const source = e.target.value;
+            const containers = document.querySelectorAll('[id*="nemolore_"][id*="_model_fallback_container"]');
+            containers.forEach(container => {
+                container.style.display = 'none';
+            });
+            
+            const targetContainer = document.getElementById(`nemolore_${source}_model_fallback_container`);
+            if (targetContainer) {
+                targetContainer.style.display = 'block';
+            }
+        });
+    }
+}
+
+// Set up event bindings for fallback interface
+function setupFallbackEventBindings() {
+    // This will mirror the main event bindings but for fallback controls
+    const fallbackControls = {
+        'nemolore_enabled_fallback': (e) => { nemoLoreSettings.enabled = e.target.checked; },
+        'nemolore_highlight_fallback': (e) => { nemoLoreSettings.highlightNouns = e.target.checked; },
+        'nemolore_auto_lorebook_fallback': (e) => { nemoLoreSettings.createLorebookOnChat = e.target.checked; },
+        'nemolore_enable_summarization_fallback': (e) => { nemoLoreSettings.enableSummarization = e.target.checked; },
+        'nemolore_enable_vectorization_fallback': (e) => { nemoLoreSettings.enableVectorization = e.target.checked; },
+        'nemolore_force_compatibility_mode_fallback': (e) => { 
+            nemoLoreSettings.forceCompatibilityMode = e.target.checked;
+            if (e.target.checked) {
+                toastr.info('Compatibility mode will take effect after reloading the page.');
+            }
+        }
+    };
+    
+    Object.entries(fallbackControls).forEach(([id, handler]) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('change', (e) => {
+                handler(e);
+                saveSettings();
+            });
+        }
+    });
+}
+
 async function initializeSettingsUI() {
+    // Check UI compatibility and switch interfaces if needed
+    const usingFallback = await checkUICompatibility();
+    const suffix = usingFallback ? '_fallback' : '';
+    
+    // Helper function to get elements with or without fallback suffix
+    const getElement = (id) => document.getElementById(id + suffix);
+    
     // Set initial values for settings fields
-    document.getElementById('nemolore_enabled').checked = nemoLoreSettings.enabled;
-    document.getElementById('nemolore_highlight').checked = nemoLoreSettings.highlightNouns;
-    document.getElementById('nemolore_auto_lorebook').checked = nemoLoreSettings.createLorebookOnChat;
-    document.getElementById('nemolore_auto_mode').checked = nemoLoreSettings.autoMode;
-    document.getElementById('nemolore_update_interval').value = nemoLoreSettings.updateInterval;
-    document.getElementById('nemolore_notification_timeout').value = nemoLoreSettings.notificationTimeout;
-    document.getElementById('nemolore_enable_summarization').checked = nemoLoreSettings.enableSummarization;
-    document.getElementById('nemolore_auto_summarize').checked = nemoLoreSettings.autoSummarize;
-    document.getElementById('nemolore_connection_profile').value = nemoLoreSettings.connectionProfile;
-    document.getElementById('nemolore_completion_preset').value = nemoLoreSettings.completionPreset;
-    document.getElementById('nemolore_prefill').value = nemoLoreSettings.prefill;
-    document.getElementById('nemolore_summary_threshold').value = nemoLoreSettings.summaryThreshold;
-    document.getElementById('nemolore_summary_max_length').value = nemoLoreSettings.summaryMaxLength;
-    document.getElementById('nemolore_running_memory_size').value = nemoLoreSettings.runningMemorySize;
-    document.getElementById('nemolore_show_summaries').checked = nemoLoreSettings.showSummariesInChat;
-    document.getElementById('nemolore_hide_messages_threshold').checked = nemoLoreSettings.hideMessagesWhenThreshold;
-    document.getElementById('nemolore_include_time_location').checked = nemoLoreSettings.includeTimeLocation;
-    document.getElementById('nemolore_include_npcs').checked = nemoLoreSettings.includeNPCs;
-    document.getElementById('nemolore_include_events').checked = nemoLoreSettings.includeEvents;
-    document.getElementById('nemolore_include_dialogue').checked = nemoLoreSettings.includeDialogue;
+    const enabledElement = getElement('nemolore_enabled');
+    if (enabledElement) enabledElement.checked = nemoLoreSettings.enabled;
+    const highlightElement = getElement('nemolore_highlight');
+    if (highlightElement) highlightElement.checked = nemoLoreSettings.highlightNouns;
+    
+    const autoLorebookElement = getElement('nemolore_auto_lorebook');
+    if (autoLorebookElement) autoLorebookElement.checked = nemoLoreSettings.createLorebookOnChat;
+    
+    const autoModeElement = getElement('nemolore_auto_mode');
+    if (autoModeElement) autoModeElement.checked = nemoLoreSettings.autoMode;
+    
+    const updateIntervalElement = getElement('nemolore_update_interval');
+    if (updateIntervalElement) updateIntervalElement.value = nemoLoreSettings.updateInterval;
+    
+    const notificationTimeoutElement = getElement('nemolore_notification_timeout');
+    if (notificationTimeoutElement) notificationTimeoutElement.value = nemoLoreSettings.notificationTimeout;
+    
+    const enableSummarizationElement = getElement('nemolore_enable_summarization');
+    if (enableSummarizationElement) enableSummarizationElement.checked = nemoLoreSettings.enableSummarization;
+    
+    const autoSummarizeElement = getElement('nemolore_auto_summarize');
+    if (autoSummarizeElement) autoSummarizeElement.checked = nemoLoreSettings.autoSummarize;
+    
+    const connectionProfileElement = getElement('nemolore_connection_profile');
+    if (connectionProfileElement) connectionProfileElement.value = nemoLoreSettings.connectionProfile;
+    
+    const completionPresetElement = getElement('nemolore_completion_preset');
+    if (completionPresetElement) completionPresetElement.value = nemoLoreSettings.completionPreset;
+    
+    const prefillElement = getElement('nemolore_prefill');
+    if (prefillElement) prefillElement.value = nemoLoreSettings.prefill;
+    
+    const summaryThresholdElement = getElement('nemolore_summary_threshold');
+    if (summaryThresholdElement) summaryThresholdElement.value = nemoLoreSettings.summaryThreshold;
+    
+    const summaryMaxLengthElement = getElement('nemolore_summary_max_length');
+    if (summaryMaxLengthElement) summaryMaxLengthElement.value = nemoLoreSettings.summaryMaxLength;
+    
+    const runningMemorySizeElement = getElement('nemolore_running_memory_size');
+    if (runningMemorySizeElement) runningMemorySizeElement.value = nemoLoreSettings.runningMemorySize;
+    
+    const showSummariesElement = getElement('nemolore_show_summaries');
+    if (showSummariesElement) showSummariesElement.checked = nemoLoreSettings.showSummariesInChat;
+    
+    const hideMessagesThresholdElement = getElement('nemolore_hide_messages_threshold');
+    if (hideMessagesThresholdElement) hideMessagesThresholdElement.checked = nemoLoreSettings.hideMessagesWhenThreshold;
+    
+    const includeTimeLocationElement = getElement('nemolore_include_time_location');
+    if (includeTimeLocationElement) includeTimeLocationElement.checked = nemoLoreSettings.includeTimeLocation;
+    
+    const includeNPCsElement = getElement('nemolore_include_npcs');
+    if (includeNPCsElement) includeNPCsElement.checked = nemoLoreSettings.includeNPCs;
+    
+    const includeEventsElement = getElement('nemolore_include_events');
+    if (includeEventsElement) includeEventsElement.checked = nemoLoreSettings.includeEvents;
+    
+    const includeDialogueElement = getElement('nemolore_include_dialogue');
+    if (includeDialogueElement) includeDialogueElement.checked = nemoLoreSettings.includeDialogue;
+    
+    const forceCompatibilityModeElement = getElement('nemolore_force_compatibility_mode');
+    if (forceCompatibilityModeElement) forceCompatibilityModeElement.checked = nemoLoreSettings.forceCompatibilityMode;
 
     // Core memory settings
-    document.getElementById('nemolore_enable_core_memories').checked = nemoLoreSettings.enableCoreMemories;
-    document.getElementById('nemolore_core_memory_start_count').value = nemoLoreSettings.coreMemoryStartCount;
-    document.getElementById('nemolore_core_memory_prompt_lorebook').checked = nemoLoreSettings.coreMemoryPromptLorebook;
-    document.getElementById('nemolore_core_memory_replace_message').checked = nemoLoreSettings.coreMemoryReplaceMessage;
-    document.getElementById('nemolore_core_memory_animation_duration').value = nemoLoreSettings.coreMemoryAnimationDuration;
+    const enableCoreMemoriesElement = getElement('nemolore_enable_core_memories');
+    if (enableCoreMemoriesElement) enableCoreMemoriesElement.checked = nemoLoreSettings.enableCoreMemories;
+    
+    const coreMemoryStartCountElement = getElement('nemolore_core_memory_start_count');
+    if (coreMemoryStartCountElement) coreMemoryStartCountElement.value = nemoLoreSettings.coreMemoryStartCount;
+    
+    const coreMemoryPromptLorebookElement = getElement('nemolore_core_memory_prompt_lorebook');
+    if (coreMemoryPromptLorebookElement) coreMemoryPromptLorebookElement.checked = nemoLoreSettings.coreMemoryPromptLorebook;
+    
+    const coreMemoryReplaceMessageElement = getElement('nemolore_core_memory_replace_message');
+    if (coreMemoryReplaceMessageElement) coreMemoryReplaceMessageElement.checked = nemoLoreSettings.coreMemoryReplaceMessage;
+    
+    const coreMemoryAnimationDurationElement = getElement('nemolore_core_memory_animation_duration');
+    if (coreMemoryAnimationDurationElement) coreMemoryAnimationDurationElement.value = nemoLoreSettings.coreMemoryAnimationDuration;
 
     // Vectorization settings
-    document.getElementById('nemolore_enable_vectorization').checked = nemoLoreSettings.enableVectorization;
-    document.getElementById('nemolore_vectorization_source').value = nemoLoreSettings.vectorizationSource;
-    document.getElementById('nemolore_vector_search_limit').value = nemoLoreSettings.vectorSearchLimit;
-    document.getElementById('nemolore_vector_similarity_threshold').value = nemoLoreSettings.vectorSimilarityThreshold;
+    const enableVectorizationElement = getElement('nemolore_enable_vectorization');
+    if (enableVectorizationElement) enableVectorizationElement.checked = nemoLoreSettings.enableVectorization;
     
-    // Embedding model settings
-    document.getElementById('nemolore_openai_model').value = nemoLoreSettings.openaiModel;
-    document.getElementById('nemolore_google_model').value = nemoLoreSettings.googleModel;
-    document.getElementById('nemolore_cohere_model').value = nemoLoreSettings.cohereModel;
-    document.getElementById('nemolore_ollama_model').value = nemoLoreSettings.ollamaModel;
-    document.getElementById('nemolore_vllm_model').value = nemoLoreSettings.vllmModel;
+    const vectorizationSourceElement = getElement('nemolore_vectorization_source');
+    if (vectorizationSourceElement) vectorizationSourceElement.value = nemoLoreSettings.vectorizationSource;
+    
+    const vectorSearchLimitElement = getElement('nemolore_vector_search_limit');
+    if (vectorSearchLimitElement) vectorSearchLimitElement.value = nemoLoreSettings.vectorSearchLimit;
+    
+    const vectorSimilarityThresholdElement = getElement('nemolore_vector_similarity_threshold');
+    if (vectorSimilarityThresholdElement) vectorSimilarityThresholdElement.value = nemoLoreSettings.vectorSimilarityThreshold;
+    
+    // Embedding model settings (only for non-fallback interface)
+    if (!usingFallback) {
+        const openaiModelElement = getElement('nemolore_openai_model');
+        if (openaiModelElement) openaiModelElement.value = nemoLoreSettings.openaiModel;
+        
+        const googleModelElement = getElement('nemolore_google_model');
+        if (googleModelElement) googleModelElement.value = nemoLoreSettings.googleModel;
+        
+        const cohereModelElement = getElement('nemolore_cohere_model');
+        if (cohereModelElement) cohereModelElement.value = nemoLoreSettings.cohereModel;
+        
+        const ollamaModelElement = getElement('nemolore_ollama_model');
+        if (ollamaModelElement) ollamaModelElement.value = nemoLoreSettings.ollamaModel;
+        
+        const vllmModelElement = getElement('nemolore_vllm_model');
+        if (vllmModelElement) vllmModelElement.value = nemoLoreSettings.vllmModel;
+    } else {
+        // Initialize fallback model controls
+        const fallbackOpenaiElement = document.getElementById('nemolore_openai_model_fallback');
+        if (fallbackOpenaiElement) fallbackOpenaiElement.value = nemoLoreSettings.openaiModel;
+        
+        const fallbackGoogleElement = document.getElementById('nemolore_google_model_fallback');
+        if (fallbackGoogleElement) fallbackGoogleElement.value = nemoLoreSettings.googleModel;
+        
+        const fallbackCohereElement = document.getElementById('nemolore_cohere_model_fallback');
+        if (fallbackCohereElement) fallbackCohereElement.value = nemoLoreSettings.cohereModel;
+        
+        const fallbackOllamaElement = document.getElementById('nemolore_ollama_model_fallback');
+        if (fallbackOllamaElement) fallbackOllamaElement.value = nemoLoreSettings.ollamaModel;
+        
+        const fallbackVllmElement = document.getElementById('nemolore_vllm_model_fallback');
+        if (fallbackVllmElement) fallbackVllmElement.value = nemoLoreSettings.vllmModel;
+    }
     
     // Show/hide model dropdowns based on selected source
     toggleVectorizationModelUI(nemoLoreSettings.vectorizationSource);
@@ -3915,6 +4167,21 @@ async function initializeSettingsUI() {
         saveSettings();
         console.log(`[${MODULE_NAME}] vLLM model changed to: ${e.target.value}`);
     });
+    
+    // Compatibility mode toggle (only bind if element exists - might be in fallback mode)
+    const compatibilityToggle = document.getElementById('nemolore_force_compatibility_mode');
+    if (compatibilityToggle) {
+        compatibilityToggle.addEventListener('change', (e) => {
+            nemoLoreSettings.forceCompatibilityMode = e.target.checked;
+            saveSettings();
+            if (e.target.checked) {
+                toastr.info('Compatibility mode will take effect after reloading the page.');
+            } else {
+                toastr.info('Modern interface will be restored after reloading the page.');
+            }
+            console.log(`[${MODULE_NAME}] Compatibility mode ${e.target.checked ? 'enabled' : 'disabled'}`);
+        });
+    }
 
     // Populate dropdowns when SillyTavern is ready
     waitForSillyTavernReady();
@@ -4303,6 +4570,65 @@ function injectMobileSettingsStyles() {
             padding: 8px 16px;
             touch-action: manipulation;
             font-size: 14px;
+        }
+        
+        /* Fallback interface styling */
+        .nemolore-fallback-interface {
+            margin: 10px 0;
+        }
+        
+        .nemolore-fallback-interface details {
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            background: #f9f9f9;
+        }
+        
+        .nemolore-fallback-interface summary {
+            font-weight: bold;
+            cursor: pointer;
+            padding: 5px 0;
+            user-select: none;
+        }
+        
+        .nemolore-fallback-interface summary:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        
+        .nemolore-settings-section {
+            margin: 10px 0;
+        }
+        
+        .nemolore-settings-section label {
+            display: block;
+            margin: 8px 0;
+            line-height: 1.4;
+        }
+        
+        .nemolore-settings-section input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        
+        .nemolore-settings-section select,
+        .nemolore-settings-section input[type="text"],
+        .nemolore-settings-section input[type="number"] {
+            padding: 4px 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-family: inherit;
+        }
+        
+        .nemolore-compatibility-notice {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 10px 0;
+        }
+        
+        .nemolore-compatibility-notice small {
+            color: #1976d2;
         }
         
         /* Improved modal popups for mobile */
