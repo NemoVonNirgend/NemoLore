@@ -36,6 +36,12 @@
                         </label>
                     </div>
                     <div class="flex-container">
+                        <label class="checkbox_label" for="nemolore_auto_create_lorebook">
+                            <input id="nemolore_auto_create_lorebook" type="checkbox">
+                            Auto-Create Independent Lorebooks (NemoLore)
+                        </label>
+                    </div>
+                    <div class="flex-container">
                         <label class="checkbox_label" for="nemolore_auto_mode">
                             <input id="nemolore_auto_mode" type="checkbox">
                             Auto Mode (periodic updates)
@@ -139,6 +145,18 @@
                         <label class="checkbox_label" for="nemolore_include_dialogue">
                             <input id="nemolore_include_dialogue" type="checkbox">
                             Include Dialogue in Summary
+                        </label>
+                    </div>
+                    <div class="flex-container">
+                        <label class="checkbox_label" for="nemolore_enable_paired_summarization">
+                            <input id="nemolore_enable_paired_summarization" type="checkbox">
+                            Enable Paired Message Summarization (0, 1+2, 3+4, etc.)
+                        </label>
+                    </div>
+                    <div class="flex-container">
+                        <label class="checkbox_label" for="nemolore_link_summaries_to_ai">
+                            <input id="nemolore_link_summaries_to_ai" type="checkbox">
+                            Link Summaries Only to AI Messages
                         </label>
                     </div>
                 </div>
@@ -266,6 +284,40 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Summary Viewer Sub-drawer -->
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Summary Viewer</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable" tabindex="0"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div class="flex-container">
+                        <button id="nemolore_view_summaries" class="menu_button" style="width: 100%;">
+                            View Current Chat Summaries
+                        </button>
+                    </div>
+                    <div class="flex-container">
+                        <button id="nemolore_export_summaries" class="menu_button" style="width: 100%;">
+                            Export Summaries to JSON
+                        </button>
+                    </div>
+                    <div class="flex-container">
+                        <button id="nemolore_system_check" class="menu_button" style="width: 100%; background-color: #4a5568; color: white;">
+                            🔧 Run System Check
+                        </button>
+                    </div>
+                    <div class="flex-container">
+                        <small><strong>Summary Viewer</strong> shows all chat summaries in chronological order. Use the {{NemoLore}} macro to inject summaries into prompts.</small>
+                    </div>
+                    <div class="flex-container">
+                        <small><strong>System Check</strong> tests all core NemoLore functions and reports any issues found.</small>
+                    </div>
+                    <div class="flex-container" id="nemolore_summary_count" style="font-style: italic; color: #888;">
+                        No summaries available
+                    </div>
+                </div>
+            </div>
             
         </div> <!-- End main NemoLore drawer content -->
     </div> <!-- End main NemoLore drawer -->
@@ -285,6 +337,7 @@
                 <label><input id="nemolore_enabled_fallback" type="checkbox"> Enable NemoLore</label><br>
                 <label><input id="nemolore_highlight_fallback" type="checkbox"> Highlight Nouns</label><br>
                 <label><input id="nemolore_auto_lorebook_fallback" type="checkbox"> Create Lorebook on Chat Start</label><br>
+                <label><input id="nemolore_auto_create_lorebook_fallback" type="checkbox"> Auto-Create Independent Lorebooks (NemoLore)</label><br>
                 <label><input id="nemolore_auto_mode_fallback" type="checkbox"> Auto Mode (periodic updates)</label><br>
                 <label>Update Interval (messages): <input id="nemolore_update_interval_fallback" type="number" style="width: 80px;"></label><br>
                 <label>Notification Timeout (ms): <input id="nemolore_notification_timeout_fallback" type="number" style="width: 100px;"></label>
@@ -308,7 +361,9 @@
                 <label><input id="nemolore_include_time_location_fallback" type="checkbox"> Include Time/Location in Summary</label><br>
                 <label><input id="nemolore_include_npcs_fallback" type="checkbox"> Include NPCs in Summary</label><br>
                 <label><input id="nemolore_include_events_fallback" type="checkbox"> Include Events in Summary</label><br>
-                <label><input id="nemolore_include_dialogue_fallback" type="checkbox"> Include Dialogue in Summary</label>
+                <label><input id="nemolore_include_dialogue_fallback" type="checkbox"> Include Dialogue in Summary</label><br>
+                <label><input id="nemolore_enable_paired_summarization_fallback" type="checkbox"> Enable Paired Message Summarization (0, 1+2, 3+4, etc.)</label><br>
+                <label><input id="nemolore_link_summaries_to_ai_fallback" type="checkbox"> Link Summaries Only to AI Messages</label>
             </div>
         </details>
         
@@ -368,6 +423,18 @@
                 <label>Max Relevant Messages: <input id="nemolore_vector_search_limit_fallback" type="number" style="width: 60px;" min="1" max="10"></label><br>
                 <label>Similarity Threshold: <input id="nemolore_vector_similarity_threshold_fallback" type="number" style="width: 80px;" min="0.1" max="1.0" step="0.1"></label><br>
                 <small><strong>Vectorization</strong> stores excluded messages for semantic search.</small>
+            </div>
+        </details>
+        
+        <details>
+            <summary><strong>Summary Viewer</strong></summary>
+            <div class="nemolore-settings-section">
+                <button id="nemolore_view_summaries_fallback" class="menu_button" style="width: 100%;">View Current Chat Summaries</button><br><br>
+                <button id="nemolore_export_summaries_fallback" class="menu_button" style="width: 100%;">Export Summaries to JSON</button><br><br>
+                <button id="nemolore_system_check_fallback" class="menu_button" style="width: 100%; background-color: #4a5568; color: white;">🔧 Run System Check</button><br><br>
+                <small><strong>Summary Viewer</strong> shows all chat summaries in chronological order. Use the {{NemoLore}} macro to inject summaries into prompts.</small><br>
+                <small><strong>System Check</strong> tests all core NemoLore functions and reports any issues found.</small><br>
+                <div id="nemolore_summary_count_fallback" style="font-style: italic; color: #888;">No summaries available</div>
             </div>
         </details>
     </div> <!-- End fallback interface -->

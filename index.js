@@ -20,6 +20,7 @@ import {
 } from '../../../../script.js';
 import { selected_group } from '../../../group-chats.js';
 import { extension_settings, renderExtensionTemplateAsync, writeExtensionField, getContext } from '../../../extensions.js';
+import { MacrosParser } from '../../../macros.js';
 import { download, getFileText, uuidv4, getSortableDelay, getStringHash, trimToEndSentence } from '../../../utils.js';
 import { getPresetManager } from '../../../preset-manager.js';
 import { 
@@ -40,6 +41,68 @@ import {
 
 const MODULE_NAME = 'NemoLore';
 const EXTENSION_NAME = 'nemolore';
+
+// Macro constants for summary injection
+const NEMOLORE_MACRO = 'NemoLore';
+const NEMOLORE_LOREBOOK_PREFIX = '_NemoLore_';
+
+// Utility function for getting elements (with fallback)
+function getElement(id) {
+    return document.getElementById(id) || document.getElementById(id + '_fallback');
+}
+
+// NemoLore Macro Function for Summary Injection
+function getNemoLoreSummaries() {
+    if (!nemoLoreSettings.enableSummarization) return '';
+    
+    // Get current chat summaries in order
+    const chatId = getCurrentChatId();
+    if (!chatId) return '';
+    
+    const summariesInOrder = [];
+    const context = getContext();
+    if (!context || !context.chat) return '';
+    
+    // Collect summaries in message order
+    for (let i = 0; i < context.chat.length; i++) {
+        if (messageSummaries.has(i)) {
+            const summaryData = messageSummaries.get(i);
+            if (summaryData && summaryData.text) {
+                // Format each summary with context
+                let formattedSummary = summaryData.text;
+                
+                // Add pairing info if applicable
+                if (summaryData.isPaired && summaryData.pairedIndices) {
+                    const indices = summaryData.pairedIndices;
+                    if (indices.length > 1) {
+                        formattedSummary = `[Messages ${indices.join('+')}] ${formattedSummary}`;
+                    }
+                }
+                
+                // Add core memory indicator
+                if (summaryData.isCoreMemory) {
+                    formattedSummary = `⭐ ${formattedSummary}`;
+                }
+                
+                summariesInOrder.push(formattedSummary);
+            }
+        }
+    }
+    
+    if (summariesInOrder.length === 0) return '';
+    
+    // Format the complete summary injection
+    const summaryText = summariesInOrder.join('\n\n');
+    
+    // Check if we should hide messages past the threshold
+    if (nemoLoreSettings.hideMessagesWhenThreshold && context.chat.length > nemoLoreSettings.runningMemorySize) {
+        // Add a note about hidden messages
+        const hiddenCount = context.chat.length - nemoLoreSettings.runningMemorySize;
+        return `[Previous Message Summaries - ${hiddenCount} messages summarized]\n\n${summaryText}`;
+    }
+    
+    return `[Message Summaries]\n\n${summaryText}`;
+}
 
 // Settings and state management
 let nemoLoreSettings = {
@@ -71,6 +134,13 @@ let nemoLoreSettings = {
     includeDialogue: false,  // Include what was said in summaries (disabled by default for optimal memory)
     summaryDelay: 0,        // No delay for immediate processing
     blockChatDuringSummary: false, // Don't block input during summarization
+    
+    // New paired message summarization settings
+    enablePairedSummarization: true, // Group user+AI message pairs together
+    linkSummariesToAI: true,        // Only link summaries to AI messages, not user messages
+    
+    // Automatic lorebook creation (independent of Lorebook Manager)
+    autoCreateLorebook: true,       // Automatically create lorebook for new chats
     
     // Persistent storage for summaries (per chat)
     chatSummaries: {},       // { chatId: { messageIndex: summaryData } }
@@ -111,6 +181,8 @@ let messageSummaries = new Map(); // Track message summaries by chat index
 let summaryProcessingQueue = []; // Queue of messages waiting for summarization
 let isProcessingSummaries = false; // Flag to prevent concurrent summarization
 let summaryProgressBar = null; // Progress bar element for summarization
+let lastHandledChatId = null; // Track the last chat ID we processed to prevent duplicate handling
+let loadedSummariesChatId = null; // Track which chat's summaries are currently loaded in messageSummaries
 // Context injection system replaces visual hiding - messages excluded from AI context but visible to user
 let totalChatTokens = 0; // Track total token count for threshold checking
 
@@ -271,7 +343,7 @@ class NounDetector {
         const quotedPattern = /["']([^"']{3,50})["']/g;
         let quotedMatch;
         while ((quotedMatch = quotedPattern.exec(text)) !== null) {
-            const match = quotedMatch.trim();
+            const match = quotedMatch[1].trim(); // quotedMatch[1] is the captured group inside the quotes
             if (this.isValidNoun(match) && /^[A-Z]/.test(match)) {
                 nouns.add(match);
                 console.log(`[${MODULE_NAME}] Found quoted text: "${match}"`);
@@ -415,11 +487,23 @@ class NounDetector {
                 element.innerHTML = html;
                 element.setAttribute('data-nemolore-processed', 'true');
                 highlightedNouns = new Set([...highlightedNouns, ...nouns]);
+                console.log(`[${MODULE_NAME}] Successfully applied highlighting, HTML updated`);
+                
+                // Verify the highlighting was applied
+                setTimeout(() => {
+                    const spans = element.querySelectorAll('.nemolore-highlighted-noun');
+                    console.log(`[${MODULE_NAME}] Verification: ${spans.length} highlighted spans found in DOM`);
+                    if (spans.length === 0) {
+                        console.error(`[${MODULE_NAME}] ISSUE: Highlighting disappeared after applying!`);
+                    }
+                }, 50);
             } else {
                 console.error(`[${MODULE_NAME}] Generated invalid HTML, reverting to original`);
                 element.innerHTML = originalHtml;
                 element.setAttribute('data-nemolore-processed', 'true');
             }
+        } else {
+            console.log(`[${MODULE_NAME}] No highlighting applied`);
         }
     }
 
@@ -710,11 +794,20 @@ Focus on elements that would naturally come up in conversation and enhance the r
     }
 
     static async findEntryForNoun(noun) {
-        if (!currentChatLorebook) return null;
+        console.log(`[${MODULE_NAME}] findEntryForNoun called for "${noun}". currentChatLorebook:`, currentChatLorebook);
+        if (!currentChatLorebook) {
+            console.log(`[${MODULE_NAME}] No currentChatLorebook set, returning null`);
+            return null;
+        }
         
         try {
+            console.log(`[${MODULE_NAME}] Loading world info for lorebook: ${currentChatLorebook}`);
             const worldInfo = await loadWorldInfo(currentChatLorebook);
-            if (!worldInfo || !worldInfo.entries) return null;
+            console.log(`[${MODULE_NAME}] Loaded worldInfo:`, worldInfo ? `${Object.keys(worldInfo.entries || {}).length} entries` : 'null');
+            if (!worldInfo || !worldInfo.entries) {
+                console.log(`[${MODULE_NAME}] No worldInfo or entries found`);
+                return null;
+            }
             
             console.log(`[${MODULE_NAME}] Searching for noun "${noun}" in lorebook entries:`, Object.keys(worldInfo.entries));
             
@@ -1119,6 +1212,7 @@ SUMMARY FOCUS:`;
         }
         
         const currentMessage = context.chat[messageIndex];
+        console.log(`[${MODULE_NAME}] Extracting context for message ${messageIndex}: "${currentMessage.mes.substring(0, 100)}..."`);
         
         let timeContext = null;
         let locationContext = null;
@@ -1140,15 +1234,18 @@ SUMMARY FOCUS:`;
                 for (const pattern of timePatterns) {
                     const match = msg.mes.match(pattern);
                     if (match) {
-                        timeContext = match;
+                        timeContext = match[0]; // Get the matched text, not the array
+                        console.log(`[${MODULE_NAME}] Found time context: "${timeContext}" from message: "${msg.mes.substring(0, 100)}..."`);
                         break;
                     }
                 }
             }
 
             // Extract location context from lorebook entries and message content
+            console.log(`[${MODULE_NAME}] Checking lorebook for location context. currentChatLorebook:`, currentChatLorebook);
             if (currentChatLorebook) {
                 const worldInfo = await loadWorldInfo(currentChatLorebook);
+                console.log(`[${MODULE_NAME}] Loaded world info:`, worldInfo ? `${Object.keys(worldInfo.entries || {}).length} entries` : 'null');
                 if (worldInfo && worldInfo.entries) {
                     for (const [uid, entry] of Object.entries(worldInfo.entries)) {
                         if (!entry || !entry.key) continue;
@@ -1168,6 +1265,7 @@ SUMMARY FOCUS:`;
                             
                             if (mentionedInMessage) {
                                 locationContext = entry.title || (entry.key && entry.key[0]);
+                                console.log(`[${MODULE_NAME}] Found location context: "${locationContext}"`);
                                 break;
                             }
                         }
@@ -1177,8 +1275,11 @@ SUMMARY FOCUS:`;
 
             // Extract NPCs from highlighted nouns and lorebook
             const detectedNouns = NounDetector.detectNouns(currentMessage.mes);
+            console.log(`[${MODULE_NAME}] Detected ${detectedNouns.length} nouns for NPC analysis:`, detectedNouns);
             for (const noun of detectedNouns) {
+                console.log(`[${MODULE_NAME}] Looking up lorebook entry for noun: "${noun}"`);
                 const matchData = await LorebookManager.findEntryForNoun(noun);
+                console.log(`[${MODULE_NAME}] Lorebook match data for "${noun}":`, matchData);
                 if (matchData && matchData.entry) {
                     const entry = matchData.entry;
                     // Check if this entry represents a character/NPC
@@ -1193,6 +1294,7 @@ SUMMARY FOCUS:`;
                     
                     if (isCharacter && !npcContext.includes(noun)) {
                         npcContext.push(noun);
+                        console.log(`[${MODULE_NAME}] Found NPC: "${noun}"`);
                     }
                 }
             }
@@ -1200,6 +1302,12 @@ SUMMARY FOCUS:`;
         } catch (error) {
             console.warn(`[${MODULE_NAME}] Error extracting context:`, error);
         }
+
+        console.log(`[${MODULE_NAME}] Context extraction complete:`, {
+            timeContext,
+            locationContext,
+            npcContext
+        });
 
         return {
             timeContext,
@@ -1320,6 +1428,9 @@ SUMMARY FOCUS:`;
                 // Save summary to persistent storage
                 this.saveSummaryToPersistentStorage(messageIndex, summaryData);
                 
+                // Update summary count in UI
+                updateSummaryCount();
+                
                 // Add visual indicator to the message (different for core memories)
                 this.addSummaryIndicator(messageIndex, isCoreMemory);
                 
@@ -1337,6 +1448,273 @@ SUMMARY FOCUS:`;
             
         } catch (error) {
             console.error(`[${MODULE_NAME}] Error summarizing message ${messageIndex}:`, error);
+            return null;
+        }
+    }
+
+    // Paired Message Summarization - Groups user+AI message pairs (0, 1+2, 3+4, etc.)
+    static async summarizePairedMessages(messageIndex) {
+        if (!nemoLoreSettings.enableSummarization || !nemoLoreSettings.enablePairedSummarization) return null;
+        
+        // Check if messages are already summarized before proceeding
+        if (this.isMessageSummarized(messageIndex)) {
+            console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized (or part of summarized pair), skipping paired summarization`);
+            return null;
+        }
+        
+        // Check if getContext is available
+        if (typeof getContext !== 'function') {
+            console.warn(`[${MODULE_NAME}] getContext not available, cannot summarize paired messages`);
+            return null;
+        }
+        
+        const context = getContext();
+        if (!context || !context.chat) {
+            console.warn(`[${MODULE_NAME}] Invalid context, cannot summarize paired messages`);
+            return null;
+        }
+        
+        // Determine the message pair: even index = single message (0), odd index = pair with previous (1+2, 3+4, etc.)
+        let messagesToSummarize;
+        let targetIndex; // Index where summary will be linked
+        
+        if (messageIndex === 0) {
+            // First message is always alone
+            messagesToSummarize = [context.chat[0]];
+            const firstMsg = context.chat[0];
+            const firstIsUser = firstMsg && (firstMsg.is_user === true || firstMsg.is_system === false);
+            
+            console.log(`[${MODULE_NAME}] First message debug: Index 0 is ${firstIsUser ? 'USER' : 'AI'}`);
+            
+            // For first message, if it's a user message and we want to link to AI, we can't (no AI message yet)
+            // So we keep it linked to itself regardless of the setting
+            targetIndex = 0;
+        } else if (messageIndex % 2 === 0 && messageIndex > 0) {
+            // Even index > 0: pair with previous message (1+2, 3+4, etc.)
+            // This creates the pattern: 0 alone, then 1+2, 3+4, 5+6, etc.
+            messagesToSummarize = [context.chat[messageIndex - 1], context.chat[messageIndex]];
+            
+            // Determine which message is AI vs User
+            const prevMsg = context.chat[messageIndex - 1];
+            const currentMsg = context.chat[messageIndex];
+            const prevIsUser = prevMsg && (prevMsg.is_user === true || prevMsg.is_system === false);
+            const currentIsUser = currentMsg && (currentMsg.is_user === true || currentMsg.is_system === false);
+            
+            console.log(`[${MODULE_NAME}] Message pairing debug: Index ${messageIndex-1} is ${prevIsUser ? 'USER' : 'AI'}, Index ${messageIndex} is ${currentIsUser ? 'USER' : 'AI'}`);
+            
+            // If linking to AI messages, find which index contains the AI message
+            if (nemoLoreSettings.linkSummariesToAI) {
+                targetIndex = currentIsUser ? messageIndex - 1 : messageIndex;
+            } else {
+                // If not linking to AI, use the user message index
+                targetIndex = prevIsUser ? messageIndex - 1 : messageIndex;
+            }
+        } else {
+            // Odd index: skip for now, will be paired when the next even index arrives
+            console.log(`[${MODULE_NAME}] Skipping odd index ${messageIndex}, will be paired with index ${messageIndex + 1} when it arrives`);
+            return null;
+        }
+        
+        if (!messagesToSummarize || messagesToSummarize.some(msg => !msg || !msg.mes)) {
+            return null;
+        }
+
+        try {
+            console.log(`[${MODULE_NAME}] Summarizing paired messages: indices ${messageIndex === 0 ? '0' : `${messageIndex - 1}+${messageIndex}`}`);
+            
+            // Extract contextual information
+            const contextData = await this.extractContextFromChat(targetIndex);
+            
+            // Build paired message data
+            const pairedData = {
+                messages: messagesToSummarize,
+                chatContext: context.chat.slice(Math.max(0, messageIndex - 3), Math.max(1, messageIndex - 1)), // Previous context
+                isPaired: messagesToSummarize.length > 1,
+                ...contextData
+            };
+            
+            const prompt = this.buildPairedSummarizationPrompt(pairedData);
+            
+            // Generate summary using existing API approach
+            const originalConnectionProfile = main_api;
+            const originalPreset = extension_settings.preset;
+            let response = null;
+            
+            try {
+                // Switch to summarization connection profile if specified
+                if (nemoLoreSettings.connectionProfile) {
+                    await this.setConnectionProfile(nemoLoreSettings.connectionProfile);
+                }
+                
+                // Switch to summarization completion preset if specified  
+                if (nemoLoreSettings.completionPreset) {
+                    await this.setCompletionPreset(nemoLoreSettings.completionPreset);
+                }
+                
+                const fullPrompt = prompt + (nemoLoreSettings.prefill ? '\n\n' + nemoLoreSettings.prefill : '');
+                
+                console.log(`[${MODULE_NAME}] Sending paired summarization request for messages ${messageIndex === 0 ? '0' : `${messageIndex - 1}+${messageIndex}`}`);
+                
+                try {
+                    response = await generateQuietPrompt(fullPrompt, false);
+                } catch (quietError) {
+                    console.log(`[${MODULE_NAME}] generateQuietPrompt failed, trying generateRaw:`, quietError);
+                    response = await generateRaw(fullPrompt, '', true, false, false, null, false);
+                }
+                
+            } finally {
+                // Restore original settings
+                try {
+                    if (nemoLoreSettings.completionPreset && originalPreset) {
+                        await this.setCompletionPreset(originalPreset);
+                    }
+                } catch (resetError) {
+                    console.warn(`[${MODULE_NAME}] Error resetting settings:`, resetError);
+                }
+            }
+            
+            if (response && response.trim()) {
+                const rawSummary = response.trim();
+                console.log(`[${MODULE_NAME}] Generated paired summary: "${rawSummary.substring(0, 100)}..."`);
+                
+                // Check for core memory tag
+                const isCoreMemory = this.detectCoreMemory(rawSummary);
+                const cleanSummary = this.extractCleanSummary(rawSummary);
+                
+                // Store summary data - link to AI message if enabled
+                const summaryData = {
+                    text: cleanSummary,
+                    originalLength: messagesToSummarize.reduce((sum, msg) => sum + msg.mes.length, 0),
+                    timestamp: Date.now(),
+                    messageHashes: messagesToSummarize.map(msg => getStringHash(msg.mes)),
+                    context: contextData,
+                    isCoreMemory: isCoreMemory,
+                    rawResponse: rawSummary,
+                    isPaired: messagesToSummarize.length > 1,
+                    pairedIndices: messageIndex === 0 ? [0] : [messageIndex - 1, messageIndex]
+                };
+                
+                // Debug: Check what type of message we're attaching the summary to
+                const targetMsg = context.chat[targetIndex];
+                const targetIsUser = targetMsg && (targetMsg.is_user === true || targetMsg.is_system === false);
+                console.log(`[${MODULE_NAME}] Attaching summary to message ${targetIndex} (${targetIsUser ? 'USER' : 'AI'} message). LinkSummariesToAI setting: ${nemoLoreSettings.linkSummariesToAI}`);
+                
+                // Store summary linked to the target index (AI message if enabled)
+                messageSummaries.set(targetIndex, summaryData);
+                
+                // Save summary to persistent storage
+                this.saveSummaryToPersistentStorage(targetIndex, summaryData);
+                
+                // Update summary count in UI
+                updateSummaryCount();
+                
+                // Add visual indicator to the target message
+                this.addSummaryIndicator(targetIndex, isCoreMemory);
+                
+                // Handle core memory special processing
+                if (isCoreMemory) {
+                    console.log(`[${MODULE_NAME}] 🌟 PAIRED CORE MEMORY DETECTED for messages ${messageIndex === 0 ? '0' : `${messageIndex - 1}+${messageIndex}`}!`);
+                    this.handleCoreMemoryDetected(targetIndex, summaryData);
+                }
+                
+                return cleanSummary;
+            } else {
+                console.log(`[${MODULE_NAME}] No valid response from API for paired messages`);
+                return null;
+            }
+            
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error summarizing paired messages:`, error);
+            return null;
+        }
+    }
+
+    // Build prompt for paired message summarization
+    static buildPairedSummarizationPrompt(pairedData) {
+        const { messages, chatContext, timeContext, locationContext, npcContext, isPaired } = pairedData;
+        
+        let prompt = `You are an expert narrative summarizer. Create a concise summary of this roleplay ${isPaired ? 'conversation exchange' : 'message'} that captures the essential information for future reference.
+
+SUMMARY REQUIREMENTS:
+- Maximum ${nemoLoreSettings.summaryMaxLength} tokens
+- Focus on key events, character actions, and important developments
+- Use present tense and third person perspective
+- Maintain narrative flow and context`;
+
+        if (chatContext && chatContext.length > 0) {
+            prompt += `\n\nPREVIOUS CONTEXT:\n`;
+            chatContext.forEach((msg, idx) => {
+                const isUser = msg.is_user === true || msg.is_system === false;
+                const speaker = isUser ? 'User' : 'Character';
+                prompt += `${speaker}: ${msg.mes.substring(0, 200)}${msg.mes.length > 200 ? '...' : ''}\n`;
+            });
+        }
+
+        if (nemoLoreSettings.includeTimeLocation && (timeContext || locationContext)) {
+            prompt += `\n\nCONTEXT:`;
+            if (timeContext) prompt += `\nTime: ${timeContext}`;
+            if (locationContext) prompt += `\nLocation: ${locationContext}`;
+        }
+
+        if (nemoLoreSettings.includeNPCs && npcContext && npcContext.length > 0) {
+            prompt += `\nPresent Characters/NPCs: ${npcContext.join(', ')}`;
+        }
+
+        prompt += `\n\n${isPaired ? 'CONVERSATION EXCHANGE' : 'MESSAGE'} TO SUMMARIZE:`;
+        
+        messages.forEach((msg, idx) => {
+            const isUser = msg.is_user === true || msg.is_system === false;
+            const speaker = isUser ? 'User' : 'Character';
+            prompt += `\n\n${speaker}: ${msg.mes}`;
+        });
+
+        prompt += `\n\nSUMMARY FOCUS:`;
+        if (nemoLoreSettings.includeEvents) prompt += `\n- What happened/occurred`;
+        if (nemoLoreSettings.includeDialogue) prompt += `\n- Important dialogue or conversations`;
+        
+        prompt += `\n\nProvide only the summary, no additional commentary:`;
+        
+        return prompt;
+    }
+
+    // Automatic Lorebook Creation (independent of Lorebook Manager)
+    static async createAutoLorebook(chatId) {
+        if (!nemoLoreSettings.autoCreateLorebook) return null;
+        
+        try {
+            // Generate unique lorebook name similar to Lorebook Manager pattern
+            const characterName = active_character ? active_character.split(".")[0] : 'Unknown';
+            const lorebookName = `${NEMOLORE_LOREBOOK_PREFIX}${characterName}_${chatId}`.replace(/[^a-z0-9]/gi, '_').replace(/_{2,}/g, '_').substring(0, 64);
+            
+            // Check if lorebook already exists
+            if (world_names.includes(lorebookName)) {
+                console.log(`[${MODULE_NAME}] Lorebook ${lorebookName} already exists`);
+                return lorebookName;
+            }
+            
+            // Create new world info (lorebook)
+            await createNewWorldInfo(lorebookName);
+            
+            // Update chat metadata
+            chat_metadata[METADATA_KEY] = lorebookName;
+            if (!chat_metadata.nemolore) {
+                chat_metadata.nemolore = {};
+            }
+            chat_metadata.nemolore.lorebook = lorebookName;
+            chat_metadata.nemolore.autoCreated = true;
+            chat_metadata.nemolore.created_by = MODULE_NAME;
+            chat_metadata.nemolore.created_at = Date.now();
+            
+            await saveMetadata();
+            
+            // Update UI to show lorebook is set
+            $('.chat_lorebook_button').addClass('world_set');
+            
+            console.log(`[${MODULE_NAME}] Auto-created lorebook: ${lorebookName}`);
+            return lorebookName;
+            
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error creating auto lorebook:`, error);
             return null;
         }
     }
@@ -1651,7 +2029,13 @@ ${summaryData.text}
                 console.log(`[${MODULE_NAME}] Processing message ${messageIndex}, ${summaryProcessingQueue.length} remaining`);
                 
                 try {
-                    const result = await this.summarizeMessage(messageIndex);
+                    let result;
+                    // Use paired summarization if enabled
+                    if (nemoLoreSettings.enablePairedSummarization) {
+                        result = await this.summarizePairedMessages(messageIndex);
+                    } else {
+                        result = await this.summarizeMessage(messageIndex);
+                    }
                     console.log(`[${MODULE_NAME}] Summarization result for message ${messageIndex}:`, result ? 'Success' : 'Failed');
                     processed++;
                 } catch (error) {
@@ -2036,17 +2420,41 @@ ${summaryData.text}
         // Save to extension settings
         saveSettings();
         
+        // Update our tracking variable to reflect that we have summaries for this chat
+        loadedSummariesChatId = chatId;
+        
         console.log(`[${MODULE_NAME}] Saved summary for message ${messageIndex} in chat ${chatId}`);
     }
 
     static loadSummariesFromPersistentStorage() {
         const chatId = getCurrentChatId();
-        if (!chatId) return;
+        if (!chatId) {
+            console.log(`[${MODULE_NAME}] No chatId available, cannot load summaries`);
+            return;
+        }
         
         console.log(`[${MODULE_NAME}] Loading summaries for chat ${chatId}`);
+        console.log(`[${MODULE_NAME}] Current settings chatSummaries:`, nemoLoreSettings.chatSummaries ? Object.keys(nemoLoreSettings.chatSummaries) : 'null');
+        console.log(`[${MODULE_NAME}] Chat ${chatId} has summaries:`, nemoLoreSettings.chatSummaries && nemoLoreSettings.chatSummaries[chatId] ? Object.keys(nemoLoreSettings.chatSummaries[chatId]).length : 0);
         
-        // Clear current summaries
+        // Only clear and reload summaries if we're switching to a different chat
+        // This preserves summaries when the function is called multiple times for the same chat
+        const currentSummariesCount = messageSummaries.size;
+        
+        if (loadedSummariesChatId === chatId && currentSummariesCount > 0) {
+            console.log(`[${MODULE_NAME}] Summaries already loaded for chat ${chatId} (count: ${currentSummariesCount}), skipping reload`);
+            return; // Don't reload if we already have summaries for this chat
+        }
+        
+        console.log(`[${MODULE_NAME}] Loading summaries for chat switch from ${loadedSummariesChatId} to ${chatId} (current count: ${currentSummariesCount})`);
+        
+        // Before clearing, save what we had
+        if (currentSummariesCount > 0) {
+            console.log(`[${MODULE_NAME}] Had ${currentSummariesCount} summaries before clearing:`, Array.from(messageSummaries.keys()));
+        }
+        
         messageSummaries.clear();
+        loadedSummariesChatId = chatId;
         
         // Load summaries for current chat
         if (nemoLoreSettings.chatSummaries && nemoLoreSettings.chatSummaries[chatId]) {
@@ -2059,6 +2467,7 @@ ${summaryData.text}
                 // Validate the summary data
                 if (this.validateSummaryData(index, summaryData)) {
                     messageSummaries.set(index, summaryData);
+                    console.log(`[${MODULE_NAME}] Loaded summary for message ${index} (isPaired: ${summaryData.isPaired || false})`);
                     loadedCount++;
                 } else {
                     // Remove invalid summary data
@@ -2084,6 +2493,7 @@ ${summaryData.text}
                 this.checkForBulkSummarization();
             }, 1000);
         } else {
+            console.log(`[${MODULE_NAME}] No existing summaries found for chat ${chatId}`);
             // No existing summaries found, check for bulk summarization
             setTimeout(() => {
                 this.checkForBulkSummarization();
@@ -2104,9 +2514,15 @@ ${summaryData.text}
         const unsummarizedMessages = [];
 
         // Find all messages that need summarization
+        console.log(`[${MODULE_NAME}] Checking which messages need summarization...`);
+        console.log(`[${MODULE_NAME}] Current messageSummaries keys:`, Array.from(messageSummaries.keys()).sort((a,b) => a-b));
+        
         for (let i = 0; i < totalMessages; i++) {
-            if (!messageSummaries.has(i)) {
+            if (!this.isMessageSummarized(i)) {
+                console.log(`[${MODULE_NAME}] Message ${i} needs summarization`);
                 unsummarizedMessages.push(i);
+            } else {
+                console.log(`[${MODULE_NAME}] Message ${i} already summarized (or part of summarized pair)`);
             }
         }
 
@@ -2253,10 +2669,60 @@ Provide only the summary, no additional commentary:`;
         }
     }
 
+    // Helper function to check if a message is already summarized (accounting for paired summarization)
+    static isMessageSummarized(messageIndex) {
+        // For paired summarization, a message is considered summarized if:
+        // 1. It has its own summary, OR
+        // 2. It's part of a pair where the summary is stored at the pair partner's index
+        
+        if (!nemoLoreSettings.enablePairedSummarization) {
+            // Simple case: just check if this message has a summary
+            return messageSummaries.has(messageIndex);
+        }
+        
+        // Paired summarization logic
+        if (messageIndex === 0) {
+            // First message is always alone
+            return messageSummaries.has(0);
+        } else if (messageIndex % 2 === 1) {
+            // Odd index (1, 3, 5...): should be paired with next even index
+            // Check if either this index or next index has summary
+            return messageSummaries.has(messageIndex) || messageSummaries.has(messageIndex + 1);
+        } else {
+            // Even index > 0 (2, 4, 6...): should be paired with previous odd index  
+            // Check if either previous index or this index has summary
+            return messageSummaries.has(messageIndex - 1) || messageSummaries.has(messageIndex);
+        }
+    }
+
     static validateSummaryData(messageIndex, summaryData) {
+        console.log(`[${MODULE_NAME}] Validating summary data for message ${messageIndex}:`, {
+            hasData: !!summaryData,
+            type: typeof summaryData,
+            hasText: !!(summaryData && summaryData.text),
+            hasHash: !!(summaryData && (summaryData.messageHash || summaryData.messageHashes)),
+            isPaired: !!(summaryData && summaryData.isPaired)
+        });
+        
         // Check if summary data is valid
-        if (!summaryData || typeof summaryData !== 'object') return false;
-        if (!summaryData.text || !summaryData.messageHash) return false;
+        if (!summaryData || typeof summaryData !== 'object') {
+            console.log(`[${MODULE_NAME}] Invalid summary data structure for message ${messageIndex}`);
+            return false;
+        }
+        if (!summaryData.text) {
+            console.log(`[${MODULE_NAME}] Summary missing text for message ${messageIndex}`);
+            return false;
+        }
+        
+        // Check for hash data (support both old single and new paired format)
+        const hasHash = summaryData.messageHash || summaryData.messageHashes;
+        if (!hasHash) {
+            console.log(`[${MODULE_NAME}] Summary missing hash data for message ${messageIndex}`);
+            return false;
+        }
+        
+        console.log(`[${MODULE_NAME}] Validating summary for message ${messageIndex}, isPaired: ${summaryData.isPaired}`);
+        console.log(`[${MODULE_NAME}] Summary data keys:`, Object.keys(summaryData));
         
         // Check if getContext is available
         if (typeof getContext !== 'function') {
@@ -2272,11 +2738,39 @@ Provide only the summary, no additional commentary:`;
         }
         
         const message = context.chat[messageIndex];
-        if (!message || getStringHash(message.mes) !== summaryData.messageHash) {
-            console.log(`[${MODULE_NAME}] Message ${messageIndex} changed, removing summary`);
+        if (!message) {
+            console.log(`[${MODULE_NAME}] Message ${messageIndex} is null, removing summary`);
             return false;
         }
         
+        // Validate message hash(es)
+        if (summaryData.isPaired && summaryData.messageHashes && summaryData.pairedIndices) {
+            // New paired format - validate all paired messages
+            for (let i = 0; i < summaryData.pairedIndices.length; i++) {
+                const pairIndex = summaryData.pairedIndices[i];
+                if (pairIndex >= context.chat.length) {
+                    console.log(`[${MODULE_NAME}] Paired message ${pairIndex} doesn't exist, removing summary`);
+                    return false;
+                }
+                
+                const pairMessage = context.chat[pairIndex];
+                if (!pairMessage || getStringHash(pairMessage.mes) !== summaryData.messageHashes[i]) {
+                    console.log(`[${MODULE_NAME}] Paired message ${pairIndex} changed, removing summary`);
+                    return false;
+                }
+            }
+        } else if (summaryData.messageHash) {
+            // Old single message format
+            if (getStringHash(message.mes) !== summaryData.messageHash) {
+                console.log(`[${MODULE_NAME}] Message ${messageIndex} changed, removing summary`);
+                return false;
+            }
+        } else {
+            console.log(`[${MODULE_NAME}] Summary data missing valid hash format, removing summary`);
+            return false;
+        }
+        
+        console.log(`[${MODULE_NAME}] Summary validation passed for message ${messageIndex}`);
         return true;
     }
 
@@ -2357,9 +2851,9 @@ Provide only the summary, no additional commentary:`;
             return;
         }
         
-        // Check if already processed
-        if (messageSummaries.has(messageIndex)) {
-            console.log(`[${MODULE_NAME}] Message ${messageIndex} already has summary, skipping`);
+        // Check if already processed (accounts for paired summarization)
+        if (this.isMessageSummarized(messageIndex)) {
+            console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized (or part of summarized pair), skipping`);
             return;
         }
         
@@ -2777,10 +3271,22 @@ function initializeChatMonitoring() {
             if (mutation.type === 'childList') {
                 mutation.addedNodes.forEach((node) => {
                     if (node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('mes')) {
+                        console.log(`[${MODULE_NAME}] New message detected, processing...`);
                         processNewMessage(node);
                     }
                 });
             } else if (mutation.type === 'characterData') {
+                // Skip if the change is within our own highlighting spans
+                let element = mutation.target.parentElement;
+                while (element) {
+                    if (element.classList?.contains('nemolore-highlighted-noun')) {
+                        console.log(`[${MODULE_NAME}] Ignoring change within highlighting span`);
+                        return; // Skip processing changes within our own highlights
+                    }
+                    if (element.classList?.contains('mes')) break;
+                    element = element.parentElement;
+                }
+                
                 // Handle text changes within message content
                 let messageElement = mutation.target.parentElement;
                 while (messageElement && !messageElement.classList?.contains('mes')) {
@@ -2790,13 +3296,19 @@ function initializeChatMonitoring() {
                 if (messageElement && messageElement.classList.contains('mes')) {
                     const textContent = messageElement.querySelector('.mes_text');
                     if (textContent && textContent.contains(mutation.target)) {
-                        // Only reprocess if the text content actually changed
-                        textContent.removeAttribute('data-nemolore-processed');
-                        // Debounce to avoid excessive processing during typing
-                        clearTimeout(textContent._nemoloreProcessTimeout);
-                        textContent._nemoloreProcessTimeout = setTimeout(() => {
-                            processNewMessage(messageElement);
-                        }, 200);
+                        // Only reprocess if the message isn't already being processed and text content actually changed
+                        if (!textContent.hasAttribute('data-nemolore-processing')) {
+                            console.log(`[${MODULE_NAME}] Text change detected, reprocessing message`);
+                            textContent.removeAttribute('data-nemolore-processed');
+                            textContent.setAttribute('data-nemolore-processing', 'true');
+                            
+                            // Debounce to avoid excessive processing during typing
+                            clearTimeout(textContent._nemoloreProcessTimeout);
+                            textContent._nemoloreProcessTimeout = setTimeout(() => {
+                                textContent.removeAttribute('data-nemolore-processing');
+                                processNewMessage(messageElement);
+                            }, 200);
+                        }
                     }
                 }
             }
@@ -2836,24 +3348,31 @@ function processNewMessage(messageElement) {
     // Process noun highlighting if enabled
     if (nemoLoreSettings.highlightNouns) {
         const detectedNouns = NounDetector.detectNouns(text);
+        console.log(`[${MODULE_NAME}] Detected ${detectedNouns.length} nouns:`, detectedNouns);
         
         if (detectedNouns.length > 0) {
             NounDetector.highlightNouns(textContent, detectedNouns);
+            console.log(`[${MODULE_NAME}] Applied highlighting to ${detectedNouns.length} nouns`);
         }
     }
 
-    // Queue message for summarization if enabled (summarize EVERY message as it happens)
+    // Queue message for summarization if enabled, but only if not already summarized
     if (nemoLoreSettings.enableSummarization) {
         const messageIndex = Array.from(messageElement.parentElement.children).indexOf(messageElement);
         if (messageIndex >= 0) {
-            console.log(`[${MODULE_NAME}] Processing new message at index ${messageIndex}`);
-            MessageSummarizer.queueMessageForSummary(messageIndex);
-            
-            // After queuing, refresh summary display and enhanced memory injection
-            setTimeout(() => {
-                MessageSummarizer.refreshSummaryDisplay();
-                MessageSummarizer.enhancedMemoryInjection();
-            }, 200);
+            // Check if message already has a summary before queuing (accounts for paired summarization)
+            if (MessageSummarizer.isMessageSummarized(messageIndex)) {
+                console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized (or part of summarized pair), skipping queue`);
+            } else {
+                console.log(`[${MODULE_NAME}] Processing new message at index ${messageIndex} - needs summarization`);
+                MessageSummarizer.queueMessageForSummary(messageIndex);
+                
+                // After queuing, refresh summary display and enhanced memory injection
+                setTimeout(() => {
+                    MessageSummarizer.refreshSummaryDisplay();
+                    MessageSummarizer.enhancedMemoryInjection();
+                }, 200);
+            }
         }
     }
     
@@ -2864,6 +3383,7 @@ function processNewMessage(messageElement) {
 }
 
 function refreshChatHighlighting() {
+    console.log(`[${MODULE_NAME}] Refreshing chat highlighting`);
     const chatContainer = document.getElementById('chat');
     if (!chatContainer) return;
     
@@ -2882,6 +3402,7 @@ function refreshChatHighlighting() {
 }
 
 function clearAllHighlighting() {
+    console.log(`[${MODULE_NAME}] Clearing all highlighting`);
     const chatContainer = document.getElementById('chat');
     if (!chatContainer) return;
     
@@ -2916,6 +3437,89 @@ function elementMatches(element, selector) {
         console.warn(`[${MODULE_NAME}] Error in element matches:`, error);
         return false;
     }
+}
+
+// Handle chat changes - create lorebook and load existing summaries
+async function handleChatChanged() {
+    // Check if extension is enabled
+    if (!nemoLoreSettings.enabled) return;
+    
+    const newChatId = getCurrentChatId();
+    console.log(`[${MODULE_NAME}] handleChatChanged called for chat: ${newChatId}`);
+    
+    // Skip if we're already handling this chat (prevent duplicate processing)
+    // But allow processing if chat ID is null/undefined (chat cleared/loading)
+    if (newChatId && lastHandledChatId === newChatId) {
+        console.log(`[${MODULE_NAME}] Already handled chat ${newChatId}, skipping duplicate call`);
+        return;
+    }
+    
+    console.log(`[${MODULE_NAME}] Processing chat change from ${lastHandledChatId} to ${newChatId}`);
+    console.log(`[${MODULE_NAME}] Current messageSummaries size: ${messageSummaries.size}`);
+    
+    // Update the last handled chat ID
+    lastHandledChatId = newChatId;
+    
+    // Reset UI state (but preserve summaries - they'll be managed by load/save functions)
+    TooltipManager.hideTooltip();
+    clearAllHighlighting();
+    messageCount = 0;
+    
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+        currentChatLorebook = null;
+        lastHandledChatId = null; // Reset since no chat is active
+        loadedSummariesChatId = null; // Reset loaded summaries tracking
+        // Only clear summaries when no chat is active
+        messageSummaries.clear();
+        console.log(`[${MODULE_NAME}] No active chat - cleared messageSummaries and reset tracking`);
+        return;
+    }
+    
+    console.log(`[${MODULE_NAME}] Chat changed to: ${chatId}`);
+    
+    // Auto-create lorebook if enabled and no lorebook exists
+    if (nemoLoreSettings.autoCreateLorebook) {
+        const existingLorebook = chat_metadata[METADATA_KEY];
+        
+        if (!existingLorebook) {
+            console.log(`[${MODULE_NAME}] No existing lorebook found, creating auto lorebook`);
+            currentChatLorebook = await MessageSummarizer.createAutoLorebook(chatId);
+        } else if (world_names.includes(existingLorebook)) {
+            console.log(`[${MODULE_NAME}] Using existing lorebook: ${existingLorebook}`);
+            currentChatLorebook = existingLorebook;
+        } else {
+            console.log(`[${MODULE_NAME}] Existing lorebook not found in world_names, creating new one`);
+            currentChatLorebook = await MessageSummarizer.createAutoLorebook(chatId);
+        }
+    } else {
+        // Use existing lorebook if available
+        currentChatLorebook = chat_metadata[METADATA_KEY] || null;
+    }
+    
+    // Load existing summaries for this chat
+    if (nemoLoreSettings.enableSummarization) {
+        console.log(`[${MODULE_NAME}] Loading summaries for chat ${chatId}...`);
+        MessageSummarizer.loadSummariesFromPersistentStorage();
+        console.log(`[${MODULE_NAME}] After loading, messageSummaries size: ${messageSummaries.size}`);
+        // Update summary count after loading
+        setTimeout(() => updateSummaryCount(), 100);
+    }
+    
+    // Refresh highlighting after a short delay to ensure DOM is ready
+    setTimeout(() => {
+        refreshChatHighlighting();
+    }, 500);
+    
+    // Reinitialize chat monitoring
+    setTimeout(() => {
+        initializeChatMonitoring();
+        
+        // Update enhanced memory injection for the new chat
+        if (nemoLoreSettings.enableSummarization) {
+            MessageSummarizer.enhancedMemoryInjection();
+        }
+    }, 1000);
 }
 
 // Event handlers
@@ -3067,10 +3671,15 @@ function setupEventHandlers() {
 
     // Handle chat clearing
     eventSource.on(event_types.CHAT_DELETED, () => {
+        console.log(`[${MODULE_NAME}] Chat deleted - clearing summaries and resetting state`);
         TooltipManager.hideTooltip();
         clearAllHighlighting();
         currentChatLorebook = null;
         messageCount = 0;
+        // Reset summary state when chat is deleted
+        messageSummaries.clear();
+        lastHandledChatId = null;
+        loadedSummariesChatId = null;
     });
 
     eventSource.on(event_types.MESSAGE_SENT, () => {
@@ -3263,90 +3872,6 @@ function getChatContext() {
     return recentMessages.map(msg => `${msg.name}: ${msg.mes}`).join('\n\n');
 }
 
-async function handleChatChanged() {
-    if (!nemoLoreSettings.enabled) return;
-
-    const chatId = getCurrentChatId();
-    if (!chatId) return;
-
-    // Check if we have a lorebook for this chat (using SillyTavern's standard field first)
-    const existingLorebook = chat_metadata[METADATA_KEY];
-    const hasValidLorebook = existingLorebook && world_names.includes(existingLorebook);
-    const isNewChat = !chat_metadata.nemolore?.initialPromptShown;
-    
-    console.log(`[${MODULE_NAME}] Chat changed - ID: ${chatId}`);
-    console.log(`[${MODULE_NAME}] Existing lorebook metadata: ${existingLorebook}`);
-    console.log(`[${MODULE_NAME}] Has valid lorebook: ${hasValidLorebook}`);
-    console.log(`[${MODULE_NAME}] Is new chat (no initial prompt shown): ${isNewChat}`);
-    console.log(`[${MODULE_NAME}] Settings - createLorebookOnChat: ${nemoLoreSettings.createLorebookOnChat}, showInitialPrompt: ${nemoLoreSettings.showInitialPrompt}`);
-    
-    // Load summaries for this chat
-    MessageSummarizer.loadSummariesFromPersistentStorage();
-    
-    // Always set current lorebook if one exists
-    if (hasValidLorebook) {
-        currentChatLorebook = existingLorebook;
-        console.log(`[${MODULE_NAME}] Using existing lorebook: ${currentChatLorebook}`);
-    } else if (chat_metadata.nemolore?.lorebook) {
-        // Fallback to our custom field
-        currentChatLorebook = chat_metadata.nemolore.lorebook;
-        // Sync to standard field if lorebook exists
-        if (world_names.includes(currentChatLorebook)) {
-            chat_metadata[METADATA_KEY] = currentChatLorebook;
-            await saveMetadata();
-        }
-        console.log(`[${MODULE_NAME}] Using custom field lorebook: ${currentChatLorebook}`);
-    }
-    
-    // Show popup for new chats if settings allow, regardless of whether a lorebook exists
-    if (isNewChat && nemoLoreSettings.createLorebookOnChat && nemoLoreSettings.showInitialPrompt) {
-        console.log(`[${MODULE_NAME}] Showing world expansion prompt for new chat`);
-        
-        // Mark that we've shown the prompt for this chat
-        if (!chat_metadata.nemolore) chat_metadata.nemolore = {};
-        chat_metadata.nemolore.initialPromptShown = true;
-        await saveMetadata();
-        
-        const message = hasValidLorebook 
-            ? `This chat has an existing lorebook "${existingLorebook}". Would you like NemoLore to enhance it with additional world-building entries?`
-            : 'Would you like to flesh out your world with automatic lorebook creation?';
-            
-        const buttons = hasValidLorebook
-            ? [
-                { action: 'enhance', text: 'Yes, enhance existing lorebook' },
-                { action: 'create', text: 'Create new NemoLore lorebook' },
-                { action: 'no', text: 'No, skip for now' },
-            ]
-            : [
-                { action: 'yes', text: 'Yes, create lorebook' },
-                { action: 'no', text: 'No, skip for now' },
-            ];
-
-        const action = await NotificationSystem.show(message, buttons, nemoLoreSettings.notificationTimeout);
-
-        if (action === 'yes' || action === 'create') {
-            await initializeWorldExpansion();
-        } else if (action === 'enhance') {
-            await enhanceExistingLorebook(currentChatLorebook);
-        } else {
-            console.log(`[${MODULE_NAME}] User declined world expansion`);
-        }
-    } else if (!isNewChat) {
-        console.log(`[${MODULE_NAME}] Not a new chat - initial prompt already shown`);
-    } else {
-        console.log(`[${MODULE_NAME}] World expansion prompt not shown - settings disabled`);
-    }
-
-    // Reinitialize chat monitoring
-    setTimeout(() => {
-        initializeChatMonitoring();
-        
-        // Update enhanced memory injection for the new chat
-        if (nemoLoreSettings.enableSummarization) {
-            MessageSummarizer.enhancedMemoryInjection();
-        }
-    }, 1000);
-}
 
 async function initializeWorldExpansion() {
     const chatId = getCurrentChatId();
@@ -3514,6 +4039,163 @@ async function performPeriodicUpdate() {
     // Implementation for periodic lorebook updates
     console.log(`[${MODULE_NAME}] Performing periodic lorebook update`);
     // This would involve analyzing recent chat content and updating/creating entries
+}
+
+// Summary Viewer Functions
+function showSummaryViewer() {
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+        toastr.error('No active chat found', 'NemoLore');
+        return;
+    }
+
+    const summariesInOrder = [];
+    const context = getContext();
+    if (!context || !context.chat) {
+        toastr.error('Cannot access chat context', 'NemoLore');
+        return;
+    }
+
+    // Collect summaries in message order
+    for (let i = 0; i < context.chat.length; i++) {
+        if (messageSummaries.has(i)) {
+            const summaryData = messageSummaries.get(i);
+            if (summaryData && summaryData.text) {
+                const messageInfo = context.chat[i];
+                const isUser = messageInfo.is_user === true || messageInfo.is_system === false;
+                
+                summariesInOrder.push({
+                    messageIndex: i,
+                    speaker: isUser ? 'User' : 'Character',
+                    summary: summaryData.text,
+                    timestamp: summaryData.timestamp ? new Date(summaryData.timestamp).toLocaleString() : 'Unknown',
+                    isCoreMemory: summaryData.isCoreMemory || false,
+                    isPaired: summaryData.isPaired || false,
+                    pairedIndices: summaryData.pairedIndices || [i],
+                    originalLength: summaryData.originalLength || messageInfo.mes.length
+                });
+            }
+        }
+    }
+
+    if (summariesInOrder.length === 0) {
+        toastr.info('No summaries found for this chat', 'NemoLore');
+        return;
+    }
+
+    // Create the summary viewer HTML
+    const summaryHtml = `
+        <div style="max-height: 70vh; overflow-y: auto; padding: 10px;">
+            <h3>Chat Summaries (${summariesInOrder.length} total)</h3>
+            <div style="margin-bottom: 15px; padding: 10px; background: #f0f8ff; border-radius: 5px;">
+                <strong>Usage:</strong> Copy <code>{{NemoLore}}</code> macro into prompts to inject these summaries.
+            </div>
+            ${summariesInOrder.map((item, index) => `
+                <div style="margin-bottom: 15px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; ${item.isCoreMemory ? 'background: linear-gradient(145deg, #fff9c4, #fff3b0); border-color: #ffd700;' : 'background: white;'}">
+                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-weight: bold; color: #333;">
+                            ${item.isCoreMemory ? '⭐ ' : ''}
+                            Message ${item.isPaired ? item.pairedIndices.join('+') : item.messageIndex} 
+                            (${item.speaker})
+                        </span>
+                        <small style="color: #666;">${item.timestamp}</small>
+                    </div>
+                    <div style="padding: 8px; background: #f9f9f9; border-left: 3px solid ${item.isCoreMemory ? '#ffd700' : '#007bff'}; margin: 8px 0;">
+                        ${item.summary}
+                    </div>
+                    <small style="color: #888;">Original length: ${item.originalLength} chars | ${item.isPaired ? 'Paired' : 'Single'} message${item.isCoreMemory ? ' | Core Memory' : ''}</small>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    callPopup(summaryHtml, 'text', '', { wide: true, large: true });
+}
+
+function exportSummariesToJSON() {
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+        toastr.error('No active chat found', 'NemoLore');
+        return;
+    }
+
+    const context = getContext();
+    if (!context || !context.chat) {
+        toastr.error('Cannot access chat context', 'NemoLore');
+        return;
+    }
+
+    const exportData = {
+        chatId: chatId,
+        exportedAt: new Date().toISOString(),
+        totalMessages: context.chat.length,
+        summaryCount: messageSummaries.size,
+        summaries: []
+    };
+
+    // Collect all summary data
+    for (let i = 0; i < context.chat.length; i++) {
+        if (messageSummaries.has(i)) {
+            const summaryData = messageSummaries.get(i);
+            if (summaryData && summaryData.text) {
+                const messageInfo = context.chat[i];
+                const isUser = messageInfo.is_user === true || messageInfo.is_system === false;
+                
+                exportData.summaries.push({
+                    messageIndex: i,
+                    speaker: isUser ? 'User' : 'Character',
+                    summary: summaryData.text,
+                    timestamp: summaryData.timestamp,
+                    isCoreMemory: summaryData.isCoreMemory || false,
+                    isPaired: summaryData.isPaired || false,
+                    pairedIndices: summaryData.pairedIndices || [i],
+                    originalLength: summaryData.originalLength || messageInfo.mes.length,
+                    messageHash: summaryData.messageHash || summaryData.messageHashes,
+                    rawResponse: summaryData.rawResponse
+                });
+            }
+        }
+    }
+
+    if (exportData.summaries.length === 0) {
+        toastr.info('No summaries to export for this chat', 'NemoLore');
+        return;
+    }
+
+    // Download as JSON file
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nemolore-summaries-${chatId}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toastr.success(`Exported ${exportData.summaries.length} summaries`, 'NemoLore');
+}
+
+function updateSummaryCount() {
+    const count = messageSummaries.size;
+    const countElements = [
+        document.getElementById('nemolore_summary_count'),
+        document.getElementById('nemolore_summary_count_fallback')
+    ];
+    
+    countElements.forEach(element => {
+        if (element) {
+            if (count === 0) {
+                element.textContent = 'No summaries available';
+                element.style.color = '#888';
+            } else {
+                element.textContent = `${count} summaries available`;
+                element.style.color = '#007bff';
+            }
+        }
+    });
 }
 
 // Settings management
@@ -3799,7 +4481,10 @@ function setupFallbackEventBindings() {
         'nemolore_enabled_fallback': (e) => { nemoLoreSettings.enabled = e.target.checked; },
         'nemolore_highlight_fallback': (e) => { nemoLoreSettings.highlightNouns = e.target.checked; },
         'nemolore_auto_lorebook_fallback': (e) => { nemoLoreSettings.createLorebookOnChat = e.target.checked; },
+        'nemolore_auto_create_lorebook_fallback': (e) => { nemoLoreSettings.autoCreateLorebook = e.target.checked; },
         'nemolore_enable_summarization_fallback': (e) => { nemoLoreSettings.enableSummarization = e.target.checked; },
+        'nemolore_enable_paired_summarization_fallback': (e) => { nemoLoreSettings.enablePairedSummarization = e.target.checked; },
+        'nemolore_link_summaries_to_ai_fallback': (e) => { nemoLoreSettings.linkSummariesToAI = e.target.checked; },
         'nemolore_enable_vectorization_fallback': (e) => { nemoLoreSettings.enableVectorization = e.target.checked; },
         'nemolore_force_compatibility_mode_fallback': (e) => { 
             nemoLoreSettings.forceCompatibilityMode = e.target.checked;
@@ -3818,6 +4503,22 @@ function setupFallbackEventBindings() {
             });
         }
     });
+
+    // Fallback summary viewer buttons
+    const fallbackViewSummariesBtn = document.getElementById('nemolore_view_summaries_fallback');
+    if (fallbackViewSummariesBtn) {
+        fallbackViewSummariesBtn.addEventListener('click', showSummaryViewer);
+    }
+
+    const fallbackExportSummariesBtn = document.getElementById('nemolore_export_summaries_fallback');
+    if (fallbackExportSummariesBtn) {
+        fallbackExportSummariesBtn.addEventListener('click', exportSummariesToJSON);
+    }
+
+    const fallbackSystemCheckBtn = document.getElementById('nemolore_system_check_fallback');
+    if (fallbackSystemCheckBtn) {
+        fallbackSystemCheckBtn.addEventListener('click', runSystemCheck);
+    }
 }
 
 async function initializeSettingsUI() {
@@ -3836,6 +4537,9 @@ async function initializeSettingsUI() {
     
     const autoLorebookElement = getElement('nemolore_auto_lorebook');
     if (autoLorebookElement) autoLorebookElement.checked = nemoLoreSettings.createLorebookOnChat;
+    
+    const autoCreateLorebookElement = getElement('nemolore_auto_create_lorebook');
+    if (autoCreateLorebookElement) autoCreateLorebookElement.checked = nemoLoreSettings.autoCreateLorebook;
     
     const autoModeElement = getElement('nemolore_auto_mode');
     if (autoModeElement) autoModeElement.checked = nemoLoreSettings.autoMode;
@@ -3887,6 +4591,13 @@ async function initializeSettingsUI() {
     
     const includeDialogueElement = getElement('nemolore_include_dialogue');
     if (includeDialogueElement) includeDialogueElement.checked = nemoLoreSettings.includeDialogue;
+    
+    // New paired summarization settings
+    const enablePairedSummarizationElement = getElement('nemolore_enable_paired_summarization');
+    if (enablePairedSummarizationElement) enablePairedSummarizationElement.checked = nemoLoreSettings.enablePairedSummarization;
+    
+    const linkSummariesToAIElement = getElement('nemolore_link_summaries_to_ai');
+    if (linkSummariesToAIElement) linkSummariesToAIElement.checked = nemoLoreSettings.linkSummariesToAI;
     
     const forceCompatibilityModeElement = getElement('nemolore_force_compatibility_mode');
     if (forceCompatibilityModeElement) forceCompatibilityModeElement.checked = nemoLoreSettings.forceCompatibilityMode;
@@ -3957,6 +4668,9 @@ async function initializeSettingsUI() {
     // Show/hide model dropdowns based on selected source
     toggleVectorizationModelUI(nemoLoreSettings.vectorizationSource);
 
+    // Initial summary count update
+    updateSummaryCount();
+
     // Bind settings events
     document.getElementById('nemolore_enabled').addEventListener('change', (e) => {
         nemoLoreSettings.enabled = e.target.checked;
@@ -3983,6 +4697,12 @@ async function initializeSettingsUI() {
     document.getElementById('nemolore_auto_lorebook').addEventListener('change', (e) => {
         nemoLoreSettings.createLorebookOnChat = e.target.checked;
         saveSettings();
+    });
+
+    document.getElementById('nemolore_auto_create_lorebook').addEventListener('change', (e) => {
+        nemoLoreSettings.autoCreateLorebook = e.target.checked;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Auto-create independent lorebooks ${e.target.checked ? 'enabled' : 'disabled'}`);
     });
 
     document.getElementById('nemolore_auto_mode').addEventListener('change', (e) => {
@@ -4080,6 +4800,19 @@ async function initializeSettingsUI() {
         saveSettings();
     });
 
+    // New paired summarization settings
+    document.getElementById('nemolore_enable_paired_summarization').addEventListener('change', (e) => {
+        nemoLoreSettings.enablePairedSummarization = e.target.checked;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Paired summarization ${e.target.checked ? 'enabled' : 'disabled'}`);
+    });
+
+    document.getElementById('nemolore_link_summaries_to_ai').addEventListener('change', (e) => {
+        nemoLoreSettings.linkSummariesToAI = e.target.checked;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Link summaries to AI ${e.target.checked ? 'enabled' : 'disabled'}`);
+    });
+
     // Core memory settings event handlers
     document.getElementById('nemolore_enable_core_memories').addEventListener('change', (e) => {
         nemoLoreSettings.enableCoreMemories = e.target.checked;
@@ -4166,6 +4899,19 @@ async function initializeSettingsUI() {
         nemoLoreSettings.vllmModel = e.target.value;
         saveSettings();
         console.log(`[${MODULE_NAME}] vLLM model changed to: ${e.target.value}`);
+    });
+
+    // Summary Viewer event handlers
+    document.getElementById('nemolore_view_summaries').addEventListener('click', () => {
+        showSummaryViewer();
+    });
+
+    document.getElementById('nemolore_export_summaries').addEventListener('click', () => {
+        exportSummariesToJSON();
+    });
+
+    document.getElementById('nemolore_system_check').addEventListener('click', () => {
+        runSystemCheck();
     });
     
     // Compatibility mode toggle (only bind if element exists - might be in fallback mode)
@@ -4674,6 +5420,18 @@ async function init() {
     setupEventHandlers();
     injectCoreMemoryStyles();
     
+    // Initialize chat monitoring for highlighting and message processing
+    initializeChatMonitoring();
+    
+    // Refresh highlighting for existing messages (only if chat is already loaded)
+    setTimeout(() => {
+        const chatContainer = document.getElementById('chat');
+        if (chatContainer && chatContainer.children.length > 0) {
+            console.log(`[${MODULE_NAME}] Initial highlighting refresh for ${chatContainer.children.length} messages`);
+            refreshChatHighlighting();
+        }
+    }, 1000); // Increased delay to avoid race conditions
+    
     // Load settings HTML and then initialize
     const settingsLoaded = await loadSettingsHTML();
     if (settingsLoaded) {
@@ -4698,6 +5456,216 @@ async function init() {
 // Extension lifecycle - SillyTavern will call this automatically
 jQuery(() => {
     init();
+    
+    // Register NemoLore macro for summary injection
+    MacrosParser.registerMacro(NEMOLORE_MACRO, () => getNemoLoreSummaries());
+    
+    console.log(`[${MODULE_NAME}] Macro registered: {{${NEMOLORE_MACRO}}}`);
 });
+
+// System Check Function - Tests all core NemoLore functionality
+async function runSystemCheck() {
+    console.log(`[${MODULE_NAME}] ================================`);
+    console.log(`[${MODULE_NAME}] Starting NemoLore System Check`);
+    console.log(`[${MODULE_NAME}] ================================`);
+    
+    const results = {
+        passed: 0,
+        failed: 0,
+        warnings: 0,
+        details: []
+    };
+    
+    function addResult(category, test, status, message, details = null) {
+        const result = { category, test, status, message, details };
+        results.details.push(result);
+        
+        if (status === 'PASS') {
+            results.passed++;
+            console.log(`[${MODULE_NAME}] ✅ ${category} - ${test}: ${message}`);
+        } else if (status === 'FAIL') {
+            results.failed++;
+            console.log(`[${MODULE_NAME}] ❌ ${category} - ${test}: ${message}`, details || '');
+        } else if (status === 'WARN') {
+            results.warnings++;
+            console.log(`[${MODULE_NAME}] ⚠️ ${category} - ${test}: ${message}`, details || '');
+        }
+    }
+    
+    try {
+        // 1. Core Dependencies Check
+        addResult('Dependencies', 'getContext', 
+            typeof getContext === 'function' ? 'PASS' : 'FAIL',
+            typeof getContext === 'function' ? 'Available' : 'Missing - core SillyTavern function not available'
+        );
+        
+        addResult('Dependencies', 'getCurrentChatId', 
+            typeof getCurrentChatId === 'function' ? 'PASS' : 'FAIL',
+            typeof getCurrentChatId === 'function' ? 'Available' : 'Missing - chat ID function not available'
+        );
+        
+        addResult('Dependencies', 'loadWorldInfo', 
+            typeof loadWorldInfo === 'function' ? 'PASS' : 'FAIL',
+            typeof loadWorldInfo === 'function' ? 'Available' : 'Missing - lorebook functions not available'
+        );
+        
+        // 2. Settings Check
+        addResult('Settings', 'NemoLore Settings', 
+            nemoLoreSettings ? 'PASS' : 'FAIL',
+            nemoLoreSettings ? 'Loaded successfully' : 'Failed to load settings'
+        );
+        
+        addResult('Settings', 'Extension Enabled', 
+            nemoLoreSettings && nemoLoreSettings.enabled ? 'PASS' : 'WARN',
+            nemoLoreSettings && nemoLoreSettings.enabled ? 'Extension is enabled' : 'Extension is disabled'
+        );
+        
+        // 3. Chat Context Check
+        const chatId = typeof getCurrentChatId === 'function' ? getCurrentChatId() : null;
+        addResult('Context', 'Active Chat', 
+            chatId ? 'PASS' : 'WARN',
+            chatId ? `Chat ID: ${chatId}` : 'No active chat - some tests may be limited'
+        );
+        
+        if (typeof getContext === 'function') {
+            const context = getContext();
+            const messageCount = context && context.chat ? context.chat.length : 0;
+            addResult('Context', 'Messages Available', 
+                messageCount > 0 ? 'PASS' : 'WARN',
+                messageCount > 0 ? `${messageCount} messages in chat` : 'No messages available for testing'
+            );
+        }
+        
+        // 4. Lorebook System Check
+        addResult('Lorebook', 'Current Chat Lorebook', 
+            currentChatLorebook ? 'PASS' : 'WARN',
+            currentChatLorebook ? `Using lorebook: ${currentChatLorebook}` : 'No lorebook assigned to current chat'
+        );
+        
+        if (currentChatLorebook && typeof loadWorldInfo === 'function') {
+            try {
+                const worldInfo = await loadWorldInfo(currentChatLorebook);
+                const entryCount = worldInfo && worldInfo.entries ? Object.keys(worldInfo.entries).length : 0;
+                addResult('Lorebook', 'Lorebook Data', 
+                    worldInfo ? 'PASS' : 'FAIL',
+                    worldInfo ? `Loaded with ${entryCount} entries` : 'Failed to load lorebook data'
+                );
+            } catch (error) {
+                addResult('Lorebook', 'Lorebook Data', 'FAIL', 'Error loading lorebook', error.message);
+            }
+        }
+        
+        // 5. Noun Detection System
+        const testText = "Hello, Alex! How are you doing today in the park? The weather looks great.";
+        try {
+            const detectedNouns = NounDetector.detectNouns(testText);
+            addResult('Noun Detection', 'Basic Detection', 
+                Array.isArray(detectedNouns) && detectedNouns.length > 0 ? 'PASS' : 'WARN',
+                Array.isArray(detectedNouns) ? `Detected ${detectedNouns.length} nouns: ${detectedNouns.join(', ')}` : 'Noun detection failed'
+            );
+        } catch (error) {
+            addResult('Noun Detection', 'Basic Detection', 'FAIL', 'Error in noun detection', error.message);
+        }
+        
+        // 6. Summary System Check
+        addResult('Summaries', 'Summarization Enabled', 
+            nemoLoreSettings && nemoLoreSettings.enableSummarization ? 'PASS' : 'WARN',
+            nemoLoreSettings && nemoLoreSettings.enableSummarization ? 'Enabled' : 'Disabled'
+        );
+        
+        addResult('Summaries', 'Paired Summarization', 
+            nemoLoreSettings && nemoLoreSettings.enablePairedSummarization ? 'PASS' : 'WARN',
+            nemoLoreSettings && nemoLoreSettings.enablePairedSummarization ? 'Enabled' : 'Disabled'
+        );
+        
+        const summaryCount = messageSummaries ? messageSummaries.size : 0;
+        addResult('Summaries', 'Loaded Summaries', 
+            summaryCount >= 0 ? 'PASS' : 'FAIL',
+            `${summaryCount} summaries currently loaded`
+        );
+        
+        // 7. Memory System Check
+        addResult('Memory', 'Running Memory Size', 
+            nemoLoreSettings && nemoLoreSettings.runningMemorySize > 0 ? 'PASS' : 'WARN',
+            nemoLoreSettings ? `Set to ${nemoLoreSettings.runningMemorySize} messages` : 'Not configured'
+        );
+        
+        // 8. Context Extraction Check
+        if (typeof getContext === 'function') {
+            try {
+                const testContext = await MessageSummarizer.extractContextFromChat(0);
+                addResult('Context Extraction', 'Time/Location/NPC Tracking', 
+                    testContext ? 'PASS' : 'WARN',
+                    testContext ? `Found: time=${testContext.timeContext || 'none'}, location=${testContext.locationContext || 'none'}, NPCs=${testContext.npcContext ? testContext.npcContext.length : 0}` : 'Context extraction failed'
+                );
+            } catch (error) {
+                addResult('Context Extraction', 'Time/Location/NPC Tracking', 'FAIL', 'Error in context extraction', error.message);
+            }
+        }
+        
+        // 9. UI Elements Check
+        const uiElements = [
+            'nemolore_enabled',
+            'nemolore_highlight', 
+            'nemolore_enable_summarization',
+            'nemolore_view_summaries',
+            'nemolore_system_check'
+        ];
+        
+        let uiElementsFound = 0;
+        uiElements.forEach(elementId => {
+            const element = document.getElementById(elementId);
+            if (element) uiElementsFound++;
+        });
+        
+        addResult('UI', 'Settings Elements', 
+            uiElementsFound === uiElements.length ? 'PASS' : uiElementsFound > 0 ? 'WARN' : 'FAIL',
+            `${uiElementsFound}/${uiElements.length} UI elements found`
+        );
+        
+        // 10. Macro System Check
+        addResult('Macros', 'NemoLore Macro', 
+            typeof MacrosParser !== 'undefined' && MacrosParser.getAll().hasOwnProperty(NEMOLORE_MACRO) ? 'PASS' : 'WARN',
+            `{{${NEMOLORE_MACRO}}} macro registration`
+        );
+        
+    } catch (error) {
+        addResult('System', 'Overall Check', 'FAIL', 'System check encountered an error', error.message);
+    }
+    
+    // Generate Summary Report
+    console.log(`[${MODULE_NAME}] ================================`);
+    console.log(`[${MODULE_NAME}] System Check Summary:`);
+    console.log(`[${MODULE_NAME}] ✅ Passed: ${results.passed}`);
+    console.log(`[${MODULE_NAME}] ⚠️ Warnings: ${results.warnings}`);
+    console.log(`[${MODULE_NAME}] ❌ Failed: ${results.failed}`);
+    console.log(`[${MODULE_NAME}] ================================`);
+    
+    // Show user-friendly popup with results
+    const statusEmoji = results.failed > 0 ? '❌' : results.warnings > 0 ? '⚠️' : '✅';
+    const statusText = results.failed > 0 ? 'Issues Found' : results.warnings > 0 ? 'Warnings' : 'All Good';
+    
+    const detailsHtml = results.details.map(r => {
+        const icon = r.status === 'PASS' ? '✅' : r.status === 'WARN' ? '⚠️' : '❌';
+        return `<div style="margin: 5px 0; font-size: 12px;"><strong>${icon} ${r.category} - ${r.test}:</strong> ${r.message}</div>`;
+    }).join('');
+    
+    await callPopup(`
+        <div class="nemolore-system-check-popup">
+            <h3>${statusEmoji} NemoLore System Check - ${statusText}</h3>
+            <div style="margin: 15px 0;">
+                <strong>Results:</strong> ${results.passed} passed, ${results.warnings} warnings, ${results.failed} failed
+            </div>
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: #f9f9f9;">
+                ${detailsHtml}
+            </div>
+            <div style="margin-top: 15px; font-size: 11px; color: #666;">
+                Check the console for detailed logs and technical information.
+            </div>
+        </div>
+    `);
+    
+    return results;
+}
 
 export { MODULE_NAME };
