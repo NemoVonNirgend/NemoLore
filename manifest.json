@@ -10,5 +10,4 @@
     "homePage": "https://github.com/nemo/NemoLore",
     "loading_order": 250,
     "generate_interceptor": "nemolore_intercept_messages"
-
 }

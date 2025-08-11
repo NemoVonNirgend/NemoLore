@@ -42,6 +42,109 @@ import {
 const MODULE_NAME = 'NemoLore';
 const EXTENSION_NAME = 'nemolore';
 
+// Debug configuration - Set to false for production to reduce console spam
+const DEBUG_MODE = false; // Change to true for development debugging
+const debugLog = DEBUG_MODE ? console.log : () => {};
+const debugWarn = DEBUG_MODE ? console.warn : () => {};
+const debugError = console.error; // Always keep error logging
+
+// State management - Encapsulate global variables for better organization
+const NemoLoreState = {
+    // Extension state
+    isInitialized: false,
+    currentChatLorebook: null,
+    lastHandledChatId: null,
+    loadedSummariesChatId: null,
+    messageCount: 0,
+    totalChatTokens: 0,
+    
+    // Processing flags
+    isProcessingSummaries: false,
+    isLorebookCreationInProgress: false,
+    isProcessingCoreMemory: false,
+    isVectorizationEnabled: false,
+    
+    // Data collections
+    messageSummaries: new Map(),
+    vectorizedMessages: new Map(),
+    highlightedNouns: new Set(),
+    processedMessages: new WeakSet(),
+    summaryProcessingQueue: [],
+    
+    // Timeout tracking for cleanup
+    summaryTimeoutIds: new Set(),
+    pairedSummaryTimeoutIds: new Set(),
+    
+    // UI elements
+    currentTooltip: null,
+    messageObserver: null,
+    
+    // Reset state method
+    reset() {
+        this.isProcessingSummaries = false;
+        this.isLorebookCreationInProgress = false;
+        this.isProcessingCoreMemory = false;
+        this.summaryProcessingQueue.length = 0;
+        this.messageSummaries.clear();
+        this.vectorizedMessages.clear();
+        this.highlightedNouns.clear();
+        this.totalChatTokens = 0;
+        this.clearTimeouts();
+    },
+    
+    // Clear all pending timeouts
+    clearTimeouts() {
+        this.summaryTimeoutIds.forEach(id => clearTimeout(id));
+        this.summaryTimeoutIds.clear();
+        this.pairedSummaryTimeoutIds.forEach(id => clearTimeout(id));
+        this.pairedSummaryTimeoutIds.clear();
+    },
+    
+    // Add timeout with tracking for automatic cleanup
+    addTimeout(callback, delay, timeoutType = 'summary') {
+        const timeoutId = setTimeout(() => {
+            try {
+                callback();
+            } catch (error) {
+                debugError(`[${MODULE_NAME}] Error in timeout callback:`, error);
+            } finally {
+                // Auto-cleanup from tracking sets
+                this.summaryTimeoutIds.delete(timeoutId);
+                this.pairedSummaryTimeoutIds.delete(timeoutId);
+            }
+        }, delay);
+        
+        if (timeoutType === 'paired') {
+            this.pairedSummaryTimeoutIds.add(timeoutId);
+        } else {
+            this.summaryTimeoutIds.add(timeoutId);
+        }
+        
+        return timeoutId;
+    },
+    
+    // Error recovery system - reset stuck flags after timeout
+    initErrorRecovery() {
+        // Reset stuck processing flags every 5 minutes
+        setInterval(() => {
+            if (this.isProcessingSummaries && this.summaryProcessingQueue.length === 0) {
+                debugWarn(`[${MODULE_NAME}] Detected stuck isProcessingSummaries flag, clearing...`);
+                this.isProcessingSummaries = false;
+            }
+            
+            if (this.isLorebookCreationInProgress) {
+                debugWarn(`[${MODULE_NAME}] Detected stuck isLorebookCreationInProgress flag, clearing...`);
+                this.isLorebookCreationInProgress = false;
+            }
+            
+            if (this.isProcessingCoreMemory) {
+                debugWarn(`[${MODULE_NAME}] Detected stuck isProcessingCoreMemory flag, clearing...`);
+                this.isProcessingCoreMemory = false;
+            }
+        }, 300000); // 5 minutes
+    }
+};
+
 // Macro constants for summary injection
 const NEMOLORE_MACRO = 'NemoLore';
 const NEMOLORE_LOREBOOK_PREFIX = '_NemoLore_';
@@ -166,7 +269,14 @@ let nemoLoreSettings = {
     googleModel: 'text-embedding-004', // Google Gemini embedding model  
     cohereModel: 'embed-english-v3.0', // Cohere embedding model
     ollamaModel: 'mxbai-embed-large', // Ollama embedding model
-    vllmModel: '' // vLLM embedding model
+    vllmModel: '', // vLLM embedding model
+    
+    // Async API Settings
+    enableAsyncApi: false,
+    asyncApiProvider: '',
+    asyncApiKey: '',
+    asyncApiModel: '',
+    asyncApiEndpoint: ''
 };
 
 let isInitialized = false;
@@ -189,6 +299,9 @@ let totalChatTokens = 0; // Track total token count for threshold checking
 // Vectorization system for excluded messages
 let vectorizedMessages = new Map(); // Track vectorized message hashes by index
 let isVectorizationEnabled = false; // Flag to enable/disable vectorization
+
+// Lorebook creation flow control
+let isLorebookCreationInProgress = false;
 
 // Common words to exclude from noun detection
 const COMMON_WORDS = new Set([
@@ -1198,7 +1311,7 @@ SUMMARY FOCUS:`;
         return prompt;
     }
 
-    static async extractContextFromChat(messageIndex) {
+    static async extractContextFromChat(messageIndex, pairedIndices = null) {
         // Check if getContext is available (it's a global function)
         if (typeof getContext !== 'function') {
             console.warn(`[${MODULE_NAME}] getContext not available, cannot extract context`);
@@ -1206,21 +1319,31 @@ SUMMARY FOCUS:`;
         }
         
         const context = getContext();
-        if (!context || !context.chat || !context.chat[messageIndex]) {
-            console.warn(`[${MODULE_NAME}] Invalid context or message, cannot extract context`);
+        if (!context || !context.chat) {
+            console.warn(`[${MODULE_NAME}] Invalid context, cannot extract context`);
             return { timeContext: null, locationContext: null, npcContext: [] };
         }
         
-        const currentMessage = context.chat[messageIndex];
-        console.log(`[${MODULE_NAME}] Extracting context for message ${messageIndex}: "${currentMessage.mes.substring(0, 100)}..."`);
+        // Determine which messages to analyze
+        const messagesToAnalyze = pairedIndices || [messageIndex];
+        console.log(`[${MODULE_NAME}] Extracting context for messages: ${messagesToAnalyze.join('+')}`);
+        
+        // Validate all message indices
+        for (const idx of messagesToAnalyze) {
+            if (!context.chat[idx]) {
+                console.warn(`[${MODULE_NAME}] Message ${idx} not found, cannot extract context`);
+                return { timeContext: null, locationContext: null, npcContext: [] };
+            }
+        }
         
         let timeContext = null;
         let locationContext = null;
         let npcContext = [];
 
         try {
-            // Extract time context (look for time-related patterns in recent messages)
-            for (let i = Math.max(0, messageIndex - 5); i <= messageIndex; i++) {
+            // Extract time context (look for time-related patterns in target messages and recent context)
+            const maxContextIndex = Math.max(...messagesToAnalyze);
+            for (let i = Math.max(0, maxContextIndex - 5); i <= maxContextIndex; i++) {
                 const msg = context.chat[i];
                 if (!msg) continue;
                 
@@ -1235,18 +1358,20 @@ SUMMARY FOCUS:`;
                     const match = msg.mes.match(pattern);
                     if (match) {
                         timeContext = match[0]; // Get the matched text, not the array
-                        console.log(`[${MODULE_NAME}] Found time context: "${timeContext}" from message: "${msg.mes.substring(0, 100)}..."`);
+                        console.log(`[${MODULE_NAME}] Found time context: "${timeContext}" from message ${i}: "${msg.mes.substring(0, 100)}..."`);
                         break;
                     }
                 }
+                if (timeContext) break; // Stop at first match
             }
 
             // Extract location context from lorebook entries and message content
             console.log(`[${MODULE_NAME}] Checking lorebook for location context. currentChatLorebook:`, currentChatLorebook);
             if (currentChatLorebook) {
-                const worldInfo = await loadWorldInfo(currentChatLorebook);
-                console.log(`[${MODULE_NAME}] Loaded world info:`, worldInfo ? `${Object.keys(worldInfo.entries || {}).length} entries` : 'null');
-                if (worldInfo && worldInfo.entries) {
+                try {
+                    const worldInfo = await loadWorldInfo(currentChatLorebook);
+                    console.log(`[${MODULE_NAME}] Loaded world info:`, worldInfo ? `${Object.keys(worldInfo.entries || {}).length} entries` : 'null');
+                    if (worldInfo && worldInfo.entries && Object.keys(worldInfo.entries).length > 0) {
                     for (const [uid, entry] of Object.entries(worldInfo.entries)) {
                         if (!entry || !entry.key) continue;
                         
@@ -1258,47 +1383,87 @@ SUMMARY FOCUS:`;
                         );
                         
                         if (isLocation) {
-                            // Check if location is mentioned in current message
-                            const mentionedInMessage = entry.key.some(keyword =>
-                                currentMessage.mes.toLowerCase().includes(keyword.toLowerCase())
-                            );
+                            // Check if location is mentioned in any of the target messages
+                            let mentionedInMessages = false;
+                            let mentionedInMessageIndex = -1;
                             
-                            if (mentionedInMessage) {
+                            for (const idx of messagesToAnalyze) {
+                                const message = context.chat[idx];
+                                if (message && entry.key.some(keyword =>
+                                    message.mes.toLowerCase().includes(keyword.toLowerCase())
+                                )) {
+                                    mentionedInMessages = true;
+                                    mentionedInMessageIndex = idx;
+                                    break;
+                                }
+                            }
+                            
+                            if (mentionedInMessages) {
                                 locationContext = entry.title || (entry.key && entry.key[0]);
-                                console.log(`[${MODULE_NAME}] Found location context: "${locationContext}"`);
+                                console.log(`[${MODULE_NAME}] Found location context: "${locationContext}" from message ${mentionedInMessageIndex}`);
                                 break;
                             }
                         }
                     }
+                    } else {
+                        console.log(`[${MODULE_NAME}] Lorebook loaded but contains no entries - location context extraction skipped`);
+                    }
+                } catch (lorebookError) {
+                    console.warn(`[${MODULE_NAME}] Error loading lorebook for location context:`, lorebookError);
                 }
+            } else {
+                console.log(`[${MODULE_NAME}] No lorebook assigned - location context extraction skipped`);
             }
 
-            // Extract NPCs from highlighted nouns and lorebook
-            const detectedNouns = NounDetector.detectNouns(currentMessage.mes);
-            console.log(`[${MODULE_NAME}] Detected ${detectedNouns.length} nouns for NPC analysis:`, detectedNouns);
-            for (const noun of detectedNouns) {
-                console.log(`[${MODULE_NAME}] Looking up lorebook entry for noun: "${noun}"`);
-                const matchData = await LorebookManager.findEntryForNoun(noun);
-                console.log(`[${MODULE_NAME}] Lorebook match data for "${noun}":`, matchData);
-                if (matchData && matchData.entry) {
-                    const entry = matchData.entry;
-                    // Check if this entry represents a character/NPC
-                    const isCharacter = entry.content && (
-                        entry.content.toLowerCase().includes('character') ||
-                        entry.content.toLowerCase().includes('person') ||
-                        entry.content.toLowerCase().includes('he ') ||
-                        entry.content.toLowerCase().includes('she ') ||
-                        entry.content.toLowerCase().includes(' is a ') ||
-                        entry.key.some(k => /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(k)) // Full names
-                    );
-                    
-                    if (isCharacter && !npcContext.includes(noun)) {
-                        npcContext.push(noun);
-                        console.log(`[${MODULE_NAME}] Found NPC: "${noun}"`);
+            // Extract NPCs from highlighted nouns and lorebook (analyze all messages in pair)
+            const allDetectedNouns = new Set();
+            
+            for (const idx of messagesToAnalyze) {
+                const message = context.chat[idx];
+                if (message) {
+                    const detectedNouns = NounDetector.detectNouns(message.mes);
+                    console.log(`[${MODULE_NAME}] Detected ${detectedNouns.length} nouns from message ${idx}:`, detectedNouns);
+                    detectedNouns.forEach(noun => allDetectedNouns.add(noun));
+                }
+            }
+            
+            console.log(`[${MODULE_NAME}] Total unique nouns for NPC analysis: ${allDetectedNouns.size}`);
+            
+            if (allDetectedNouns.size > 0 && currentChatLorebook) {
+                console.log(`[${MODULE_NAME}] Processing nouns for NPC identification using lorebook: ${currentChatLorebook}`);
+                
+                for (const noun of allDetectedNouns) {
+                    try {
+                        console.log(`[${MODULE_NAME}] Looking up lorebook entry for noun: "${noun}"`);
+                        const matchData = await LorebookManager.findEntryForNoun(noun);
+                        console.log(`[${MODULE_NAME}] Lorebook match data for "${noun}":`, matchData);
+                        
+                        if (matchData && matchData.entry) {
+                            const entry = matchData.entry;
+                            // Check if this entry represents a character/NPC
+                            const isCharacter = entry.content && (
+                                entry.content.toLowerCase().includes('character') ||
+                                entry.content.toLowerCase().includes('person') ||
+                                entry.content.toLowerCase().includes('he ') ||
+                                entry.content.toLowerCase().includes('she ') ||
+                                entry.content.toLowerCase().includes(' is a ') ||
+                                entry.key.some(k => /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(k)) // Full names
+                            );
+                            
+                            if (isCharacter && !npcContext.includes(noun)) {
+                                npcContext.push(noun);
+                                console.log(`[${MODULE_NAME}] Found NPC: "${noun}"`);
+                            }
+                        }
+                    } catch (nounError) {
+                        console.warn(`[${MODULE_NAME}] Error processing noun "${noun}" for NPC identification:`, nounError);
                     }
                 }
+            } else if (allDetectedNouns.size > 0) {
+                console.log(`[${MODULE_NAME}] Cannot process nouns for NPC identification - no lorebook available`);
+            } else {
+                console.log(`[${MODULE_NAME}] No nouns detected for NPC analysis`);
             }
-
         } catch (error) {
             console.warn(`[${MODULE_NAME}] Error extracting context:`, error);
         }
@@ -1350,60 +1515,102 @@ SUMMARY FOCUS:`;
             
             const prompt = this.buildSummarizationPrompt(messageData);
             
-            // Generate summary using specified connection profile and preset
-            const originalConnectionProfile = main_api;
-            const originalPreset = extension_settings.preset;
-            
             let response = null;
             
-            try {
-                // Switch to summarization connection profile if specified
-                if (nemoLoreSettings.connectionProfile) {
-                    await this.setConnectionProfile(nemoLoreSettings.connectionProfile);
-                }
+            // Try async API first if configured
+            if (nemoLoreSettings.enableAsyncApi) {
+                console.log(`[${MODULE_NAME}] Attempting async API summarization for message ${messageIndex}`);
+                response = await AsyncAPI.summarizeAsync(messageIndex, prompt, contextData);
+            }
+            
+            // Fall back to SillyTavern API if async failed or not configured
+            if (!response) {
+                console.log(`[${MODULE_NAME}] Using SillyTavern API for message ${messageIndex}`);
                 
-                // Switch to summarization completion preset if specified  
-                if (nemoLoreSettings.completionPreset) {
-                    await this.setCompletionPreset(nemoLoreSettings.completionPreset);
-                }
+                // Generate summary using specified connection profile and preset
+                const originalConnectionProfile = main_api;
+                const originalPreset = extension_settings.preset;
                 
-                // Generate the summary - try generateQuietPrompt first as it may be more reliable
-                const fullPrompt = prompt + (nemoLoreSettings.prefill ? '\n\n' + nemoLoreSettings.prefill : '');
-                
-                console.log(`[${MODULE_NAME}] Sending summarization request for message ${messageIndex}`);
-                console.log(`[${MODULE_NAME}] Prompt: ${fullPrompt}`);
-                
-                // Try generateQuietPrompt first
                 try {
-                    console.log(`[${MODULE_NAME}] Calling generateQuietPrompt with prompt length: ${fullPrompt.length}`);
-                    response = await generateQuietPrompt(fullPrompt, false);
-                    console.log(`[${MODULE_NAME}] generateQuietPrompt succeeded, response length: ${response?.length || 0}`);
-                } catch (quietError) {
-                    console.log(`[${MODULE_NAME}] generateQuietPrompt failed, trying generateRaw:`, quietError);
-                    try {
-                        response = await generateRaw(fullPrompt, '', true, false, false, null, false);
-                        console.log(`[${MODULE_NAME}] generateRaw succeeded, response length: ${response?.length || 0}`);
-                    } catch (rawError) {
-                        console.error(`[${MODULE_NAME}] Both generateQuietPrompt and generateRaw failed:`, rawError);
-                        throw rawError;
+                    // Switch to summarization connection profile if specified
+                    if (nemoLoreSettings.connectionProfile) {
+                        await this.setConnectionProfile(nemoLoreSettings.connectionProfile);
                     }
-                }
-                
-            } finally {
-                // Always restore original settings - only if we actually changed them
-                try {
-                    // Connection profiles might not support empty reset, so skip reset for now
-                    // The user's current profile will remain active after summarization
                     
-                    // Reset completion preset to original
-                    if (nemoLoreSettings.completionPreset && originalPreset) {
-                        await this.setCompletionPreset(originalPreset);
+                    // Switch to summarization completion preset if specified  
+                    if (nemoLoreSettings.completionPreset) {
+                        await this.setCompletionPreset(nemoLoreSettings.completionPreset);
                     }
-                } catch (resetError) {
-                    console.warn(`[${MODULE_NAME}] Error resetting settings:`, resetError);
+                    
+                    // Generate the summary - try generateQuietPrompt first as it may be more reliable
+                    const fullPrompt = prompt + (nemoLoreSettings.prefill ? '\n\n' + nemoLoreSettings.prefill : '');
+                    
+                    console.log(`[${MODULE_NAME}] Sending summarization request for message ${messageIndex}`);
+                    console.log(`[${MODULE_NAME}] Prompt: ${fullPrompt}`);
+                    
+                    // Enhanced retry logic for API calls
+                    let lastError = null;
+                    const maxRetries = 3;
+                    const retryDelays = [1000, 2000, 5000]; // Progressive delays in ms
+                    
+                    for (let attempt = 0; attempt < maxRetries; attempt++) {
+                        try {
+                            if (attempt > 0) {
+                                console.log(`[${MODULE_NAME}] Retrying API call (attempt ${attempt + 1}/${maxRetries}) after ${retryDelays[attempt - 1]}ms delay`);
+                                await new Promise(resolve => setTimeout(resolve, retryDelays[attempt - 1]));
+                            }
+                            
+                            console.log(`[${MODULE_NAME}] Calling generateQuietPrompt with prompt length: ${fullPrompt.length}`);
+                            response = await generateQuietPrompt(fullPrompt, false);
+                            if (response && response.trim()) {
+                                console.log(`[${MODULE_NAME}] generateQuietPrompt succeeded, response length: ${response.length}`);
+                                break; // Success, exit retry loop
+                            } else {
+                                throw new Error('Empty response from generateQuietPrompt');
+                            }
+                        } catch (quietError) {
+                            lastError = quietError;
+                            console.log(`[${MODULE_NAME}] generateQuietPrompt failed (attempt ${attempt + 1}):`, quietError);
+                            
+                            // Try generateRaw as fallback on last attempt
+                            if (attempt === maxRetries - 1) {
+                                try {
+                                    console.log(`[${MODULE_NAME}] Final attempt: trying generateRaw as fallback`);
+                                    response = await generateRaw(fullPrompt, '', true, false, false, null, false);
+                                    if (response && response.trim()) {
+                                        console.log(`[${MODULE_NAME}] generateRaw succeeded, response length: ${response.length}`);
+                                        break;
+                                    }
+                                } catch (rawError) {
+                                    console.error(`[${MODULE_NAME}] generateRaw also failed:`, rawError);
+                                    lastError = rawError;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // If all attempts failed, throw the last error
+                    if (!response || !response.trim()) {
+                        throw new Error(`All API attempts failed for message ${messageIndex}. Last error: ${lastError?.message || 'Unknown error'}`);
+                    }
+                
+                } finally {
+                    // Always restore original settings - only if we actually changed them
+                    try {
+                        // Connection profiles might not support empty reset, so skip reset for now
+                        // The user's current profile will remain active after summarization
+                        
+                        // Reset completion preset to original
+                        if (nemoLoreSettings.completionPreset && originalPreset) {
+                            await this.setCompletionPreset(nemoLoreSettings.completionPreset);
+                        }
+                    } catch (resetError) {
+                        console.warn(`[${MODULE_NAME}] Error resetting settings:`, resetError);
+                    }
                 }
             }
             
+            // Process the response (this code should be within the main try block)
             if (response && response.trim()) {
                 const rawSummary = response.trim();
                 console.log(`[${MODULE_NAME}] Generated summary: "${rawSummary.substring(0, 100)}..."`);
@@ -1445,7 +1652,6 @@ SUMMARY FOCUS:`;
                 console.log(`[${MODULE_NAME}] No valid response from API for message ${messageIndex}`);
                 return null;
             }
-            
         } catch (error) {
             console.error(`[${MODULE_NAME}] Error summarizing message ${messageIndex}:`, error);
             return null;
@@ -1522,8 +1728,9 @@ SUMMARY FOCUS:`;
         try {
             console.log(`[${MODULE_NAME}] Summarizing paired messages: indices ${messageIndex === 0 ? '0' : `${messageIndex - 1}+${messageIndex}`}`);
             
-            // Extract contextual information
-            const contextData = await this.extractContextFromChat(targetIndex);
+            // Extract contextual information from all messages in the pair
+            const pairedIndices = messageIndex === 0 ? [0] : [messageIndex - 1, messageIndex];
+            const contextData = await this.extractContextFromChat(targetIndex, pairedIndices);
             
             // Build paired message data
             const pairedData = {
@@ -1535,10 +1742,21 @@ SUMMARY FOCUS:`;
             
             const prompt = this.buildPairedSummarizationPrompt(pairedData);
             
-            // Generate summary using existing API approach
-            const originalConnectionProfile = main_api;
-            const originalPreset = extension_settings.preset;
             let response = null;
+            
+            // Try async API first if configured
+            if (nemoLoreSettings.enableAsyncApi) {
+                console.log(`[${MODULE_NAME}] Attempting async API paired summarization for messages ${messageIndex === 0 ? '0' : `${messageIndex - 1}+${messageIndex}`}`);
+                response = await AsyncAPI.summarizeAsync(messageIndex, prompt, contextData);
+            }
+            
+            // Fall back to SillyTavern API if async failed or not configured  
+            if (!response) {
+                console.log(`[${MODULE_NAME}] Using SillyTavern API for paired summarization`);
+                
+                // Generate summary using existing API approach
+                const originalConnectionProfile = main_api;
+                const originalPreset = extension_settings.preset;
             
             try {
                 // Switch to summarization connection profile if specified
@@ -1555,11 +1773,47 @@ SUMMARY FOCUS:`;
                 
                 console.log(`[${MODULE_NAME}] Sending paired summarization request for messages ${messageIndex === 0 ? '0' : `${messageIndex - 1}+${messageIndex}`}`);
                 
-                try {
-                    response = await generateQuietPrompt(fullPrompt, false);
-                } catch (quietError) {
-                    console.log(`[${MODULE_NAME}] generateQuietPrompt failed, trying generateRaw:`, quietError);
-                    response = await generateRaw(fullPrompt, '', true, false, false, null, false);
+                // Enhanced retry logic for API calls
+                let lastError = null;
+                const maxRetries = 3;
+                const retryDelays = [1000, 2000, 5000]; // Progressive delays in ms
+                
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    try {
+                        if (attempt > 0) {
+                            console.log(`[${MODULE_NAME}] Retrying API call (attempt ${attempt + 1}/${maxRetries}) after ${retryDelays[attempt - 1]}ms delay`);
+                            await new Promise(resolve => setTimeout(resolve, retryDelays[attempt - 1]));
+                        }
+                        
+                        response = await generateQuietPrompt(fullPrompt, false);
+                        if (response && response.trim()) {
+                            break; // Success, exit retry loop
+                        } else {
+                            throw new Error('Empty response from generateQuietPrompt');
+                        }
+                    } catch (quietError) {
+                        lastError = quietError;
+                        console.log(`[${MODULE_NAME}] generateQuietPrompt failed (attempt ${attempt + 1}):`, quietError);
+                        
+                        // Try generateRaw as fallback on last attempt
+                        if (attempt === maxRetries - 1) {
+                            try {
+                                console.log(`[${MODULE_NAME}] Final attempt: trying generateRaw as fallback`);
+                                response = await generateRaw(fullPrompt, '', true, false, false, null, false);
+                                if (response && response.trim()) {
+                                    break;
+                                }
+                            } catch (rawError) {
+                                console.error(`[${MODULE_NAME}] generateRaw also failed:`, rawError);
+                                lastError = rawError;
+                            }
+                        }
+                    }
+                }
+                
+                // If all attempts failed, throw the last error
+                if (!response || !response.trim()) {
+                    throw new Error(`All API attempts failed. Last error: ${lastError?.message || 'Unknown error'}`);
                 }
                 
             } finally {
@@ -1571,6 +1825,7 @@ SUMMARY FOCUS:`;
                 } catch (resetError) {
                     console.warn(`[${MODULE_NAME}] Error resetting settings:`, resetError);
                 }
+            }
             }
             
             if (response && response.trim()) {
@@ -1622,12 +1877,12 @@ SUMMARY FOCUS:`;
                 console.log(`[${MODULE_NAME}] No valid response from API for paired messages`);
                 return null;
             }
-            
         } catch (error) {
             console.error(`[${MODULE_NAME}] Error summarizing paired messages:`, error);
             return null;
         }
     }
+
 
     // Build prompt for paired message summarization
     static buildPairedSummarizationPrompt(pairedData) {
@@ -2662,7 +2917,6 @@ Provide only the summary, no additional commentary:`;
                 console.warn(`[${MODULE_NAME}] No valid bulk response for messages ${indices[0]}-${indices[indices.length - 1]}`);
                 return null;
             }
-
         } catch (error) {
             console.error(`[${MODULE_NAME}] Error creating bulk chunk summary:`, error);
             return null;
@@ -2842,6 +3096,19 @@ Provide only the summary, no additional commentary:`;
     static queueMessageForSummary(messageIndex) {
         if (!nemoLoreSettings.enableSummarization || !nemoLoreSettings.autoSummarize) {
             console.log(`[${MODULE_NAME}] Summarization disabled or auto-summarize off`);
+            return;
+        }
+        
+        // Block summarization if lorebook creation is in progress
+        if (isLorebookCreationInProgress) {
+            console.log(`[${MODULE_NAME}] Lorebook creation in progress, deferring summarization of message ${messageIndex}`);
+            // Queue it for later processing when the flag is cleared
+            setTimeout(() => {
+                if (!isLorebookCreationInProgress) {
+                    console.log(`[${MODULE_NAME}] Retrying queuing message ${messageIndex} after lorebook creation completed`);
+                    this.queueMessageForSummary(messageIndex);
+                }
+            }, 2000);
             return;
         }
         
@@ -3219,6 +3486,245 @@ Provide only the summary, no additional commentary:`;
     }
 }
 
+// Async API System for Independent Summarization
+class AsyncAPI {
+    static models = {
+        openai: [
+            { id: 'gpt-4o', name: 'GPT-4o' },
+            { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+            { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+            { id: 'gpt-4', name: 'GPT-4' },
+            { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
+        ],
+        gemini: [
+            { id: 'gemini-1.5-pro-latest', name: 'Gemini 1.5 Pro' },
+            { id: 'gemini-1.5-flash-latest', name: 'Gemini 1.5 Flash' },
+            { id: 'gemini-pro', name: 'Gemini Pro' }
+        ],
+        claude: [
+            { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+            { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
+            { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' }
+        ],
+        openrouter: [] // Will be populated dynamically
+    };
+
+    static endpoints = {
+        openai: 'https://api.openai.com/v1/chat/completions',
+        gemini: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+        claude: 'https://api.anthropic.com/v1/messages',
+        openrouter: 'https://openrouter.ai/api/v1/chat/completions'
+    };
+
+    static async refreshModels(provider) {
+        console.log(`[${MODULE_NAME}] Refreshing models for provider: ${provider}`);
+        
+        try {
+            if (provider === 'openrouter') {
+                return await this.fetchOpenRouterModels();
+            } else {
+                // For other providers, use hardcoded models for now
+                return this.models[provider] || [];
+            }
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error refreshing models for ${provider}:`, error);
+            return this.models[provider] || [];
+        }
+    }
+
+    static async fetchOpenRouterModels() {
+        try {
+            const response = await fetch('https://openrouter.ai/api/v1/models', {
+                headers: {
+                    'Authorization': `Bearer ${nemoLoreSettings.asyncApiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.data.map(model => ({
+                id: model.id,
+                name: model.name || model.id
+            })).filter(model => 
+                // Filter to popular chat models
+                model.id.includes('claude') || 
+                model.id.includes('gpt') || 
+                model.id.includes('gemini') ||
+                model.id.includes('llama')
+            );
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error fetching OpenRouter models:`, error);
+            return [];
+        }
+    }
+
+    static async testConnection(provider, apiKey, model, endpoint) {
+        console.log(`[${MODULE_NAME}] Testing API connection for ${provider}`);
+        
+        try {
+            const testPrompt = "Please respond with 'API test successful' to confirm connection.";
+            const response = await this.makeRequest(provider, apiKey, model, testPrompt, endpoint);
+            
+            if (response && response.includes('API test successful')) {
+                return { success: true, message: 'API connection successful!' };
+            } else {
+                return { success: true, message: 'API connected but response may be filtered. This is normal.' };
+            }
+        } catch (error) {
+            return { success: false, message: `Connection failed: ${error.message}` };
+        }
+    }
+
+    static async makeRequest(provider, apiKey, model, prompt, customEndpoint = null) {
+        const endpoint = customEndpoint || this.endpoints[provider];
+        
+        switch (provider) {
+            case 'openai':
+                return await this.makeOpenAIRequest(endpoint, apiKey, model, prompt);
+            case 'gemini':
+                return await this.makeGeminiRequest(endpoint, apiKey, model, prompt);
+            case 'claude':
+                return await this.makeClaudeRequest(endpoint, apiKey, model, prompt);
+            case 'openrouter':
+                return await this.makeOpenRouterRequest(endpoint, apiKey, model, prompt);
+            default:
+                throw new Error(`Unsupported provider: ${provider}`);
+        }
+    }
+
+    static async makeOpenAIRequest(endpoint, apiKey, model, prompt) {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: 1000,
+                temperature: 0.3
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.choices[0]?.message?.content || '';
+    }
+
+    static async makeGeminiRequest(endpoint, apiKey, model, prompt) {
+        const url = endpoint.replace('{model}', model) + `?key=${apiKey}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 1000
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.candidates[0]?.content?.parts[0]?.text || '';
+    }
+
+    static async makeClaudeRequest(endpoint, apiKey, model, prompt) {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'x-api-key': apiKey,
+                'Content-Type': 'application/json',
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: model,
+                max_tokens: 1000,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.3
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.content[0]?.text || '';
+    }
+
+    static async makeOpenRouterRequest(endpoint, apiKey, model, prompt) {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': window.location.origin,
+                'X-Title': 'NemoLore Extension'
+            },
+            body: JSON.stringify({
+                model: model,
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: 1000,
+                temperature: 0.3
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.choices[0]?.message?.content || '';
+    }
+
+    static async summarizeAsync(messageIndex, prompt, contextData = {}) {
+        if (!nemoLoreSettings.enableAsyncApi || !nemoLoreSettings.asyncApiProvider || !nemoLoreSettings.asyncApiKey) {
+            console.log(`[${MODULE_NAME}] Async API not configured, falling back to SillyTavern API`);
+            return null;
+        }
+
+        try {
+            console.log(`[${MODULE_NAME}] Making async API request for message ${messageIndex}`);
+            
+            const response = await this.makeRequest(
+                nemoLoreSettings.asyncApiProvider,
+                nemoLoreSettings.asyncApiKey,
+                nemoLoreSettings.asyncApiModel,
+                prompt,
+                nemoLoreSettings.asyncApiEndpoint
+            );
+
+            if (response && response.trim()) {
+                console.log(`[${MODULE_NAME}] Async API response received for message ${messageIndex}`);
+                return response.trim();
+            } else {
+                throw new Error('Empty response from async API');
+            }
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Async API request failed for message ${messageIndex}:`, error);
+            return null; // Return null to allow fallback to SillyTavern API
+        }
+    }
+}
+
 // Global message interceptor function - called by SillyTavern before sending to AI
 // This must match the "generate_interceptor" key in manifest.json
 globalThis.nemolore_intercept_messages = function (chat, contextSize, abort, type) {
@@ -3472,29 +3978,67 @@ async function handleChatChanged() {
         loadedSummariesChatId = null; // Reset loaded summaries tracking
         // Only clear summaries when no chat is active
         messageSummaries.clear();
-        console.log(`[${MODULE_NAME}] No active chat - cleared messageSummaries and reset tracking`);
+        debugLog(`[${MODULE_NAME}] No active chat - cleared messageSummaries and reset tracking`);
         return;
     }
     
-    console.log(`[${MODULE_NAME}] Chat changed to: ${chatId}`);
+    debugLog(`[${MODULE_NAME}] Chat changed to: ${chatId}`);
     
-    // Auto-create lorebook if enabled and no lorebook exists
-    if (nemoLoreSettings.autoCreateLorebook) {
-        const existingLorebook = chat_metadata[METADATA_KEY];
+    // Handle lorebook creation for new chats
+    const existingLorebook = chat_metadata[METADATA_KEY];
+    
+    if (existingLorebook && world_names.includes(existingLorebook)) {
+        // Use existing lorebook
+        console.log(`[${MODULE_NAME}] Using existing lorebook: ${existingLorebook}`);
+        currentChatLorebook = existingLorebook;
+    } else if (nemoLoreSettings.createLorebookOnChat) {
+        // Create lorebook immediately when chat starts (before any summarization)
+        console.log(`[${MODULE_NAME}] Creating lorebook immediately for new chat...`);
+        isLorebookCreationInProgress = true; // Block summarization during this process
+        currentChatLorebook = await LorebookManager.createChatLorebook(chatId);
         
-        if (!existingLorebook) {
-            console.log(`[${MODULE_NAME}] No existing lorebook found, creating auto lorebook`);
-            currentChatLorebook = await MessageSummarizer.createAutoLorebook(chatId);
-        } else if (world_names.includes(existingLorebook)) {
-            console.log(`[${MODULE_NAME}] Using existing lorebook: ${existingLorebook}`);
-            currentChatLorebook = existingLorebook;
+        if (currentChatLorebook) {
+            console.log(`[${MODULE_NAME}] Successfully created lorebook at chat start: ${currentChatLorebook}`);
+            
+            // Show "flesh out the world" prompt to user
+            setTimeout(async () => {
+                const action = await NotificationSystem.show(
+                    `📚 Lorebook "${currentChatLorebook}" created! Would you like to flesh out the world with people, places, and items from the character?`,
+                    [
+                        { action: 'yes', text: 'Yes, flesh out the world' },
+                        { action: 'no', text: 'No, I\'ll add entries manually' }
+                    ],
+                    10000 // Give user time to decide
+                );
+                
+                if (action === 'yes') {
+                    console.log(`[${MODULE_NAME}] User chose to flesh out the world, generating initial entries...`);
+                    await generateInitialLorebookEntries(currentChatLorebook);
+                } else {
+                    console.log(`[${MODULE_NAME}] User chose to manually add entries`);
+                    await NotificationSystem.show(
+                        `Lorebook is ready for manual entries. You can enhance it later from the settings.`,
+                        [],
+                        3000
+                    );
+                }
+                
+                // Clear the flag to allow normal summarization to proceed
+                isLorebookCreationInProgress = false;
+                debugLog(`[${MODULE_NAME}] Lorebook creation flow completed, summarization now enabled`);
+            }, 1000); // Short delay to let UI settle and ensure chat is fully loaded
         } else {
-            console.log(`[${MODULE_NAME}] Existing lorebook not found in world_names, creating new one`);
-            currentChatLorebook = await MessageSummarizer.createAutoLorebook(chatId);
+            console.error(`[${MODULE_NAME}] Failed to create lorebook at chat start`);
+            // Clear the flag even if lorebook creation failed
+            isLorebookCreationInProgress = false;
         }
+    } else if (nemoLoreSettings.autoCreateLorebook) {
+        // Auto-create independent lorebook (separate from chat-based lorebook creation)
+        console.log(`[${MODULE_NAME}] Creating auto lorebook for new chat...`);
+        currentChatLorebook = await MessageSummarizer.createAutoLorebook(chatId);
     } else {
-        // Use existing lorebook if available
-        currentChatLorebook = chat_metadata[METADATA_KEY] || null;
+        // No lorebook creation enabled
+        currentChatLorebook = null;
     }
     
     // Load existing summaries for this chat
@@ -3671,15 +4215,28 @@ function setupEventHandlers() {
 
     // Handle chat clearing
     eventSource.on(event_types.CHAT_DELETED, () => {
-        console.log(`[${MODULE_NAME}] Chat deleted - clearing summaries and resetting state`);
+        debugLog(`[${MODULE_NAME}] Chat deleted - clearing summaries and resetting state`);
         TooltipManager.hideTooltip();
         clearAllHighlighting();
+        // Enhanced cleanup using state management system
+        NemoLoreState.reset();
+        NemoLoreState.currentChatLorebook = null;
+        NemoLoreState.lastHandledChatId = null;
+        NemoLoreState.loadedSummariesChatId = null;
+        NemoLoreState.messageCount = 0;
+        
+        // Keep legacy global variables in sync for backward compatibility
         currentChatLorebook = null;
         messageCount = 0;
-        // Reset summary state when chat is deleted
         messageSummaries.clear();
+        vectorizedMessages.clear();
+        highlightedNouns.clear();
         lastHandledChatId = null;
         loadedSummariesChatId = null;
+        isLorebookCreationInProgress = false;
+        isProcessingSummaries = false;
+        summaryProcessingQueue.length = 0;
+        totalChatTokens = 0;
     });
 
     eventSource.on(event_types.MESSAGE_SENT, () => {
@@ -3872,6 +4429,76 @@ function getChatContext() {
     return recentMessages.map(msg => `${msg.name}: ${msg.mes}`).join('\n\n');
 }
 
+
+// Generate initial lorebook entries for a newly created lorebook
+async function generateInitialLorebookEntries(lorebookName) {
+    if (!lorebookName) {
+        console.error(`[${MODULE_NAME}] Cannot generate entries - no lorebook name provided`);
+        return;
+    }
+    
+    if (!active_character) {
+        console.error(`[${MODULE_NAME}] Cannot generate entries - no active character`);
+        await NotificationSystem.show(
+            'Cannot generate lorebook entries: No character data available.',
+            [],
+            3000
+        );
+        return;
+    }
+    
+    console.log(`[${MODULE_NAME}] Generating initial entries for lorebook: ${lorebookName}`);
+    
+    // Use the same character finding logic as enhanceExistingLorebook
+    let characterData = characters[active_character];
+    
+    // If not found directly, try without file extension
+    if (!characterData && active_character.includes('.')) {
+        const nameWithoutExt = active_character.replace(/\.[^/.]+$/, "");
+        characterData = characters[nameWithoutExt];
+    }
+    
+    if (!characterData) {
+        console.error(`[${MODULE_NAME}] Cannot generate entries - no character data found`);
+        await NotificationSystem.show(
+            'Cannot generate lorebook entries: Character data not available.',
+            [],
+            3000
+        );
+        return;
+    }
+    
+    try {
+        console.log(`[${MODULE_NAME}] Starting entry generation for character: ${characterData.name}`);
+        
+        // Show progress notification
+        await NotificationSystem.show(
+            `🎲 Generating world entries for ${characterData.name}... This may take a moment.`,
+            [],
+            3000
+        );
+        
+        // Generate the entries using LorebookManager
+        await LorebookManager.generateInitialEntries(characterData, lorebookName);
+        
+        // Success notification
+        await NotificationSystem.show(
+            `✨ World building complete! Your lorebook now contains rich entries for people, places, and items.`,
+            [],
+            4000
+        );
+        
+        console.log(`[${MODULE_NAME}] Successfully generated initial entries for ${lorebookName}`);
+        
+    } catch (error) {
+        console.error(`[${MODULE_NAME}] Error generating initial entries:`, error);
+        await NotificationSystem.show(
+            `Error generating world entries: ${error.message}`,
+            [],
+            5000
+        );
+    }
+}
 
 async function initializeWorldExpansion() {
     const chatId = getCurrentChatId();
@@ -4343,6 +4970,101 @@ function getSelectedEmbeddingModel(source = null) {
     return modelMap[currentSource] || '';
 }
 
+// Async API helper functions
+async function refreshAsyncApiModels(provider) {
+    console.log(`[${MODULE_NAME}] Refreshing models for ${provider}`);
+    
+    const modelSelect = document.getElementById('nemolore_async_api_model');
+    const fallbackModelSelect = document.getElementById('nemolore_async_api_model_fallback');
+    
+    if (!modelSelect && !fallbackModelSelect) {
+        console.error(`[${MODULE_NAME}] Could not find model select element`);
+        return;
+    }
+    
+    // Clear existing options
+    [modelSelect, fallbackModelSelect].forEach(select => {
+        if (select) {
+            select.innerHTML = '<option value="">Loading models...</option>';
+        }
+    });
+    
+    try {
+        const models = await AsyncAPI.refreshModels(provider);
+        
+        [modelSelect, fallbackModelSelect].forEach(select => {
+            if (select) {
+                select.innerHTML = '<option value="">Select a model</option>';
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.name;
+                    if (model.id === nemoLoreSettings.asyncApiModel) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+            }
+        });
+        
+        console.log(`[${MODULE_NAME}] Loaded ${models.length} models for ${provider}`);
+        
+        if (models.length === 0) {
+            toastr.warning(`No models found for ${provider}. You may need to configure your API key.`);
+        }
+    } catch (error) {
+        console.error(`[${MODULE_NAME}] Error refreshing models:`, error);
+        [modelSelect, fallbackModelSelect].forEach(select => {
+            if (select) {
+                select.innerHTML = '<option value="">Error loading models</option>';
+            }
+        });
+        toastr.error(`Failed to load models for ${provider}: ${error.message}`);
+    }
+}
+
+async function testAsyncApiConnection() {
+    const provider = nemoLoreSettings.asyncApiProvider;
+    const apiKey = nemoLoreSettings.asyncApiKey;
+    const model = nemoLoreSettings.asyncApiModel;
+    const endpoint = nemoLoreSettings.asyncApiEndpoint;
+    
+    if (!provider || !apiKey || !model) {
+        toastr.warning('Please configure provider, API key, and model first');
+        return;
+    }
+    
+    console.log(`[${MODULE_NAME}] Testing API connection for ${provider}`);
+    
+    const testButton = document.getElementById('nemolore_test_async_api') || document.getElementById('nemolore_test_async_api_fallback');
+    const originalText = testButton ? testButton.textContent : '';
+    
+    if (testButton) {
+        testButton.textContent = '🔄 Testing...';
+        testButton.disabled = true;
+    }
+    
+    try {
+        const result = await AsyncAPI.testConnection(provider, apiKey, model, endpoint);
+        
+        if (result.success) {
+            toastr.success(result.message);
+            console.log(`[${MODULE_NAME}] API test successful for ${provider}`);
+        } else {
+            toastr.error(result.message);
+            console.error(`[${MODULE_NAME}] API test failed for ${provider}:`, result.message);
+        }
+    } catch (error) {
+        console.error(`[${MODULE_NAME}] API test error:`, error);
+        toastr.error(`Connection test failed: ${error.message}`);
+    } finally {
+        if (testButton) {
+            testButton.textContent = originalText;
+            testButton.disabled = false;
+        }
+    }
+}
+
 // Settings UI initialization (called automatically by SillyTavern when settings.html loads)
 // Check UI compatibility and switch to fallback if needed
 async function checkUICompatibility() {
@@ -4491,7 +5213,23 @@ function setupFallbackEventBindings() {
             if (e.target.checked) {
                 toastr.info('Compatibility mode will take effect after reloading the page.');
             }
-        }
+        },
+        'nemolore_enable_async_api_fallback': (e) => { 
+            nemoLoreSettings.enableAsyncApi = e.target.checked;
+            const container = document.getElementById('nemolore_async_api_container_fallback');
+            if (container) {
+                container.style.display = e.target.checked ? 'block' : 'none';
+            }
+        },
+        'nemolore_async_api_provider_fallback': async (e) => { 
+            nemoLoreSettings.asyncApiProvider = e.target.value;
+            if (e.target.value) {
+                await refreshAsyncApiModels(e.target.value);
+            }
+        },
+        'nemolore_async_api_key_fallback': (e) => { nemoLoreSettings.asyncApiKey = e.target.value; },
+        'nemolore_async_api_model_fallback': (e) => { nemoLoreSettings.asyncApiModel = e.target.value; },
+        'nemolore_async_api_endpoint_fallback': (e) => { nemoLoreSettings.asyncApiEndpoint = e.target.value; }
     };
     
     Object.entries(fallbackControls).forEach(([id, handler]) => {
@@ -4518,6 +5256,22 @@ function setupFallbackEventBindings() {
     const fallbackSystemCheckBtn = document.getElementById('nemolore_system_check_fallback');
     if (fallbackSystemCheckBtn) {
         fallbackSystemCheckBtn.addEventListener('click', runSystemCheck);
+    }
+
+    const fallbackRefreshModelsBtn = document.getElementById('nemolore_refresh_models_fallback');
+    if (fallbackRefreshModelsBtn) {
+        fallbackRefreshModelsBtn.addEventListener('click', async () => {
+            if (nemoLoreSettings.asyncApiProvider) {
+                await refreshAsyncApiModels(nemoLoreSettings.asyncApiProvider);
+            } else {
+                toastr.warning('Please select an API provider first');
+            }
+        });
+    }
+
+    const fallbackTestAsyncBtn = document.getElementById('nemolore_test_async_api_fallback');
+    if (fallbackTestAsyncBtn) {
+        fallbackTestAsyncBtn.addEventListener('click', testAsyncApiConnection);
     }
 }
 
@@ -4601,6 +5355,29 @@ async function initializeSettingsUI() {
     
     const forceCompatibilityModeElement = getElement('nemolore_force_compatibility_mode');
     if (forceCompatibilityModeElement) forceCompatibilityModeElement.checked = nemoLoreSettings.forceCompatibilityMode;
+
+    // Async API settings
+    const enableAsyncApiElement = getElement('nemolore_enable_async_api');
+    if (enableAsyncApiElement) {
+        enableAsyncApiElement.checked = nemoLoreSettings.enableAsyncApi;
+        // Show/hide container based on setting
+        const asyncApiContainer = document.getElementById('nemolore_async_api_container') || document.getElementById('nemolore_async_api_container_fallback');
+        if (asyncApiContainer) {
+            asyncApiContainer.style.display = nemoLoreSettings.enableAsyncApi ? 'block' : 'none';
+        }
+    }
+    
+    const asyncApiProviderElement = getElement('nemolore_async_api_provider');
+    if (asyncApiProviderElement) asyncApiProviderElement.value = nemoLoreSettings.asyncApiProvider;
+    
+    const asyncApiKeyElement = getElement('nemolore_async_api_key');
+    if (asyncApiKeyElement) asyncApiKeyElement.value = nemoLoreSettings.asyncApiKey;
+    
+    const asyncApiModelElement = getElement('nemolore_async_api_model');
+    if (asyncApiModelElement) asyncApiModelElement.value = nemoLoreSettings.asyncApiModel;
+    
+    const asyncApiEndpointElement = getElement('nemolore_async_api_endpoint');
+    if (asyncApiEndpointElement) asyncApiEndpointElement.value = nemoLoreSettings.asyncApiEndpoint;
 
     // Core memory settings
     const enableCoreMemoriesElement = getElement('nemolore_enable_core_memories');
@@ -4811,6 +5588,60 @@ async function initializeSettingsUI() {
         nemoLoreSettings.linkSummariesToAI = e.target.checked;
         saveSettings();
         console.log(`[${MODULE_NAME}] Link summaries to AI ${e.target.checked ? 'enabled' : 'disabled'}`);
+    });
+
+    // Async API settings event handlers
+    const asyncApiToggle = document.getElementById('nemolore_enable_async_api');
+    const asyncApiContainer = document.getElementById('nemolore_async_api_container');
+    
+    if (asyncApiToggle && asyncApiContainer) {
+        asyncApiToggle.addEventListener('change', (e) => {
+            nemoLoreSettings.enableAsyncApi = e.target.checked;
+            asyncApiContainer.style.display = e.target.checked ? 'block' : 'none';
+            saveSettings();
+            console.log(`[${MODULE_NAME}] Async API ${e.target.checked ? 'enabled' : 'disabled'}`);
+        });
+    }
+
+    document.getElementById('nemolore_async_api_provider').addEventListener('change', async (e) => {
+        nemoLoreSettings.asyncApiProvider = e.target.value;
+        saveSettings();
+        
+        // Refresh models when provider changes
+        if (e.target.value) {
+            await refreshAsyncApiModels(e.target.value);
+        }
+        console.log(`[${MODULE_NAME}] Async API provider changed to: ${e.target.value}`);
+    });
+
+    document.getElementById('nemolore_async_api_key').addEventListener('input', (e) => {
+        nemoLoreSettings.asyncApiKey = e.target.value;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Async API key updated`);
+    });
+
+    document.getElementById('nemolore_async_api_model').addEventListener('change', (e) => {
+        nemoLoreSettings.asyncApiModel = e.target.value;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Async API model changed to: ${e.target.value}`);
+    });
+
+    document.getElementById('nemolore_async_api_endpoint').addEventListener('input', (e) => {
+        nemoLoreSettings.asyncApiEndpoint = e.target.value;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Async API endpoint changed to: ${e.target.value}`);
+    });
+
+    document.getElementById('nemolore_refresh_models').addEventListener('click', async () => {
+        if (nemoLoreSettings.asyncApiProvider) {
+            await refreshAsyncApiModels(nemoLoreSettings.asyncApiProvider);
+        } else {
+            toastr.warning('Please select an API provider first');
+        }
+    });
+
+    document.getElementById('nemolore_test_async_api').addEventListener('click', async () => {
+        await testAsyncApiConnection();
     });
 
     // Core memory settings event handlers
@@ -5420,6 +6251,9 @@ async function init() {
     setupEventHandlers();
     injectCoreMemoryStyles();
     
+    // Initialize error recovery system
+    NemoLoreState.initErrorRecovery();
+    
     // Initialize chat monitoring for highlighting and message processing
     initializeChatMonitoring();
     
@@ -5583,6 +6417,35 @@ async function runSystemCheck() {
             summaryCount >= 0 ? 'PASS' : 'FAIL',
             `${summaryCount} summaries currently loaded`
         );
+        
+        // 6.5. Async API System Check
+        addResult('Async API', 'Configuration', 
+            nemoLoreSettings && nemoLoreSettings.enableAsyncApi ? 
+                (nemoLoreSettings.asyncApiProvider && nemoLoreSettings.asyncApiKey && nemoLoreSettings.asyncApiModel ? 'PASS' : 'WARN') : 
+                'WARN',
+            nemoLoreSettings && nemoLoreSettings.enableAsyncApi ? 
+                `Enabled: ${nemoLoreSettings.asyncApiProvider} - ${nemoLoreSettings.asyncApiModel}` : 
+                'Disabled - using SillyTavern API'
+        );
+        
+        if (nemoLoreSettings && nemoLoreSettings.enableAsyncApi && nemoLoreSettings.asyncApiProvider && nemoLoreSettings.asyncApiKey && nemoLoreSettings.asyncApiModel) {
+            try {
+                console.log(`[${MODULE_NAME}] System Check: Testing async API connection...`);
+                const testResult = await AsyncAPI.testConnection(
+                    nemoLoreSettings.asyncApiProvider,
+                    nemoLoreSettings.asyncApiKey,
+                    nemoLoreSettings.asyncApiModel,
+                    nemoLoreSettings.asyncApiEndpoint
+                );
+                
+                addResult('Async API', 'Connection Test', 
+                    testResult.success ? 'PASS' : 'FAIL',
+                    testResult.message
+                );
+            } catch (error) {
+                addResult('Async API', 'Connection Test', 'FAIL', 'Connection test failed', error.message);
+            }
+        }
         
         // 7. Memory System Check
         addResult('Memory', 'Running Memory Size', 

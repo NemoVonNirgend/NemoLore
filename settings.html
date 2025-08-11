@@ -95,6 +95,49 @@
                             <option value="">Same as Current</option>
                         </select>
                     </div>
+                    
+                    <!-- Async API Settings -->
+                    <div class="flex-container">
+                        <label class="checkbox_label" for="nemolore_enable_async_api">
+                            <input id="nemolore_enable_async_api" type="checkbox">
+                            Enable Independent Async API (Optional but Recommended)
+                        </label>
+                    </div>
+                    <div id="nemolore_async_api_container" class="nemolore-async-api-settings" style="display: none; margin-left: 20px; padding: 10px; border-left: 3px solid #4a90e2; background: #f8f9fa;">
+                        <div class="flex-container">
+                            <label for="nemolore_async_api_provider">API Provider:</label>
+                            <select id="nemolore_async_api_provider" class="text_pole">
+                                <option value="">Select Provider</option>
+                                <option value="openai">OpenAI</option>
+                                <option value="gemini">Google Gemini</option>
+                                <option value="claude">Anthropic Claude</option>
+                                <option value="openrouter">OpenRouter</option>
+                            </select>
+                        </div>
+                        <div class="flex-container">
+                            <label for="nemolore_async_api_key">API Key:</label>
+                            <input id="nemolore_async_api_key" type="password" class="text_pole" placeholder="Enter your API key">
+                            <small style="display: block; color: #666; margin-top: 5px;">Your API key is stored locally and only used for NemoLore requests.</small>
+                        </div>
+                        <div class="flex-container">
+                            <label for="nemolore_async_api_model">Model:</label>
+                            <select id="nemolore_async_api_model" class="text_pole">
+                                <option value="">Select model after choosing provider</option>
+                            </select>
+                            <button id="nemolore_refresh_models" class="menu_button" style="margin-left: 10px; padding: 2px 8px;">Refresh Models</button>
+                        </div>
+                        <div class="flex-container">
+                            <label for="nemolore_async_api_endpoint">Custom Endpoint (Optional):</label>
+                            <input id="nemolore_async_api_endpoint" type="text" class="text_pole" placeholder="Leave blank for default">
+                        </div>
+                        <div class="flex-container">
+                            <small style="color: #4a90e2;"><strong>Benefits:</strong> Summaries happen in background while you chat, faster processing, no interruption to your conversation flow.</small>
+                        </div>
+                        <div class="flex-container">
+                            <button id="nemolore_test_async_api" class="menu_button" style="background-color: #28a745; color: white;">🧪 Test API Connection</button>
+                        </div>
+                    </div>
+                    
                     <div class="flex-container">
                         <label for="nemolore_prefill">Summarization Prefill:</label>
                         <input id="nemolore_prefill" type="text" class="text_pole">
@@ -352,6 +395,31 @@
                 <label><input id="nemolore_auto_summarize_fallback" type="checkbox"> Auto Summarize Messages</label><br>
                 <label>Connection Profile: <select id="nemolore_connection_profile_fallback"><option value="">Same as Current</option></select></label><br>
                 <label>Completion Preset: <select id="nemolore_completion_preset_fallback"><option value="">Same as Current</option></select></label><br>
+                
+                <!-- Async API Settings (Fallback) -->
+                <label><input id="nemolore_enable_async_api_fallback" type="checkbox"> Enable Independent Async API (Optional but Recommended)</label><br>
+                <div id="nemolore_async_api_container_fallback" style="display: none; margin-left: 20px; padding: 10px; border: 1px solid #ddd; background: #f9f9f9;">
+                    <label>API Provider: 
+                        <select id="nemolore_async_api_provider_fallback">
+                            <option value="">Select Provider</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="gemini">Google Gemini</option>
+                            <option value="claude">Anthropic Claude</option>
+                            <option value="openrouter">OpenRouter</option>
+                        </select>
+                    </label><br>
+                    <label>API Key: <input id="nemolore_async_api_key_fallback" type="password" placeholder="Enter your API key" style="width: 250px;"></label><br>
+                    <label>Model: 
+                        <select id="nemolore_async_api_model_fallback">
+                            <option value="">Select model after choosing provider</option>
+                        </select>
+                        <button id="nemolore_refresh_models_fallback" class="menu_button" style="padding: 2px 8px;">Refresh</button>
+                    </label><br>
+                    <label>Custom Endpoint: <input id="nemolore_async_api_endpoint_fallback" type="text" placeholder="Leave blank for default" style="width: 250px;"></label><br>
+                    <button id="nemolore_test_async_api_fallback" class="menu_button" style="background-color: #28a745; color: white;">🧪 Test API</button><br>
+                    <small style="color: #666;">Benefits: Background processing, no conversation interruption</small>
+                </div>
+                
                 <label>Summarization Prefill: <input id="nemolore_prefill_fallback" type="text" style="width: 200px;"></label><br>
                 <label>Summary Threshold (tokens): <input id="nemolore_summary_threshold_fallback" type="number" style="width: 100px;"></label><br>
                 <label>Summary Max Length (tokens): <input id="nemolore_summary_max_length_fallback" type="number" style="width: 100px;"></label><br>
