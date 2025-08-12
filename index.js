@@ -19,6 +19,7 @@ import {
     main_api,
     getRequestHeaders
 } from '../../../../script.js';
+import { model_list as openai_model_list } from '../../../openai.js';
 import { selected_group } from '../../../group-chats.js';
 import { extension_settings, renderExtensionTemplateAsync, writeExtensionField, getContext } from '../../../extensions.js';
 import { MacrosParser } from '../../../macros.js';
@@ -245,7 +246,7 @@ let nemoLoreSettings = {
     enableSummarization: true,
     connectionProfile: '',  // Connection profile for summarization (like qvink)
     completionPreset: '',   // Completion preset for summarization
-    prefill: '', // Default prefill for summarization
+    prefill: '<think>\n\n</think>', // Default prefill for summarization
     autoSummarize: true,    // Automatically summarize every message
     runningMemorySize: 50,  // Number of recent messages to keep visible (rest get hidden/summarized)
     maxContextSize: 100000, // Target max context size to stay under
@@ -737,10 +738,56 @@ class LorebookManager {
         console.log(`[${MODULE_NAME}] Generated prompt length: ${prompt.length} characters`);
         
         try {
-            console.log(`[${MODULE_NAME}] Calling generateQuietPrompt...`);
-            const response = await generateQuietPrompt(prompt, false);
-            console.log(`[${MODULE_NAME}] Received response length: ${response?.length || 0} characters`);
-            console.log(`[${MODULE_NAME}] Response preview:`, response?.substring(0, 200) + '...');
+            let response;
+            
+            // Check if async API is configured and enabled
+            if (nemoLoreSettings.enableAsyncApi && 
+                nemoLoreSettings.asyncApiProvider && 
+                nemoLoreSettings.asyncApiKey && 
+                nemoLoreSettings.asyncApiModel) {
+                
+                console.log(`[${MODULE_NAME}] === ASYNC API CALL START ===`);
+                console.log(`[${MODULE_NAME}] Using Async API for lorebook generation`);
+                console.log(`[${MODULE_NAME}] Provider: ${nemoLoreSettings.asyncApiProvider}`);
+                console.log(`[${MODULE_NAME}] Model: ${nemoLoreSettings.asyncApiModel}`);
+                console.log(`[${MODULE_NAME}] Prompt length: ${prompt.length} characters`);
+                console.log(`[${MODULE_NAME}] Prompt preview:`, prompt.substring(0, 300) + '...');
+                
+                const startTime = Date.now();
+                response = await AsyncAPI.makeRequest(
+                    nemoLoreSettings.asyncApiProvider,
+                    nemoLoreSettings.asyncApiKey,
+                    nemoLoreSettings.asyncApiModel,
+                    prompt,
+                    nemoLoreSettings.asyncApiEndpoint
+                );
+                const duration = Date.now() - startTime;
+                
+                console.log(`[${MODULE_NAME}] === ASYNC API CALL COMPLETE ===`);
+                console.log(`[${MODULE_NAME}] Async API response received in ${duration}ms`);
+                console.log(`[${MODULE_NAME}] Response length: ${response?.length || 0} characters`);
+                console.log(`[${MODULE_NAME}] Response preview:`, response?.substring(0, 300) + '...');
+                
+            } else {
+                console.log(`[${MODULE_NAME}] === SILLYTAVERN API CALL START ===`);
+                console.log(`[${MODULE_NAME}] Async API not configured, using SillyTavern generateQuietPrompt`);
+                console.log(`[${MODULE_NAME}] Prompt length: ${prompt.length} characters`);
+                console.log(`[${MODULE_NAME}] Prompt preview:`, prompt.substring(0, 300) + '...');
+                
+                const startTime = Date.now();
+                response = await generateQuietPrompt(prompt, false);
+                const duration = Date.now() - startTime;
+                
+                console.log(`[${MODULE_NAME}] === SILLYTAVERN API CALL COMPLETE ===`);
+                console.log(`[${MODULE_NAME}] SillyTavern API response received in ${duration}ms`);
+                console.log(`[${MODULE_NAME}] Response length: ${response?.length || 0} characters`);
+                console.log(`[${MODULE_NAME}] Response preview:`, response?.substring(0, 300) + '...');
+            }
+            
+            if (!response || response.trim().length === 0) {
+                console.error(`[${MODULE_NAME}] ERROR: Empty response from API`);
+                throw new Error('Received empty response from AI API');
+            }
             
             const entries = this.parseGenerationResponse(response);
             console.log(`[${MODULE_NAME}] Parsed ${entries.length} entries:`, entries);
@@ -3068,7 +3115,7 @@ ${summaryData.text}
         }
     }
 
-    static async promptForWorldFleshing(unsummarizedMessages) {
+    static async promptForWorldFleshing(unsummarizedMessages, askChunkSummaries = true) {
         const action = await NotificationSystem.show(
             `🌍 Would you like to flesh out the world? This will generate additional lore entries based on the chat content.`,
             [
@@ -3080,12 +3127,16 @@ ${summaryData.text}
         
         if (action === 'yes') {
             console.log(`[${MODULE_NAME}] User accepted world fleshing - initiating lorebook generation`);
-            // Trigger world fleshing/lorebook generation here if needed
+            // Trigger actual world expansion
+            await initializeWorldExpansion();
+            
+            // Only ask about chunk summaries after successful world expansion
+            if (askChunkSummaries && unsummarizedMessages && unsummarizedMessages.length > 0) {
+                await this.promptForChunkSummaries(unsummarizedMessages);
+            }
         } else {
             console.log(`[${MODULE_NAME}] User declined world fleshing`);
         }
-        
-        await this.promptForChunkSummaries(unsummarizedMessages);
     }
 
     static async promptForChunkSummaries(unsummarizedMessages) {
@@ -3975,6 +4026,8 @@ class AsyncAPI {
             { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
         ],
         gemini: [
+            { id: 'gemini-2.5-pro-latest', name: 'Gemini 2.5 Pro' },
+            { id: 'gemini-2.5-flash-latest', name: 'Gemini 2.5 Flash' },
             { id: 'gemini-1.5-pro-latest', name: 'Gemini 1.5 Pro' },
             { id: 'gemini-1.5-flash-latest', name: 'Gemini 1.5 Flash' },
             { id: 'gemini-pro', name: 'Gemini Pro' }
@@ -4001,7 +4054,15 @@ class AsyncAPI {
             if (provider === 'openrouter') {
                 return await this.fetchOpenRouterModels();
             } else {
-                // For other providers, use hardcoded models for now
+                // Try to get models from SillyTavern's current API if possible
+                const dynamicModels = await this.tryGetSillyTavernModels(provider);
+                if (dynamicModels && dynamicModels.length > 0) {
+                    console.log(`[${MODULE_NAME}] Using ${dynamicModels.length} models from SillyTavern for ${provider}`);
+                    return dynamicModels;
+                }
+                
+                // Fall back to hardcoded models
+                console.log(`[${MODULE_NAME}] Using hardcoded models for ${provider}`);
                 return this.models[provider] || [];
             }
         } catch (error) {
@@ -4009,6 +4070,102 @@ class AsyncAPI {
             return this.models[provider] || [];
         }
     }
+
+    static async tryGetSillyTavernModels(provider) {
+        try {
+            // First try to get models from SillyTavern's DOM elements
+            const domModels = this.getSillyTavernDOMModels(provider);
+            if (domModels && domModels.length > 0) {
+                console.log(`[${MODULE_NAME}] Found ${domModels.length} models from SillyTavern DOM for ${provider}`);
+                return domModels;
+            }
+
+            // For OpenAI, also check the imported model list as fallback
+            if (provider === 'openai' && openai_model_list && openai_model_list.length > 0) {
+                // Filter to text generation models (exclude embedding models)
+                const chatModels = openai_model_list.filter(model => 
+                    model.id && !model.id.includes('embedding') && 
+                    (model.id.includes('gpt') || model.id.includes('o1'))
+                ).map(model => ({
+                    id: model.id,
+                    name: model.name || model.id
+                }));
+                
+                if (chatModels.length > 0) {
+                    return chatModels;
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            console.warn(`[${MODULE_NAME}] Could not get dynamic models for ${provider}:`, error);
+            return null;
+        }
+    }
+
+    static getSillyTavernDOMModels(provider) {
+        try {
+            let selectorId = '';
+            
+            // Map provider to SillyTavern's model select elements
+            switch (provider) {
+                case 'openai':
+                    selectorId = '#model_openai_select';
+                    break;
+                case 'claude':
+                    selectorId = '#model_claude_select';
+                    break;
+                case 'gemini':
+                    selectorId = '#model_google_select';
+                    break;
+                case 'openrouter':
+                    selectorId = '#model_openrouter_select';
+                    break;
+                default:
+                    return null;
+            }
+
+            const selectElement = document.querySelector(selectorId);
+            if (!selectElement) {
+                console.log(`[${MODULE_NAME}] Could not find model select element: ${selectorId} (SillyTavern may still be loading)`);
+                return null;
+            }
+
+            // Extract options from the select element, filtering out empty values and separators
+            const options = Array.from(selectElement.querySelectorAll('option'))
+                .filter(option => {
+                    const value = option.value && option.value.trim();
+                    const text = option.textContent && option.textContent.trim();
+                    // Filter out empty values, separators, and disabled options
+                    return value && value !== '' && !option.disabled && text && !text.startsWith('---');
+                })
+                .map(option => ({
+                    id: option.value,
+                    name: this.cleanModelName(option.textContent.trim(), option.value)
+                }))
+                .slice(0, 25); // Limit to top 25 models for performance
+
+            console.log(`[${MODULE_NAME}] Extracted ${options.length} models from ${selectorId} for ${provider}`);
+            return options.length > 0 ? options : null;
+        } catch (error) {
+            console.warn(`[${MODULE_NAME}] Error extracting DOM models for ${provider}:`, error);
+            return null;
+        }
+    }
+
+    static cleanModelName(displayName, value) {
+        // Clean up model display names
+        if (!displayName || displayName === value) {
+            return value;
+        }
+        
+        // Remove arrows and redirects (e.g., "model → other-model")
+        const cleanName = displayName.replace(/\s*→\s*.+$/, '').trim();
+        
+        // If the clean name is empty, use the value
+        return cleanName || value;
+    }
+
 
     static async fetchOpenRouterModels() {
         try {
@@ -4075,31 +4232,76 @@ class AsyncAPI {
     }
 
     static async makeOpenAIRequest(endpoint, apiKey, model, prompt) {
+        console.log(`[${MODULE_NAME}] === ASYNC API CALL START ===`);
+        console.log(`[${MODULE_NAME}] Provider: OpenAI`);
+        console.log(`[${MODULE_NAME}] Endpoint: ${endpoint}`);
+        console.log(`[${MODULE_NAME}] Model: ${model}`);
+        console.log(`[${MODULE_NAME}] Prompt length: ${prompt.length} characters`);
+        console.log(`[${MODULE_NAME}] Prompt preview:`, prompt.substring(0, 200) + '...');
+        
+        const requestBody = {
+            model: model,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 1000,
+            temperature: 0.3
+        };
+        
+        console.log(`[${MODULE_NAME}] Request body:`, {
+            model: requestBody.model,
+            messages: [{ role: 'user', content: `${prompt.substring(0, 100)}...` }],
+            max_tokens: requestBody.max_tokens,
+            temperature: requestBody.temperature
+        });
+        
+        const startTime = Date.now();
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${apiKey}`,
+                'Authorization': `Bearer ${apiKey.substring(0, 8)}...`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                model: model,
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: 1000,
-                temperature: 0.3
-            })
+            body: JSON.stringify(requestBody)
         });
+        
+        const duration = Date.now() - startTime;
+        console.log(`[${MODULE_NAME}] API response received in ${duration}ms`);
+        console.log(`[${MODULE_NAME}] Response status: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`[${MODULE_NAME}] OpenAI API error: ${response.status} ${response.statusText}`);
+            console.error(`[${MODULE_NAME}] Error response body:`, errorText);
+            
+            try {
+                const errorData = JSON.parse(errorText);
+                console.error(`[${MODULE_NAME}] Parsed error data:`, errorData);
+                throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || errorText}`);
+            } catch (parseError) {
+                throw new Error(`OpenAI API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
         }
 
         const data = await response.json();
-        return data.choices[0]?.message?.content || '';
+        const content = data.choices[0]?.message?.content || '';
+        
+        console.log(`[${MODULE_NAME}] === ASYNC API CALL COMPLETE ===`);
+        console.log(`[${MODULE_NAME}] Response length: ${content.length} characters`);
+        console.log(`[${MODULE_NAME}] Response preview:`, content.substring(0, 200) + '...');
+        
+        return content;
     }
 
     static async makeGeminiRequest(endpoint, apiKey, model, prompt) {
-        const url = endpoint.replace('{model}', model) + `?key=${apiKey}`;
+        console.log(`[${MODULE_NAME}] === ASYNC API CALL START ===`);
+        console.log(`[${MODULE_NAME}] Provider: Gemini`);
+        console.log(`[${MODULE_NAME}] Model: ${model}`);
+        console.log(`[${MODULE_NAME}] Prompt length: ${prompt.length} characters`);
+        console.log(`[${MODULE_NAME}] Prompt preview:`, prompt.substring(0, 200) + '...');
         
+        const url = endpoint.replace('{model}', model) + `?key=${apiKey}`;
+        console.log(`[${MODULE_NAME}] Request URL: ${url.split('?')[0]}?key=${apiKey.substring(0, 8)}...`);
+        
+        const startTime = Date.now();
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -4111,24 +4313,64 @@ class AsyncAPI {
                 }],
                 generationConfig: {
                     temperature: 0.3,
-                    maxOutputTokens: 1000
+                    maxOutputTokens: 64000
                 }
             })
         });
+        
+        const duration = Date.now() - startTime;
+        console.log(`[${MODULE_NAME}] API response received in ${duration}ms`);
+        console.log(`[${MODULE_NAME}] Response status: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
-            throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`[${MODULE_NAME}] Gemini API error: ${response.status} ${response.statusText}`);
+            console.error(`[${MODULE_NAME}] Error response body:`, errorText);
+            
+            try {
+                const errorData = JSON.parse(errorText);
+                console.error(`[${MODULE_NAME}] Parsed error data:`, errorData);
+                throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || errorText}`);
+            } catch (parseError) {
+                throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
         }
 
         const data = await response.json();
-        return data.candidates[0]?.content?.parts[0]?.text || '';
+        console.log(`[${MODULE_NAME}] Full API response:`, JSON.stringify(data, null, 2));
+        
+        if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+            console.error(`[${MODULE_NAME}] Invalid response structure: candidates missing or empty`);
+            throw new Error(`Invalid Gemini API response: ${JSON.stringify(data)}`);
+        }
+        
+        const candidate = data.candidates[0];
+        const content = candidate?.content?.parts?.[0]?.text || '';
+        
+        if (!content && candidate?.finishReason === 'MAX_TOKENS') {
+            console.warn(`[${MODULE_NAME}] Response was truncated due to max tokens limit`);
+        }
+        
+        console.log(`[${MODULE_NAME}] === ASYNC API CALL COMPLETE ===`);
+        console.log(`[${MODULE_NAME}] Response length: ${content.length} characters`);
+        console.log(`[${MODULE_NAME}] Response preview:`, content.substring(0, 200) + '...');
+        
+        return content;
     }
 
     static async makeClaudeRequest(endpoint, apiKey, model, prompt) {
+        console.log(`[${MODULE_NAME}] === ASYNC API CALL START ===`);
+        console.log(`[${MODULE_NAME}] Provider: Claude`);
+        console.log(`[${MODULE_NAME}] Endpoint: ${endpoint}`);
+        console.log(`[${MODULE_NAME}] Model: ${model}`);
+        console.log(`[${MODULE_NAME}] Prompt length: ${prompt.length} characters`);
+        console.log(`[${MODULE_NAME}] Prompt preview:`, prompt.substring(0, 200) + '...');
+        
+        const startTime = Date.now();
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
-                'x-api-key': apiKey,
+                'x-api-key': apiKey.substring(0, 8) + '...',
                 'Content-Type': 'application/json',
                 'anthropic-version': '2023-06-01'
             },
@@ -4139,13 +4381,33 @@ class AsyncAPI {
                 temperature: 0.3
             })
         });
+        
+        const duration = Date.now() - startTime;
+        console.log(`[${MODULE_NAME}] API response received in ${duration}ms`);
+        console.log(`[${MODULE_NAME}] Response status: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
-            throw new Error(`Claude API error: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(`[${MODULE_NAME}] Claude API error: ${response.status} ${response.statusText}`);
+            console.error(`[${MODULE_NAME}] Error response body:`, errorText);
+            
+            try {
+                const errorData = JSON.parse(errorText);
+                console.error(`[${MODULE_NAME}] Parsed error data:`, errorData);
+                throw new Error(`Claude API error: ${response.status} - ${errorData.error?.message || errorText}`);
+            } catch (parseError) {
+                throw new Error(`Claude API error: ${response.status} ${response.statusText} - ${errorText}`);
+            }
         }
 
         const data = await response.json();
-        return data.content[0]?.text || '';
+        const content = data.content[0]?.text || '';
+        
+        console.log(`[${MODULE_NAME}] === ASYNC API CALL COMPLETE ===`);
+        console.log(`[${MODULE_NAME}] Response length: ${content.length} characters`);
+        console.log(`[${MODULE_NAME}] Response preview:`, content.substring(0, 200) + '...');
+        
+        return content;
     }
 
     static async makeOpenRouterRequest(endpoint, apiKey, model, prompt) {
@@ -5929,6 +6191,7 @@ async function generateInitialLorebookEntries(lorebookName) {
 }
 
 async function initializeWorldExpansion() {
+    console.log(`[${MODULE_NAME}] Direct world expansion triggered - skipping consent prompts`);
     const chatId = getCurrentChatId();
     const lorebookName = await LorebookManager.createChatLorebook(chatId);
     
@@ -6423,15 +6686,29 @@ async function refreshAsyncApiModels(provider) {
         [modelSelect, fallbackModelSelect].forEach(select => {
             if (select) {
                 select.innerHTML = '<option value="">Select a model</option>';
+                let modelFound = false;
+                
                 models.forEach(model => {
                     const option = document.createElement('option');
                     option.value = model.id;
                     option.textContent = model.name;
                     if (model.id === nemoLoreSettings.asyncApiModel) {
                         option.selected = true;
+                        modelFound = true;
+                        console.log(`[${MODULE_NAME}] Restored saved model selection: ${model.id}`);
                     }
                     select.appendChild(option);
                 });
+                
+                // If saved model wasn't found, log this fact
+                if (nemoLoreSettings.asyncApiModel && !modelFound) {
+                    console.warn(`[${MODULE_NAME}] Saved model "${nemoLoreSettings.asyncApiModel}" not found in available models for ${provider}`);
+                }
+                
+                // Ensure the dropdown value matches the setting
+                if (modelFound) {
+                    select.value = nemoLoreSettings.asyncApiModel;
+                }
             }
         });
         
@@ -6802,10 +7079,22 @@ async function initializeSettingsUI() {
     if (asyncApiKeyElement) asyncApiKeyElement.value = nemoLoreSettings.asyncApiKey;
     
     const asyncApiModelElement = getElement('nemolore_async_api_model');
-    if (asyncApiModelElement) asyncApiModelElement.value = nemoLoreSettings.asyncApiModel;
+    if (asyncApiModelElement) {
+        asyncApiModelElement.value = nemoLoreSettings.asyncApiModel;
+        console.log(`[${MODULE_NAME}] Loading saved async API model: "${nemoLoreSettings.asyncApiModel}"`);
+        console.log(`[${MODULE_NAME}] Model element value set to: "${asyncApiModelElement.value}"`);
+    }
     
     const asyncApiEndpointElement = getElement('nemolore_async_api_endpoint');
     if (asyncApiEndpointElement) asyncApiEndpointElement.value = nemoLoreSettings.asyncApiEndpoint;
+    
+    // If a provider is already configured, refresh models to populate dropdown and restore selection
+    if (nemoLoreSettings.asyncApiProvider) {
+        console.log(`[${MODULE_NAME}] Provider already configured (${nemoLoreSettings.asyncApiProvider}), refreshing models...`);
+        setTimeout(async () => {
+            await refreshAsyncApiModels(nemoLoreSettings.asyncApiProvider);
+        }, 500); // Small delay to ensure DOM is ready
+    }
 
     // Core memory settings
     const enableCoreMemoriesElement = getElement('nemolore_enable_core_memories');
@@ -7065,6 +7354,7 @@ async function initializeSettingsUI() {
         nemoLoreSettings.asyncApiModel = e.target.value;
         saveSettings();
         console.log(`[${MODULE_NAME}] Async API model changed to: ${e.target.value}`);
+        console.log(`[${MODULE_NAME}] Model saved to settings:`, nemoLoreSettings.asyncApiModel);
     });
 
     document.getElementById('nemolore_async_api_endpoint').addEventListener('input', (e) => {
@@ -7773,8 +8063,12 @@ jQuery(() => {
     
     // Register NemoLore macro for summary injection
     MacrosParser.registerMacro(NEMOLORE_MACRO, () => getNemoLoreSummaries());
+    MacrosParser.registerMacro('NemoLoreFleshWorld', () => {
+        initializeWorldExpansion();
+        return 'NemoLore world expansion initiated...';
+    });
     
-    console.log(`[${MODULE_NAME}] Macro registered: {{${NEMOLORE_MACRO}}}`);
+    console.log(`[${MODULE_NAME}] Macros registered: {{${NEMOLORE_MACRO}}} and {{NemoLoreFleshWorld}}}`);
 });
 
 // System Check Function - Tests all core NemoLore functionality

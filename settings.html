@@ -106,7 +106,7 @@
                             Enable Independent Async API (Optional but Recommended)
                         </label>
                     </div>
-                    <div id="nemolore_async_api_container" class="nemolore-async-api-settings" style="display: none; margin-left: 20px; padding: 10px; border-left: 3px solid #4a90e2; background: #f8f9fa;">
+                    <div id="nemolore_async_api_container" class="nemolore-async-api-settings" style="display: none; margin-left: 20px; padding: 10px; border-left: 3px solid rgba(74, 144, 226, 0.8); background: rgba(74, 144, 226, 0.1); color: inherit;">
                         <div class="flex-container">
                             <label for="nemolore_async_api_provider">API Provider:</label>
                             <select id="nemolore_async_api_provider" class="text_pole">
@@ -120,7 +120,7 @@
                         <div class="flex-container">
                             <label for="nemolore_async_api_key">API Key:</label>
                             <input id="nemolore_async_api_key" type="password" class="text_pole" placeholder="Enter your API key">
-                            <small style="display: block; color: #666; margin-top: 5px;">Your API key is stored locally and only used for NemoLore requests.</small>
+                            <small style="display: block; color: inherit; opacity: 0.7; margin-top: 5px;">Your API key is stored locally and only used for NemoLore requests.</small>
                         </div>
                         <div class="flex-container">
                             <label for="nemolore_async_api_model">Model:</label>
@@ -134,7 +134,7 @@
                             <input id="nemolore_async_api_endpoint" type="text" class="text_pole" placeholder="Leave blank for default">
                         </div>
                         <div class="flex-container">
-                            <small style="color: #4a90e2;"><strong>Benefits:</strong> Summaries happen in background while you chat, faster processing, no interruption to your conversation flow.</small>
+                            <small style="color: rgba(74, 144, 226, 0.9);"><strong>Benefits:</strong> Summaries happen in background while you chat, faster processing, no interruption to your conversation flow.</small>
                         </div>
                         <div class="flex-container">
                             <button id="nemolore_test_async_api" class="menu_button" style="background-color: #28a745; color: white;">🧪 Test API Connection</button>
@@ -334,9 +334,9 @@
                     <div class="flex-container" id="nemolore_openai_model_container" style="display: none;">
                         <label for="nemolore_openai_model">OpenAI Model:</label>
                         <select id="nemolore_openai_model" class="text_pole">
-                            <option value="text-embedding-ada-002">text-embedding-ada-002</option>
-                            <option value="text-embedding-3-small">text-embedding-3-small</option>
+                            <option value="text-embedding-3-small">text-embedding-3-small (Recommended)</option>
                             <option value="text-embedding-3-large">text-embedding-3-large</option>
+                            <option value="text-embedding-ada-002">text-embedding-ada-002 (Legacy)</option>
                         </select>
                     </div>
                     <div class="flex-container" id="nemolore_google_model_container" style="display: none;">
@@ -455,7 +455,7 @@
                 
                 <!-- Async API Settings (Fallback) -->
                 <label><input id="nemolore_enable_async_api_fallback" type="checkbox"> Enable Independent Async API (Optional but Recommended)</label><br>
-                <div id="nemolore_async_api_container_fallback" style="display: none; margin-left: 20px; padding: 10px; border: 1px solid #ddd; background: #f9f9f9;">
+                <div id="nemolore_async_api_container_fallback" style="display: none; margin-left: 20px; padding: 10px; border: 1px solid rgba(74, 144, 226, 0.5); background: rgba(74, 144, 226, 0.1); color: inherit;">
                     <label>API Provider: 
                         <select id="nemolore_async_api_provider_fallback">
                             <option value="">Select Provider</option>
@@ -522,9 +522,9 @@
                 <div id="nemolore_model_containers_fallback" style="margin: 10px 0;">
                     <label style="display: none;" id="nemolore_openai_model_fallback_container">OpenAI Model: 
                         <select id="nemolore_openai_model_fallback">
-                            <option value="text-embedding-ada-002">text-embedding-ada-002</option>
-                            <option value="text-embedding-3-small">text-embedding-3-small</option>
+                            <option value="text-embedding-3-small">text-embedding-3-small (Recommended)</option>
                             <option value="text-embedding-3-large">text-embedding-3-large</option>
+                            <option value="text-embedding-ada-002">text-embedding-ada-002 (Legacy)</option>
                         </select>
                     </label><br>
                     <label style="display: none;" id="nemolore_google_model_fallback_container">Google Model: 
