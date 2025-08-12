@@ -422,6 +422,102 @@ class NotificationSystem {
             });
         });
     }
+
+    static showProgress(title, steps = []) {
+        return new ProgressNotification(title, steps);
+    }
+}
+
+class ProgressNotification {
+    constructor(title, steps = []) {
+        this.title = title;
+        this.steps = steps;
+        this.currentStep = 0;
+        this.notification = null;
+        this.progressBar = null;
+        this.progressText = null;
+        this.stepText = null;
+        this.isComplete = false;
+        this.create();
+    }
+
+    create() {
+        this.notification = document.createElement('div');
+        this.notification.className = 'nemolore-notification nemolore-progress-notification';
+        this.notification.innerHTML = `
+            <div class="nemolore-notification-content">
+                <h4 style="margin: 0 0 10px 0; color: #6b46c1;">🌍 ${this.title}</h4>
+                <div class="nemolore-progress-container">
+                    <div class="nemolore-progress-bar">
+                        <div class="nemolore-progress-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="nemolore-progress-text">0%</div>
+                </div>
+                <div class="nemolore-progress-step">Initializing...</div>
+            </div>
+        `;
+
+        this.progressBar = this.notification.querySelector('.nemolore-progress-fill');
+        this.progressText = this.notification.querySelector('.nemolore-progress-text');
+        this.stepText = this.notification.querySelector('.nemolore-progress-step');
+
+        document.body.appendChild(this.notification);
+    }
+
+    updateProgress(stepIndex, stepMessage = null) {
+        if (this.isComplete) return;
+
+        this.currentStep = stepIndex;
+        const progress = Math.min(100, Math.round((stepIndex / Math.max(1, this.steps.length)) * 100));
+        
+        this.progressBar.style.width = `${progress}%`;
+        this.progressText.textContent = `${progress}%`;
+        
+        if (stepMessage) {
+            this.stepText.textContent = stepMessage;
+        } else if (this.steps[stepIndex]) {
+            this.stepText.textContent = this.steps[stepIndex];
+        }
+    }
+
+    setCustomMessage(message) {
+        if (this.stepText) {
+            this.stepText.textContent = message;
+        }
+    }
+
+    complete(finalMessage = 'Complete!') {
+        if (this.isComplete) return;
+        
+        this.isComplete = true;
+        this.progressBar.style.width = '100%';
+        this.progressText.textContent = '100%';
+        this.stepText.textContent = finalMessage;
+        
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            this.remove();
+        }, 3000);
+    }
+
+    error(errorMessage) {
+        if (!this.notification) return;
+        
+        this.progressBar.style.backgroundColor = '#dc3545';
+        this.progressText.textContent = 'Error';
+        this.stepText.textContent = errorMessage;
+        
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            this.remove();
+        }, 5000);
+    }
+
+    remove() {
+        if (this.notification && this.notification.parentNode) {
+            this.notification.remove();
+        }
+    }
 }
 
 // Noun detection and highlighting system
@@ -721,7 +817,7 @@ class LorebookManager {
         }
     }
 
-    static async generateInitialEntries(characterData, lorebookName) {
+    static async generateInitialEntries(characterData, lorebookName, progressCallback = null) {
         if (!characterData) {
             console.error(`[${MODULE_NAME}] No character data provided`);
             return;
@@ -734,8 +830,14 @@ class LorebookManager {
 
         console.log(`[${MODULE_NAME}] Starting generation for character: ${characterData.name}, lorebook: ${lorebookName}`);
         
+        // Update progress
+        if (progressCallback) progressCallback(0, 'Building generation prompt...');
+        
         const prompt = this.buildInitialGenerationPrompt(characterData);
         console.log(`[${MODULE_NAME}] Generated prompt length: ${prompt.length} characters`);
+        
+        // Update progress
+        if (progressCallback) progressCallback(1, 'Sending request to AI...');
         
         try {
             let response;
@@ -784,10 +886,16 @@ class LorebookManager {
                 console.log(`[${MODULE_NAME}] Response preview:`, response?.substring(0, 300) + '...');
             }
             
+            // Update progress
+            if (progressCallback) progressCallback(2, 'Processing AI response...');
+            
             if (!response || response.trim().length === 0) {
                 console.error(`[${MODULE_NAME}] ERROR: Empty response from API`);
                 throw new Error('Received empty response from AI API');
             }
+            
+            // Update progress
+            if (progressCallback) progressCallback(3, 'Parsing lorebook entries...');
             
             const entries = this.parseGenerationResponse(response);
             console.log(`[${MODULE_NAME}] Parsed ${entries.length} entries:`, entries);
@@ -802,8 +910,14 @@ class LorebookManager {
                 return;
             }
             
+            // Update progress
+            if (progressCallback) progressCallback(4, `Adding ${entries.length} entries to lorebook...`);
+            
             await this.addEntriesToLorebook(lorebookName, entries);
             console.log(`[${MODULE_NAME}] Successfully generated ${entries.length} initial entries`);
+            
+            // Update progress - complete
+            if (progressCallback) progressCallback(5, `Successfully created ${entries.length} lorebook entries!`);
         } catch (error) {
             console.error(`[${MODULE_NAME}] Error generating initial entries:`, error);
             await NotificationSystem.show(
@@ -6240,6 +6354,53 @@ async function initializeWorldExpansion() {
     }
 }
 
+async function initializeWorldExpansionWithProgress(progressNotification) {
+    console.log(`[${MODULE_NAME}] Direct world expansion triggered with progress tracking`);
+    const chatId = getCurrentChatId();
+    const lorebookName = await LorebookManager.createChatLorebook(chatId);
+    
+    if (lorebookName && active_character) {
+        // Use the same character finding logic as initializeWorldExpansion
+        let characterData = characters[active_character];
+        
+        // If not found directly, try without file extension
+        if (!characterData && active_character.includes('.')) {
+            const nameWithoutExt = active_character.replace(/\.[^/.]+$/, "");
+            characterData = characters[nameWithoutExt];
+        }
+        
+        // If still not found, try to find by character name
+        if (!characterData) {
+            const characterName = active_character.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ');
+            for (const [key, char] of Object.entries(characters)) {
+                if (char.name === characterName || char.avatar === active_character) {
+                    characterData = char;
+                    break;
+                }
+            }
+        }
+        
+        // If still not found, use first available character as fallback
+        if (!characterData && Object.keys(characters).length > 0) {
+            const firstKey = Object.keys(characters);
+            characterData = characters[firstKey];
+        }
+        
+        if (characterData) {
+            // Create progress callback function
+            const progressCallback = (step, message) => {
+                progressNotification.updateProgress(step, message);
+            };
+            
+            await LorebookManager.generateInitialEntries(characterData, lorebookName, progressCallback);
+        } else {
+            throw new Error('Cannot create lorebook entries: No character data available.');
+        }
+    } else {
+        throw new Error('Cannot create lorebook: Missing chat ID or active character.');
+    }
+}
+
 async function enhanceExistingLorebook(lorebookName) {
     if (!lorebookName) {
         console.error(`[${MODULE_NAME}] Cannot enhance lorebook - missing lorebook name`);
@@ -6963,6 +7124,32 @@ function setupFallbackEventBindings() {
         fallbackSystemCheckBtn.addEventListener('click', runSystemCheck);
     }
 
+    const fallbackWorldExpansionBtn = document.getElementById('nemolore_manual_world_expansion_fallback');
+    if (fallbackWorldExpansionBtn) {
+        fallbackWorldExpansionBtn.addEventListener('click', async () => {
+            console.log(`[${MODULE_NAME}] Manual world expansion triggered by user (fallback)`);
+            
+            const steps = [
+                'Building generation prompt...',
+                'Sending request to AI...',
+                'Processing AI response...',
+                'Parsing lorebook entries...',
+                'Adding entries to lorebook...',
+                'Complete!'
+            ];
+            
+            const progress = NotificationSystem.showProgress('World Expansion', steps);
+            
+            try {
+                await initializeWorldExpansionWithProgress(progress);
+                progress.complete('🌍 World expansion completed! Your lorebook has been updated with new entries.');
+            } catch (error) {
+                console.error(`[${MODULE_NAME}] Error during manual world expansion:`, error);
+                progress.error(`❌ World expansion failed: ${error.message}`);
+            }
+        });
+    }
+
     const fallbackRefreshModelsBtn = document.getElementById('nemolore_refresh_models_fallback');
     if (fallbackRefreshModelsBtn) {
         fallbackRefreshModelsBtn.addEventListener('click', async () => {
@@ -7509,6 +7696,29 @@ async function initializeSettingsUI() {
     document.getElementById('nemolore_system_check').addEventListener('click', () => {
         runSystemCheck();
     });
+
+    document.getElementById('nemolore_manual_world_expansion').addEventListener('click', async () => {
+        console.log(`[${MODULE_NAME}] Manual world expansion triggered by user`);
+        
+        const steps = [
+            'Building generation prompt...',
+            'Sending request to AI...',
+            'Processing AI response...',
+            'Parsing lorebook entries...',
+            'Adding entries to lorebook...',
+            'Complete!'
+        ];
+        
+        const progress = NotificationSystem.showProgress('World Expansion', steps);
+        
+        try {
+            await initializeWorldExpansionWithProgress(progress);
+            progress.complete('🌍 World expansion completed! Your lorebook has been updated with new entries.');
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error during manual world expansion:`, error);
+            progress.error(`❌ World expansion failed: ${error.message}`);
+        }
+    });
     
     // Compatibility mode toggle (only bind if element exists - might be in fallback mode)
     const compatibilityToggle = document.getElementById('nemolore_force_compatibility_mode');
@@ -7821,6 +8031,49 @@ function injectCoreMemoryStyles() {
             z-index: 100;
         }
         
+        /* Progress notification styles */
+        .nemolore-progress-notification {
+            min-width: 350px;
+            max-width: 500px;
+        }
+        
+        .nemolore-progress-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .nemolore-progress-bar {
+            flex: 1;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .nemolore-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6b46c1, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .nemolore-progress-text {
+            font-weight: 600;
+            font-size: 12px;
+            min-width: 35px;
+            text-align: right;
+            color: #6b46c1;
+        }
+        
+        .nemolore-progress-step {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+
         /* Core memory special glow effect */
         .nemolore-core-memory {
             position: relative;
