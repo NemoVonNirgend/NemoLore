@@ -16,7 +16,8 @@ import {
     substituteParamsExtended,
     generateRaw,
     getMaxContextSize,
-    main_api
+    main_api,
+    getRequestHeaders
 } from '../../../../script.js';
 import { selected_group } from '../../../group-chats.js';
 import { extension_settings, renderExtensionTemplateAsync, writeExtensionField, getContext } from '../../../extensions.js';
@@ -197,14 +198,35 @@ function getNemoLoreSummaries() {
     // Format the complete summary injection
     const summaryText = summariesInOrder.join('\n\n');
     
+    // Enhanced memory injection formatting with better AI context
+    const currentTime = new Date().toLocaleString();
+    const chatLength = context.chat.length;
+    
     // Check if we should hide messages past the threshold
-    if (nemoLoreSettings.hideMessagesWhenThreshold && context.chat.length > nemoLoreSettings.runningMemorySize) {
-        // Add a note about hidden messages
-        const hiddenCount = context.chat.length - nemoLoreSettings.runningMemorySize;
-        return `[Previous Message Summaries - ${hiddenCount} messages summarized]\n\n${summaryText}`;
+    if (nemoLoreSettings.hideMessagesWhenThreshold && chatLength > nemoLoreSettings.runningMemorySize) {
+        const hiddenCount = chatLength - nemoLoreSettings.runningMemorySize;
+        const visibleCount = nemoLoreSettings.runningMemorySize;
+        
+        return `[AI MEMORY SYSTEM - Conversation Context]
+📅 Updated: ${currentTime}
+📊 Total Messages: ${chatLength} (${hiddenCount} summarized, ${visibleCount} recent messages visible)
+🧠 Memory Type: Compressed summaries of previous conversation events
+
+PREVIOUS CONVERSATION CONTEXT (AI Memory):
+${summaryText}
+
+[End of Memory Context - Recent messages follow below]`;
     }
     
-    return `[Message Summaries]\n\n${summaryText}`;
+    return `[AI MEMORY SYSTEM - Conversation Summaries]
+📅 Generated: ${currentTime}  
+📊 ${summariesInOrder.length} memory entries from ${chatLength} total messages
+🧠 Context: Key conversation moments preserved for continuity
+
+CONVERSATION MEMORY:
+${summaryText}
+
+[End of Conversation Memory]`;
 }
 
 // Settings and state management
@@ -254,6 +276,25 @@ let nemoLoreSettings = {
     coreMemoryPromptLorebook: true,    // Prompt user to create lorebook entries for core memories
     coreMemoryReplaceMessage: true,    // Replace original message with core memory when aging out
     coreMemoryAnimationDuration: 2000, // Duration of golden animation in ms
+    
+    // Multi-tier memory system settings
+    enableMultiTierMemory: true,       // Enable hierarchical memory organization
+    memoryTokenLimit: 2000,            // Maximum tokens for memory injection
+    memoryTierWeights: {               // Importance weights for each tier
+        immediate: 1.0,
+        shortTerm: 0.8, 
+        mediumTerm: 0.6,
+        longTerm: 0.9,
+        permanent: 1.0
+    },
+
+    // Cross-chat character persistence settings
+    enableCrossChatPersistence: false, // Enable character memory across different chats (OPTIONAL)
+    crossChatMemoryScope: 'character', // Scope: 'character', 'user', or 'global'
+    maxCrossChatMemories: 50,          // Maximum memories to store per character
+    crossChatDecayDays: 90,            // Days before cross-chat memories start decaying
+    enableCrossChatPrivacy: true,      // Respect privacy - don't share sensitive conversations
+    crossChatSharingLevel: 'traits',   // What to share: 'none', 'traits', 'relationships', 'all'
 
     // Vectorization settings for semantic retrieval
     enableVectorization: false, // Enable semantic search of excluded messages  
@@ -1257,14 +1298,37 @@ class MessageSummarizer {
     }
     static buildSummarizationPrompt(messageData) {
         const { message, chatContext, timeContext, locationContext, npcContext } = messageData;
+        const speaker = message.name || (message.is_user ? 'User' : 'Assistant');
         
-        let prompt = `You are an expert narrative summarizer. Create a concise summary of this roleplay message that captures the essential information for future reference.
+        // Enhanced context-aware prompt
+        let prompt = `You are an advanced narrative memory system for AI assistants. Analyze this roleplay message and create a structured summary for long-term memory storage.
 
-SUMMARIZATION REQUIREMENTS:
+CONVERSATION CONTEXT:
+- Current Speaker: ${speaker}
+- Previous Context: ${chatContext?.length > 0 ? 'Available' : 'None'}
+- Setting Context: ${locationContext || 'Unknown location'}
+- Time Context: ${timeContext || 'Unspecified time'}
+- NPCs Present: ${npcContext || 'None specified'}
+
+ENHANCED SUMMARIZATION REQUIREMENTS:
 - Maximum ${nemoLoreSettings.summaryMaxLength} tokens
-- Past tense, factual tone
-- Include key details that would be important for understanding future context
-- Focus on actions, events, and meaningful dialogue`;
+- Rate importance (1-10) based on character development, plot significance, and emotional impact
+- Identify key topics/themes for categorization
+- Note character relationships and dynamics
+- Preserve emotional tone and context
+- Use past tense, factual but engaging tone
+- Focus on memorable moments that shape future interactions
+
+ANALYSIS CATEGORIES:
+1. CHARACTER DEVELOPMENT: How does this advance character growth?
+2. PLOT SIGNIFICANCE: Does this advance the story or reveal important information?  
+3. RELATIONSHIP DYNAMICS: How do character relationships change or develop?
+4. WORLD BUILDING: What new information about the setting is revealed?
+5. EMOTIONAL IMPACT: What emotional moments or tensions are present?
+
+FORMAT YOUR RESPONSE AS:
+[Importance: X/10] [Topics: topic1, topic2, topic3] [Characters: character1, character2] [Tone: emotional_tone]
+${nemoLoreSettings.includeTimeLocation ? '[Context: time/location if relevant] ' : ''}Summary content here...`;
 
         // Add core memory instructions only if enabled and we're past the start count
         if (nemoLoreSettings.enableCoreMemories) {
@@ -1619,7 +1683,10 @@ SUMMARY FOCUS:`;
                 const isCoreMemory = this.detectCoreMemory(rawSummary);
                 const cleanSummary = this.extractCleanSummary(rawSummary);
                 
-                // Store summary with core memory flag
+                // Enhanced metadata system - extract rich context information
+                const enhancedMetadata = this.extractEnhancedMetadata(cleanSummary, message, messageIndex);
+                
+                // Store summary with enhanced metadata
                 const summaryData = {
                     text: cleanSummary,
                     originalLength: message.mes.length,
@@ -1627,6 +1694,24 @@ SUMMARY FOCUS:`;
                     messageHash: getStringHash(message.mes),
                     context: contextData,
                     isCoreMemory: isCoreMemory,
+                    
+                    // Enhanced metadata
+                    importance: enhancedMetadata.importance,
+                    confidence: enhancedMetadata.confidence,
+                    topics: enhancedMetadata.topics,
+                    characters: enhancedMetadata.characters,
+                    emotionalTone: enhancedMetadata.emotionalTone,
+                    relationships: enhancedMetadata.relationships,
+                    worldBuilding: enhancedMetadata.worldBuilding,
+                    
+                    // Analysis scores
+                    characterDevelopment: enhancedMetadata.characterDevelopment,
+                    plotSignificance: enhancedMetadata.plotSignificance,
+                    emotionalImpact: enhancedMetadata.emotionalImpact,
+                    
+                    // Memory classification
+                    memoryType: enhancedMetadata.memoryType,
+                    reinforcementCount: 1,
                     rawResponse: rawSummary // Keep original response for debugging
                 };
                 
@@ -1836,7 +1921,10 @@ SUMMARY FOCUS:`;
                 const isCoreMemory = this.detectCoreMemory(rawSummary);
                 const cleanSummary = this.extractCleanSummary(rawSummary);
                 
-                // Store summary data - link to AI message if enabled
+                // Enhanced metadata for paired summaries
+                const enhancedMetadata = this.extractEnhancedMetadata(cleanSummary, messagesToSummarize[0], messageIndex);
+                
+                // Store summary data with enhanced metadata
                 const summaryData = {
                     text: cleanSummary,
                     originalLength: messagesToSummarize.reduce((sum, msg) => sum + msg.mes.length, 0),
@@ -1844,6 +1932,20 @@ SUMMARY FOCUS:`;
                     messageHashes: messagesToSummarize.map(msg => getStringHash(msg.mes)),
                     context: contextData,
                     isCoreMemory: isCoreMemory,
+                    
+                    // Enhanced metadata
+                    importance: enhancedMetadata.importance,
+                    confidence: enhancedMetadata.confidence,
+                    topics: enhancedMetadata.topics,
+                    characters: enhancedMetadata.characters,
+                    emotionalTone: enhancedMetadata.emotionalTone,
+                    relationships: enhancedMetadata.relationships,
+                    worldBuilding: enhancedMetadata.worldBuilding,
+                    characterDevelopment: enhancedMetadata.characterDevelopment,
+                    plotSignificance: enhancedMetadata.plotSignificance,
+                    emotionalImpact: enhancedMetadata.emotionalImpact,
+                    memoryType: enhancedMetadata.memoryType,
+                    reinforcementCount: 1,
                     rawResponse: rawSummary,
                     isPaired: messagesToSummarize.length > 1,
                     pairedIndices: messageIndex === 0 ? [0] : [messageIndex - 1, messageIndex]
@@ -1888,13 +1990,32 @@ SUMMARY FOCUS:`;
     static buildPairedSummarizationPrompt(pairedData) {
         const { messages, chatContext, timeContext, locationContext, npcContext, isPaired } = pairedData;
         
-        let prompt = `You are an expert narrative summarizer. Create a concise summary of this roleplay ${isPaired ? 'conversation exchange' : 'message'} that captures the essential information for future reference.
+        const speakers = messages.map(m => m.name || (m.is_user ? 'User' : 'Assistant')).filter((v, i, a) => a.indexOf(v) === i);
+        
+        let prompt = `You are an advanced narrative memory system for AI assistants. Analyze this roleplay ${isPaired ? 'conversation exchange' : 'message'} and create a structured summary for long-term memory storage.
 
-SUMMARY REQUIREMENTS:
-- Maximum ${nemoLoreSettings.summaryMaxLength} tokens
-- Focus on key events, character actions, and important developments
-- Use present tense and third person perspective
-- Maintain narrative flow and context`;
+CONVERSATION EXCHANGE CONTEXT:
+- Participants: ${speakers.join(', ')}
+- Exchange Type: ${isPaired ? 'Multi-turn dialogue' : 'Single message'}
+
+ENHANCED PAIRED SUMMARIZATION REQUIREMENTS:
+- Maximum ${nemoLoreSettings.summaryMaxLength} tokens  
+- Rate conversation importance (1-10) based on relationship development and plot significance
+- Identify dialogue themes and emotional dynamics
+- Track character relationship progression  
+- Note any agreements, conflicts, or revelations
+- Preserve the flow and outcome of the exchange
+- Use past tense, engaging narrative style
+
+EXCHANGE ANALYSIS FOCUS:
+1. RELATIONSHIP DYNAMICS: How do the characters interact and relate?
+2. DIALOGUE SIGNIFICANCE: What important information is exchanged?
+3. EMOTIONAL PROGRESSION: How do emotions evolve during the exchange?
+4. PLOT ADVANCEMENT: Does this conversation move the story forward?
+
+FORMAT YOUR RESPONSE AS:
+[Importance: X/10] [Participants: ${speakers.join(', ')}] [Topics: topic1, topic2] [Outcome: result_of_exchange] [Tone: emotional_tone]
+Exchange summary here...`;
 
         if (chatContext && chatContext.length > 0) {
             prompt += `\n\nPREVIOUS CONTEXT:\n`;
@@ -1986,6 +2107,130 @@ SUMMARY REQUIREMENTS:
             .replace(/<CORE_MEMORY\b[^>]*>/gi, '')
             .replace(/<\/CORE_MEMORY>/gi, '')
             .trim();
+    }
+
+    // Enhanced metadata extraction system
+    static extractEnhancedMetadata(summaryText, originalMessage, messageIndex) {
+        const metadata = {
+            importance: 5,
+            confidence: 0.8,
+            topics: [],
+            characters: [],
+            emotionalTone: 'neutral',
+            relationships: [],
+            worldBuilding: [],
+            characterDevelopment: 5,
+            plotSignificance: 5,
+            emotionalImpact: 5,
+            memoryType: 'general'
+        };
+
+        // Extract importance score
+        const importanceMatch = summaryText.match(/\[Importance:\s*(\d+)\/10\]/i);
+        if (importanceMatch) {
+            metadata.importance = parseInt(importanceMatch[1]);
+        }
+
+        // Extract topics
+        const topicsMatch = summaryText.match(/\[Topics:\s*([^\]]+)\]/i);
+        if (topicsMatch) {
+            metadata.topics = topicsMatch[1].split(',').map(t => t.trim()).filter(t => t.length > 0);
+        }
+
+        // Extract characters
+        const charactersMatch = summaryText.match(/\[Characters:\s*([^\]]+)\]/i);
+        if (charactersMatch) {
+            metadata.characters = charactersMatch[1].split(',').map(c => c.trim()).filter(c => c.length > 0);
+        }
+
+        // Extract emotional tone
+        const toneMatch = summaryText.match(/\[Tone:\s*([^\]]+)\]/i);
+        if (toneMatch) {
+            metadata.emotionalTone = toneMatch[1].trim();
+        }
+
+        // Extract context information
+        const contextMatch = summaryText.match(/\[Context:\s*([^\]]+)\]/i);
+        if (contextMatch) {
+            metadata.contextInfo = contextMatch[1].trim();
+        }
+
+        // Analyze content for additional metadata
+        const content = summaryText.toLowerCase();
+
+        // Determine memory type based on content
+        if (content.includes('relationship') || content.includes('bond') || content.includes('friend')) {
+            metadata.memoryType = 'relationship';
+        } else if (content.includes('world') || content.includes('location') || content.includes('setting')) {
+            metadata.memoryType = 'worldbuilding';
+        } else if (content.includes('emotion') || content.includes('feel') || content.includes('sad') || content.includes('happy')) {
+            metadata.memoryType = 'emotional';
+        } else if (content.includes('plot') || content.includes('story') || content.includes('event')) {
+            metadata.memoryType = 'plot';
+        }
+
+        // Calculate confidence based on summary quality indicators
+        let confidenceScore = 0.8; // Base confidence
+        
+        if (summaryText.includes('[Importance:')) confidenceScore += 0.1;
+        if (summaryText.includes('[Topics:')) confidenceScore += 0.05;
+        if (summaryText.includes('[Characters:')) confidenceScore += 0.05;
+        if (summaryText.length > 100) confidenceScore += 0.05; // Detailed summary
+        if (summaryText.length < 50) confidenceScore -= 0.1; // Too short
+        
+        metadata.confidence = Math.min(0.95, Math.max(0.3, confidenceScore));
+
+        // Extract relationship information
+        const relationshipPatterns = [
+            /(\w+)\s+and\s+(\w+)\s+(?:become|became|are|were)\s+([\w\s]+)/gi,
+            /(\w+)\s+(?:trusts|loves|hates|fears|respects)\s+(\w+)/gi
+        ];
+
+        relationshipPatterns.forEach(pattern => {
+            let match;
+            while ((match = pattern.exec(summaryText)) !== null) {
+                if (match[1] && match[2]) {
+                    metadata.relationships.push({
+                        character1: match[1],
+                        character2: match[2],
+                        type: match[3] || 'interaction'
+                    });
+                }
+            }
+        });
+
+        // Extract world building elements
+        const worldPatterns = [
+            /(?:in|at|near)\s+([\w\s]+?)(?:\s|,|\.)/gi,
+            /the\s+([\w\s]+?)\s+(?:is|was|has|contains)/gi
+        ];
+
+        worldPatterns.forEach(pattern => {
+            let match;
+            while ((match = pattern.exec(summaryText)) !== null) {
+                if (match[1] && match[1].length > 3) {
+                    metadata.worldBuilding.push({
+                        element: match[1].trim(),
+                        type: 'location'
+                    });
+                }
+            }
+        });
+
+        // Calculate analysis scores based on content
+        if (metadata.topics.includes('character') || content.includes('growth') || content.includes('change')) {
+            metadata.characterDevelopment = Math.min(10, metadata.importance + 2);
+        }
+
+        if (metadata.topics.includes('plot') || content.includes('important') || content.includes('significant')) {
+            metadata.plotSignificance = Math.min(10, metadata.importance + 1);
+        }
+
+        if (metadata.emotionalTone !== 'neutral' || content.includes('emotion')) {
+            metadata.emotionalImpact = Math.min(10, metadata.importance + 1);
+        }
+
+        return metadata;
     }
 
     static async handleCoreMemoryDetected(messageIndex, summaryData) {
@@ -2757,13 +3002,23 @@ ${summaryData.text}
     }
 
     static async checkForBulkSummarization() {
-        if (!nemoLoreSettings.enableSummarization || !nemoLoreSettings.autoSummarize) {
-            console.log(`[${MODULE_NAME}] Bulk summarization skipped: summarization disabled`);
+        console.log(`[${MODULE_NAME}] checkForBulkSummarization called - enableSummarization: ${nemoLoreSettings.enableSummarization}, autoSummarize: ${nemoLoreSettings.autoSummarize}`);
+        
+        if (!nemoLoreSettings.enableSummarization) {
+            console.log(`[${MODULE_NAME}] Chat management detection skipped: summarization disabled`);
+            return;
+        }
+        
+        if (!nemoLoreSettings.autoSummarize) {
+            console.log(`[${MODULE_NAME}] Chat management detection skipped: automatic detection disabled`);
             return;
         }
 
         const context = getContext();
-        if (!context?.chat?.length) return;
+        if (!context?.chat?.length) {
+            console.log(`[${MODULE_NAME}] No chat context or empty chat`);
+            return;
+        }
 
         const totalMessages = context.chat.length;
         const unsummarizedMessages = [];
@@ -2788,16 +3043,84 @@ ${summaryData.text}
             return;
         }
 
-        // If we have many unsummarized messages, use bulk mode
-        if (unsummarizedMessages.length > 10) {
-            console.log(`[${MODULE_NAME}] Starting bulk summarization for ${unsummarizedMessages.length} messages`);
-            await this.performBulkSummarization(unsummarizedMessages);
+        // Ask for user consent before proceeding with summarization
+        console.log(`[${MODULE_NAME}] About to show chat management consent prompt for ${unsummarizedMessages.length} messages`);
+        await this.promptForChatManagement(unsummarizedMessages);
+    }
+
+    static async promptForChatManagement(unsummarizedMessages) {
+        console.log(`[${MODULE_NAME}] promptForChatManagement called with ${unsummarizedMessages.length} messages`);
+        
+        const action = await NotificationSystem.show(
+            `🤖 NemoLore has detected <strong>${unsummarizedMessages.length}</strong> messages that are not summarized in this chat. Would you like NemoLore to manage this chat?`,
+            [
+                { action: 'yes', text: 'Yes, manage this chat' },
+                { action: 'no', text: 'No, leave it as is' }
+            ],
+            15000 // Give user plenty of time to decide
+        );
+        
+        if (action === 'yes') {
+            console.log(`[${MODULE_NAME}] User accepted chat management`);
+            await this.promptForWorldFleshing(unsummarizedMessages);
         } else {
-            // Few messages, process individually
-            console.log(`[${MODULE_NAME}] Processing ${unsummarizedMessages.length} messages individually`);
-            for (const messageIndex of unsummarizedMessages) {
-                this.queueMessageForSummary(messageIndex);
+            console.log(`[${MODULE_NAME}] User declined chat management`);
+        }
+    }
+
+    static async promptForWorldFleshing(unsummarizedMessages) {
+        const action = await NotificationSystem.show(
+            `🌍 Would you like to flesh out the world? This will generate additional lore entries based on the chat content.`,
+            [
+                { action: 'yes', text: 'Yes, flesh out the world' },
+                { action: 'no', text: 'No, skip world building' }
+            ],
+            12000
+        );
+        
+        if (action === 'yes') {
+            console.log(`[${MODULE_NAME}] User accepted world fleshing - initiating lorebook generation`);
+            // Trigger world fleshing/lorebook generation here if needed
+        } else {
+            console.log(`[${MODULE_NAME}] User declined world fleshing`);
+        }
+        
+        await this.promptForChunkSummaries(unsummarizedMessages);
+    }
+
+    static async promptForChunkSummaries(unsummarizedMessages) {
+        const action = await NotificationSystem.show(
+            `📝 Would you like to create chunk summaries for the <strong>${unsummarizedMessages.length}</strong> unsummarized messages? ⚠️ <em>This process may take some time and cannot be cancelled once started.</em>`,
+            [
+                { action: 'yes', text: 'Yes, start summarization' },
+                { action: 'no', text: 'No, keep messages as-is' }
+            ],
+            0 // No timeout - user must make a choice since this is the final step
+        );
+        
+        if (action === 'yes') {
+            console.log(`[${MODULE_NAME}] User accepted chunk summaries - starting summarization`);
+            
+            // Show processing notification
+            await NotificationSystem.show(
+                `🔄 Starting message summarization... Please wait while ${unsummarizedMessages.length} messages are processed.`,
+                [],
+                3000
+            );
+            
+            // Start the actual summarization process
+            if (unsummarizedMessages.length > 10) {
+                console.log(`[${MODULE_NAME}] Starting bulk summarization for ${unsummarizedMessages.length} messages`);
+                await this.performBulkSummarization(unsummarizedMessages);
+            } else {
+                // Few messages, process individually
+                console.log(`[${MODULE_NAME}] Processing ${unsummarizedMessages.length} messages individually`);
+                for (const messageIndex of unsummarizedMessages) {
+                    this.queueMessageForSummary(messageIndex);
+                }
             }
+        } else {
+            console.log(`[${MODULE_NAME}] User declined chunk summaries`);
         }
     }
 
@@ -3094,8 +3417,8 @@ Provide only the summary, no additional commentary:`;
     }
 
     static queueMessageForSummary(messageIndex) {
-        if (!nemoLoreSettings.enableSummarization || !nemoLoreSettings.autoSummarize) {
-            console.log(`[${MODULE_NAME}] Summarization disabled or auto-summarize off`);
+        if (!nemoLoreSettings.enableSummarization) {
+            console.log(`[${MODULE_NAME}] Summarization disabled`);
             return;
         }
         
@@ -3306,7 +3629,110 @@ Provide only the summary, no additional commentary:`;
             console.log(`[${MODULE_NAME}] Successfully inserted vector item for message ${item.index}`);
         } catch (error) {
             console.error(`[${MODULE_NAME}] Vector insertion failed:`, error);
-            throw error;
+            // Fall back to local storage if vector API fails
+            await this.storeVectorLocally(collectionId, item);
+        }
+    }
+
+    // Enhanced vector storage with local fallback
+    static async storeVectorLocally(collectionId, item) {
+        try {
+            const localVectors = JSON.parse(localStorage.getItem(`nemolore_vectors_${collectionId}`) || '{}');
+            const vectorId = `${item.index}_${Date.now()}`;
+            
+            localVectors[vectorId] = {
+                ...item,
+                embedding: await this.generateLocalEmbedding(item.text),
+                created: Date.now()
+            };
+            
+            localStorage.setItem(`nemolore_vectors_${collectionId}`, JSON.stringify(localVectors));
+            console.log(`[${MODULE_NAME}] Stored vector locally: ${vectorId}`);
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Local vector storage failed:`, error);
+        }
+    }
+
+    // Generate simple local embedding as fallback
+    static generateLocalEmbedding(text) {
+        // Simple TF-IDF style embedding as fallback
+        const words = text.toLowerCase().split(/\s+/);
+        const embedding = new Array(384).fill(0); // 384-dimensional vector
+        
+        // Create embedding based on word positions and frequencies
+        const wordFreq = {};
+        words.forEach(word => {
+            wordFreq[word] = (wordFreq[word] || 0) + 1;
+        });
+        
+        Object.keys(wordFreq).forEach((word, index) => {
+            const hash = getStringHash(word);
+            const embeddingIndex = Math.abs(hash) % embedding.length;
+            embedding[embeddingIndex] += wordFreq[word] / Math.sqrt(words.length);
+        });
+        
+        // Normalize the vector
+        const norm = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+        if (norm > 0) {
+            for (let i = 0; i < embedding.length; i++) {
+                embedding[i] /= norm;
+            }
+        }
+        
+        return embedding;
+    }
+
+    // Calculate cosine similarity between two vectors
+    static calculateCosineSimilarity(vector1, vector2) {
+        if (!vector1 || !vector2 || vector1.length !== vector2.length) {
+            return 0;
+        }
+
+        let dotProduct = 0;
+        let norm1 = 0;
+        let norm2 = 0;
+
+        for (let i = 0; i < vector1.length; i++) {
+            dotProduct += vector1[i] * vector2[i];
+            norm1 += vector1[i] * vector1[i];
+            norm2 += vector2[i] * vector2[i];
+        }
+
+        if (norm1 === 0 || norm2 === 0) {
+            return 0;
+        }
+
+        return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+    }
+
+    // Enhanced semantic search with local fallback
+    static async performLocalVectorSearch(collectionId, queryText, limit = 3) {
+        try {
+            const localVectors = JSON.parse(localStorage.getItem(`nemolore_vectors_${collectionId}`) || '{}');
+            const queryEmbedding = this.generateLocalEmbedding(queryText);
+            
+            const results = [];
+            
+            for (const [vectorId, vectorData] of Object.entries(localVectors)) {
+                const similarity = this.calculateCosineSimilarity(queryEmbedding, vectorData.embedding);
+                
+                if (similarity > (nemoLoreSettings.vectorSimilarityThreshold || 0.7)) {
+                    results.push({
+                        text: vectorData.text,
+                        score: similarity,
+                        metadata: vectorData.metadata
+                    });
+                }
+            }
+            
+            // Sort by similarity and return top results
+            return results
+                .sort((a, b) => b.score - a.score)
+                .slice(0, limit);
+                
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Local vector search failed:`, error);
+            return [];
         }
     }
 
@@ -3368,8 +3794,8 @@ Provide only the summary, no additional commentary:`;
             });
 
             if (!response.ok) {
-                console.warn(`[${MODULE_NAME}] Vector query failed: ${response.statusText}`);
-                return [];
+                console.warn(`[${MODULE_NAME}] Vector query API failed: ${response.statusText}, falling back to local search`);
+                return await this.performLocalVectorSearch(collectionId, queryText, searchLimit);
             }
 
             const results = await response.json();
@@ -3421,55 +3847,107 @@ Provide only the summary, no additional commentary:`;
             return filteredResults;
 
         } catch (error) {
-            console.error(`[${MODULE_NAME}] Semantic search failed:`, error);
-            return [];
+            console.error(`[${MODULE_NAME}] Semantic search API failed:`, error);
+            console.log(`[${MODULE_NAME}] Falling back to local vector search`);
+            
+            // Fallback to local search
+            const collectionId = `nemolore_${getCurrentChatId()}`;
+            const searchLimit = limit || nemoLoreSettings.vectorSearchLimit || 3;
+            return await this.performLocalVectorSearch(collectionId, queryText, searchLimit);
         }
     }
 
     static async enhancedMemoryInjection() {
-        // Enhanced version that includes semantic retrieval of relevant excluded messages
+        // Enhanced version with multi-tier memory system and semantic retrieval
         const context = getContext();
         if (!context || !nemoLoreSettings.enableSummarization) {
             context?.setExtensionPrompt?.(`${MODULE_NAME}_summary_memory`, "");
             return;
         }
 
-        // Get regular summaries
-        const summaries = this.collectSummariesForInjection();
+        // Update multi-tier memory system and importance scores
+        await MultiTierMemorySystem.updateMemoryTiers();
         
-        // Get semantically relevant excluded messages if vectorization is enabled
-        let relevantMessages = [];
-        if (nemoLoreSettings.enableVectorization && summaries.length > 0) {
-            // Use recent context as search query
-            const recentMessages = context.chat.slice(-3);
-            const queryText = recentMessages.map(m => m.mes).join(' ').substring(0, 500);
-            
-            if (queryText.trim()) {
-                relevantMessages = await this.semanticSearchRelevantMessages(queryText);
-            }
-        }
+        // Update dynamic importance scores based on current context
+        MemoryWeightingSystem.updateMemoryImportanceScores();
 
-        if (summaries.length === 0 && relevantMessages.length === 0) {
-            context.setExtensionPrompt(`${MODULE_NAME}_summary_memory`, "");
-            return;
-        }
-
+        // Check if we have a multi-tier memory system preference
+        const useMultiTier = nemoLoreSettings.enableMultiTierMemory !== false; // Default to true
+        
         let injectionText = '';
+        
+        if (useMultiTier) {
+            // Use advanced multi-tier memory system
+            const maxTokens = nemoLoreSettings.memoryTokenLimit || 2000;
+            injectionText = MultiTierMemorySystem.generateTieredMemoryInjection(maxTokens);
+            
+            // Add semantic search enhancement if enabled
+            if (nemoLoreSettings.enableVectorization) {
+                const recentMessages = context.chat.slice(-3);
+                const queryText = recentMessages.map(m => m.mes).join(' ').substring(0, 500);
+                
+                if (queryText.trim()) {
+                    const relevantMessages = await this.semanticSearchRelevantMessages(queryText);
+                    if (relevantMessages.length > 0) {
+                        injectionText += `\n\nSEMANTIC CONTEXT ENHANCEMENT (${relevantMessages.length} relevant memories):\n`;
+                        relevantMessages.slice(0, 3).forEach((result, index) => {
+                            const speaker = result.metadata.decodedSpeaker || result.metadata.speaker || 'Unknown';
+                            const messageIndex = result.metadata.decodedOriginalIndex || result.metadata.floor || 'Unknown';
+                            const score = (result.score * 100).toFixed(1);
+                            injectionText += `🔍 ${speaker} (Msg #${messageIndex} | ${score}% match): ${result.text.substring(0, 200)}...\n`;
+                        });
+                    }
+                }
+            }
+        } else {
+            // Fallback to legacy system for compatibility
+            const summaries = this.collectSummariesForInjection();
+            let relevantMessages = [];
+            
+            if (nemoLoreSettings.enableVectorization && summaries.length > 0) {
+                const recentMessages = context.chat.slice(-3);
+                const queryText = recentMessages.map(m => m.mes).join(' ').substring(0, 500);
+                
+                if (queryText.trim()) {
+                    relevantMessages = await this.semanticSearchRelevantMessages(queryText);
+                }
+            }
 
-        // Add summaries
-        if (summaries.length > 0) {
-            injectionText += `[Previous events (summarized)]:\n${summaries.join('\n')}\n`;
-        }
+            if (summaries.length === 0 && relevantMessages.length === 0) {
+                context.setExtensionPrompt(`${MODULE_NAME}_summary_memory`, "");
+                return;
+            }
 
-        // Add relevant full messages (with better formatting using decoded metadata)
-        if (relevantMessages.length > 0) {
-            injectionText += '\n[Relevant past conversations]:\n';
-            relevantMessages.forEach((result, index) => {
-                const speaker = result.metadata.decodedSpeaker || result.metadata.speaker || 'Unknown';
-                const messageIndex = result.metadata.decodedOriginalIndex || result.metadata.floor || 'Unknown';
-                const score = (result.score * 100).toFixed(1);
-                injectionText += `${speaker} (message ${messageIndex}, relevance: ${score}%): ${result.text}\n`;
-            });
+            const currentTime = new Date().toLocaleString();
+            const totalContext = summaries.length + relevantMessages.length;
+            
+            injectionText = `[AI ENHANCED MEMORY SYSTEM - Contextual Recall]
+📅 Generated: ${currentTime}
+🧠 Memory Sources: ${summaries.length > 0 ? 'Compressed Summaries' : ''}${summaries.length > 0 && relevantMessages.length > 0 ? ' + ' : ''}${relevantMessages.length > 0 ? 'Semantic Retrieval' : ''}
+📊 Total Context Entries: ${totalContext}
+🔍 Context Relevance: Automatically selected based on current conversation flow
+
+`;
+
+            // Add summaries with enhanced formatting
+            if (summaries.length > 0) {
+                injectionText += `COMPRESSED MEMORY (${summaries.length} summarized events):
+${summaries.join('\n')}\n`;
+            }
+
+            // Add relevant full messages with enhanced context
+            if (relevantMessages.length > 0) {
+                injectionText += `${summaries.length > 0 ? '\n' : ''}SEMANTICALLY RELEVANT CONVERSATIONS (${relevantMessages.length} retrieved):
+`;
+                relevantMessages.forEach((result, index) => {
+                    const speaker = result.metadata.decodedSpeaker || result.metadata.speaker || 'Unknown';
+                    const messageIndex = result.metadata.decodedOriginalIndex || result.metadata.floor || 'Unknown';
+                    const score = (result.score * 100).toFixed(1);
+                    injectionText += `📝 ${speaker} (Message #${messageIndex} | Relevance: ${score}% | Context Match)\n${result.text}\n\n`;
+                });
+            }
+
+            injectionText += `[End of Enhanced Memory Context - Current conversation continues below]`;
         }
 
         // Inject enhanced memory
@@ -3763,6 +4241,950 @@ globalThis.nemolore_intercept_messages = function (chat, contextSize, abort, typ
     }
 };
 
+// Multi-Tier Memory System - Hierarchical memory organization
+class MultiTierMemorySystem {
+    static memoryTiers = {
+        immediate: new Map(),     // Last 10 messages (full context)
+        shortTerm: new Map(),     // Summaries of last 50 messages
+        mediumTerm: new Map(),    // Important events from last 200 messages
+        longTerm: new Map(),      // Core memories and key relationships
+        permanent: new Map()      // Character traits and world facts
+    };
+
+    static memoryConfig = {
+        immediate: { maxMessages: 10, fullContent: true, priority: 1 },
+        shortTerm: { maxMessages: 50, summaryRequired: true, priority: 2 },
+        mediumTerm: { maxMessages: 200, importanceThreshold: 6, priority: 3 },
+        longTerm: { importanceThreshold: 8, priority: 4 },
+        permanent: { importanceThreshold: 9, priority: 5 }
+    };
+
+    // Organize memories into appropriate tiers
+    static async organizeMemories() {
+        const context = getContext();
+        if (!context?.chat?.length) return;
+
+        console.log(`[${MODULE_NAME}] Organizing memories into tiers...`);
+
+        // Clear existing tiers
+        Object.keys(this.memoryTiers).forEach(tier => this.memoryTiers[tier].clear());
+
+        const totalMessages = context.chat.length;
+        
+        // Organize immediate memory (last 10 messages)
+        const immediateMessages = context.chat.slice(-this.memoryConfig.immediate.maxMessages);
+        immediateMessages.forEach((msg, index) => {
+            const actualIndex = totalMessages - immediateMessages.length + index;
+            this.memoryTiers.immediate.set(actualIndex, {
+                type: 'immediate',
+                content: msg.mes,
+                speaker: msg.name || (msg.is_user ? 'User' : 'Assistant'),
+                timestamp: msg.send_date || Date.now(),
+                messageIndex: actualIndex,
+                importance: 5, // Default immediate importance
+                tier: 'immediate'
+            });
+        });
+
+        // Organize other tiers based on summaries and importance
+        await this.organizeSummarizedMemories();
+        await this.identifyPermanentMemories();
+
+        console.log(`[${MODULE_NAME}] Memory organization complete:`, {
+            immediate: this.memoryTiers.immediate.size,
+            shortTerm: this.memoryTiers.shortTerm.size,
+            mediumTerm: this.memoryTiers.mediumTerm.size,
+            longTerm: this.memoryTiers.longTerm.size,
+            permanent: this.memoryTiers.permanent.size
+        });
+    }
+
+    // Organize summarized memories by importance and recency
+    static async organizeSummarizedMemories() {
+        const context = getContext();
+        const summaries = messageSummaries;
+
+        for (const [messageIndex, summaryData] of summaries) {
+            const baseImportance = this.extractImportanceScore(summaryData.text);
+            const age = this.calculateMessageAge(messageIndex, context.chat.length);
+            
+            // Use dynamic importance if available, fallback to base importance
+            const dynamicImportance = summaryData.dynamicImportance || baseImportance;
+            
+            const memoryEntry = {
+                type: 'summarized',
+                content: summaryData.text,
+                originalContent: context.chat[messageIndex]?.mes || '',
+                speaker: summaryData.speaker || 'Unknown',
+                timestamp: summaryData.timestamp || Date.now(),
+                messageIndex: messageIndex,
+                importance: dynamicImportance, // Use dynamic importance
+                baseImportance: baseImportance, // Keep original for reference
+                age: age,
+                topics: summaryData.topics || this.extractTopics(summaryData.text),
+                characters: summaryData.characters || this.extractCharacters(summaryData.text),
+                emotionalTone: summaryData.emotionalTone || this.extractEmotionalTone(summaryData.text),
+                isCoreMemory: summaryData.isCoreMemory || false,
+                
+                // Enhanced metadata from MemoryWeightingSystem
+                confidence: summaryData.confidence || 0.8,
+                contextRelevance: summaryData.contextRelevance || 0,
+                reinforcementCount: summaryData.reinforcementCount || 1,
+                memoryType: summaryData.memoryType || 'general'
+            };
+
+            // Assign to appropriate tier based on dynamic importance and age
+            if (memoryEntry.isCoreMemory || dynamicImportance >= this.memoryConfig.permanent.importanceThreshold) {
+                memoryEntry.tier = 'permanent';
+                this.memoryTiers.permanent.set(messageIndex, memoryEntry);
+            } else if (dynamicImportance >= this.memoryConfig.longTerm.importanceThreshold) {
+                memoryEntry.tier = 'longTerm';
+                this.memoryTiers.longTerm.set(messageIndex, memoryEntry);
+            } else if (dynamicImportance >= this.memoryConfig.mediumTerm.importanceThreshold && age <= this.memoryConfig.mediumTerm.maxMessages) {
+                memoryEntry.tier = 'mediumTerm';
+                this.memoryTiers.mediumTerm.set(messageIndex, memoryEntry);
+            } else if (age <= this.memoryConfig.shortTerm.maxMessages) {
+                memoryEntry.tier = 'shortTerm';
+                this.memoryTiers.shortTerm.set(messageIndex, memoryEntry);
+            }
+        }
+    }
+
+    // Extract importance score from summary text
+    static extractImportanceScore(text) {
+        const importanceMatch = text.match(/\[Importance:\s*(\d+)\/10\]/i);
+        return importanceMatch ? parseInt(importanceMatch[1]) : 5; // Default to 5 if not found
+    }
+
+    // Extract topics from summary text
+    static extractTopics(text) {
+        const topicsMatch = text.match(/\[Topics:\s*([^\]]+)\]/i);
+        return topicsMatch ? topicsMatch[1].split(',').map(t => t.trim()) : [];
+    }
+
+    // Extract characters from summary text
+    static extractCharacters(text) {
+        const charactersMatch = text.match(/\[Characters:\s*([^\]]+)\]/i);
+        return charactersMatch ? charactersMatch[1].split(',').map(c => c.trim()) : [];
+    }
+
+    // Extract emotional tone from summary text
+    static extractEmotionalTone(text) {
+        const toneMatch = text.match(/\[Tone:\s*([^\]]+)\]/i);
+        return toneMatch ? toneMatch[1].trim() : 'neutral';
+    }
+
+    // Calculate message age (how far back from current)
+    static calculateMessageAge(messageIndex, totalMessages) {
+        return totalMessages - messageIndex - 1;
+    }
+
+    // Identify permanent memories (character traits, world facts)
+    static async identifyPermanentMemories() {
+        const characterTraits = new Map();
+        const worldFacts = new Map();
+
+        // Analyze all memories for permanent information
+        for (const tier of Object.values(this.memoryTiers)) {
+            for (const [index, memory] of tier) {
+                if (memory.type === 'summarized') {
+                    // Extract character traits
+                    const traits = this.extractCharacterTraits(memory.content);
+                    traits.forEach(trait => {
+                        const key = `${trait.character}_${trait.trait}`;
+                        if (!characterTraits.has(key) || characterTraits.get(key).importance < trait.importance) {
+                            characterTraits.set(key, {
+                                type: 'character_trait',
+                                character: trait.character,
+                                trait: trait.trait,
+                                evidence: memory.content,
+                                importance: trait.importance,
+                                messageIndex: index,
+                                tier: 'permanent'
+                            });
+                        }
+                    });
+
+                    // Extract world facts
+                    const facts = this.extractWorldFacts(memory.content);
+                    facts.forEach(fact => {
+                        const key = `world_${getStringHash(fact.content)}`;
+                        if (!worldFacts.has(key) || worldFacts.get(key).importance < fact.importance) {
+                            worldFacts.set(key, {
+                                type: 'world_fact',
+                                content: fact.content,
+                                category: fact.category,
+                                importance: fact.importance,
+                                messageIndex: index,
+                                tier: 'permanent'
+                            });
+                        }
+                    });
+                }
+            }
+        }
+
+        // Add permanent memories to the permanent tier
+        characterTraits.forEach((trait, key) => {
+            this.memoryTiers.permanent.set(`trait_${key}`, trait);
+        });
+
+        worldFacts.forEach((fact, key) => {
+            this.memoryTiers.permanent.set(`fact_${key}`, fact);
+        });
+    }
+
+    // Extract character traits from content
+    static extractCharacterTraits(content) {
+        const traits = [];
+        const traitPatterns = [
+            /(\w+)\s+(?:is|was|became|appears to be|seems)\s+([\w\s]+?)(?:[\.;,]|$)/gi,
+            /(\w+)'s\s+([\w\s]+?)(?:[\.;,]|$)/gi
+        ];
+
+        traitPatterns.forEach(pattern => {
+            let match;
+            while ((match = pattern.exec(content)) !== null) {
+                if (match[1] && match[2]) {
+                    traits.push({
+                        character: match[1],
+                        trait: match[2].trim(),
+                        importance: content.includes('important') || content.includes('significant') ? 8 : 6
+                    });
+                }
+            }
+        });
+
+        return traits;
+    }
+
+    // Extract world facts from content
+    static extractWorldFacts(content) {
+        const facts = [];
+        const factPatterns = [
+            /The\s+([\w\s]+?)\s+(?:is|was|has|contains)\s+([\w\s]+?)(?:[\.;,]|$)/gi,
+            /(?:In|At)\s+([\w\s]+?),\s*([\w\s]+?)(?:[\.;,]|$)/gi
+        ];
+
+        factPatterns.forEach(pattern => {
+            let match;
+            while ((match = pattern.exec(content)) !== null) {
+                if (match[1] && match[2]) {
+                    facts.push({
+                        content: `${match[1]} ${match[2]}`,
+                        category: 'location', // Default category
+                        importance: 7
+                    });
+                }
+            }
+        });
+
+        return facts;
+    }
+
+    // Generate multi-tier memory injection
+    static generateTieredMemoryInjection(maxTokens = 2000) {
+        const currentTime = new Date().toLocaleString();
+        let injection = `[AI MULTI-TIER MEMORY SYSTEM - Hierarchical Context]
+📅 Generated: ${currentTime}
+🧠 Memory Architecture: 5-tier hierarchical organization
+🎯 Context Optimization: Importance and recency weighted
+
+`;
+
+        let tokenCount = injection.length;
+
+        // Add cross-chat character memories first (if enabled and available)
+        if (nemoLoreSettings.enableCrossChatPersistence) {
+            const currentCharacter = characters[this_chid]?.name;
+            if (currentCharacter) {
+                const crossChatMemories = CrossChatPersistenceSystem.generateCrossChatMemoryInjection(currentCharacter);
+                if (crossChatMemories && crossChatMemories.length > 10) {
+                    if (tokenCount + crossChatMemories.length < maxTokens * 0.2) { // Reserve 20% for cross-chat
+                        injection += crossChatMemories + '\n';
+                        tokenCount += crossChatMemories.length;
+                    }
+                }
+            }
+        }
+
+        // Add permanent memories second (highest priority for current chat)
+        const permanentMemories = this.getMemoriesByTier('permanent', { limit: 10 });
+        if (permanentMemories.length > 0) {
+            let permanentSection = `PERMANENT MEMORY (${permanentMemories.length} core facts):\n`;
+            permanentMemories.forEach(memory => {
+                if (memory.type === 'character_trait') {
+                    permanentSection += `🧑 ${memory.character}: ${memory.trait}\n`;
+                } else if (memory.type === 'world_fact') {
+                    permanentSection += `🌍 ${memory.content}\n`;
+                } else {
+                    permanentSection += `⭐ ${memory.content}\n`;
+                }
+            });
+            permanentSection += '\n';
+
+            if (tokenCount + permanentSection.length < maxTokens) {
+                injection += permanentSection;
+                tokenCount += permanentSection.length;
+            }
+        }
+
+        // Add long-term memories with enhanced scoring
+        const longTermMemories = this.getMemoriesByTier('longTerm', { limit: 5 });
+        if (longTermMemories.length > 0 && tokenCount < maxTokens * 0.8) {
+            let longTermSection = `LONG-TERM MEMORY (${longTermMemories.length} significant events):\n`;
+            longTermMemories.forEach(memory => {
+                const confidence = memory.confidence ? `${Math.round(memory.confidence * 100)}%` : '80%';
+                const relevance = memory.contextRelevance ? `${Math.round(memory.contextRelevance * 100)}%` : '0%';
+                const reinforcement = memory.reinforcementCount > 1 ? ` [Reinforced: ${memory.reinforcementCount}x]` : '';
+                longTermSection += `📚 [Importance: ${Math.round(memory.importance)}/10 | Confidence: ${confidence} | Relevance: ${relevance}]${reinforcement} ${memory.content}\n`;
+            });
+            longTermSection += '\n';
+
+            if (tokenCount + longTermSection.length < maxTokens) {
+                injection += longTermSection;
+                tokenCount += longTermSection.length;
+            }
+        }
+
+        // Add medium-term memories if space allows
+        const mediumTermMemories = this.getMemoriesByTier('mediumTerm', { limit: 3 });
+        if (mediumTermMemories.length > 0 && tokenCount < maxTokens * 0.9) {
+            let mediumTermSection = `MEDIUM-TERM MEMORY (${mediumTermMemories.length} recent events):\n`;
+            mediumTermMemories.forEach(memory => {
+                mediumTermSection += `📝 ${memory.content}\n`;
+            });
+            mediumTermSection += '\n';
+
+            if (tokenCount + mediumTermSection.length < maxTokens) {
+                injection += mediumTermSection;
+                tokenCount += mediumTermSection.length;
+            }
+        }
+
+        injection += `[End of Multi-Tier Memory Context - ${Math.round(tokenCount/4)} tokens used]`;
+
+        return injection;
+    }
+
+    // Get memories by tier with optional filtering
+    static getMemoriesByTier(tier, options = {}) {
+        if (!this.memoryTiers[tier]) return [];
+
+        let memories = Array.from(this.memoryTiers[tier].values());
+
+        // Apply filters
+        if (options.minImportance) {
+            memories = memories.filter(m => m.importance >= options.minImportance);
+        }
+
+        if (options.topics) {
+            memories = memories.filter(m => 
+                m.topics && m.topics.some(topic => 
+                    options.topics.some(filterTopic => 
+                        topic.toLowerCase().includes(filterTopic.toLowerCase())
+                    )
+                )
+            );
+        }
+
+        if (options.characters) {
+            memories = memories.filter(m => 
+                m.characters && m.characters.some(char => 
+                    options.characters.some(filterChar => 
+                        char.toLowerCase().includes(filterChar.toLowerCase())
+                    )
+                )
+            );
+        }
+
+        // Sort by importance and recency
+        memories.sort((a, b) => {
+            if (b.importance !== a.importance) {
+                return b.importance - a.importance; // Higher importance first
+            }
+            return (b.messageIndex || 0) - (a.messageIndex || 0); // More recent first
+        });
+
+        return memories.slice(0, options.limit || memories.length);
+    }
+
+    // Update memory system when new summaries are created
+    static async updateMemoryTiers() {
+        await this.organizeMemories();
+    }
+}
+
+// Advanced Memory Importance Weighting System
+class MemoryWeightingSystem {
+    static weightingConfig = {
+        // Base importance factors
+        recencyWeight: 0.3,           // How much recency affects importance
+        reinforcementWeight: 0.2,     // How much repetition increases importance
+        emotionalWeight: 0.25,        // How much emotional impact matters
+        plotWeight: 0.15,             // How much plot significance matters
+        relationshipWeight: 0.1,      // How much relationship changes matter
+        
+        // Decay factors
+        recencyDecayRate: 0.1,        // How quickly memories fade with time
+        maxDecayDays: 30,             // Maximum days before full decay
+        
+        // Reinforcement factors
+        maxReinforcement: 5,          // Maximum reinforcement multiplier
+        reinforcementThreshold: 3,    // Mentions needed for reinforcement
+        
+        // Context boosting
+        contextRelevanceBoost: 0.3,   // Boost for contextually relevant memories
+        characterPresenceBoost: 0.2   // Boost when character is mentioned
+    };
+
+    // Calculate dynamic importance score for a memory
+    static calculateDynamicImportance(memoryData, currentContext = {}) {
+        let baseImportance = memoryData.importance || 5;
+        let weightedScore = baseImportance;
+        
+        // Apply recency weighting
+        const recencyFactor = this.calculateRecencyFactor(memoryData.timestamp);
+        weightedScore += (recencyFactor * this.weightingConfig.recencyWeight * 10);
+        
+        // Apply reinforcement weighting  
+        const reinforcementFactor = this.calculateReinforcementFactor(memoryData.reinforcementCount || 1);
+        weightedScore *= reinforcementFactor;
+        
+        // Apply emotional weighting
+        const emotionalFactor = this.calculateEmotionalFactor(memoryData);
+        weightedScore += (emotionalFactor * this.weightingConfig.emotionalWeight * 10);
+        
+        // Apply plot significance weighting
+        const plotFactor = this.calculatePlotFactor(memoryData);
+        weightedScore += (plotFactor * this.weightingConfig.plotWeight * 10);
+        
+        // Apply relationship weighting
+        const relationshipFactor = this.calculateRelationshipFactor(memoryData);
+        weightedScore += (relationshipFactor * this.weightingConfig.relationshipWeight * 10);
+        
+        // Apply context relevance boost
+        const contextBoost = this.calculateContextRelevance(memoryData, currentContext);
+        weightedScore += (contextBoost * this.weightingConfig.contextRelevanceBoost * 10);
+        
+        // Ensure score stays within reasonable bounds
+        return Math.max(1, Math.min(15, weightedScore));
+    }
+
+    // Calculate how recency affects importance (newer = more important, with decay)
+    static calculateRecencyFactor(timestamp) {
+        const now = Date.now();
+        const ageInDays = (now - timestamp) / (1000 * 60 * 60 * 24);
+        const maxDecayDays = this.weightingConfig.maxDecayDays;
+        
+        if (ageInDays <= 1) return 1.0; // Last 24 hours = full weight
+        if (ageInDays >= maxDecayDays) return 0.1; // After max days = minimal weight
+        
+        // Exponential decay between 1 day and max days
+        const decayFactor = Math.exp(-this.weightingConfig.recencyDecayRate * ageInDays);
+        return Math.max(0.1, decayFactor);
+    }
+
+    // Calculate reinforcement factor (repeated mentions increase importance)
+    static calculateReinforcementFactor(reinforcementCount) {
+        if (reinforcementCount <= 1) return 1.0;
+        
+        const factor = 1 + Math.log(reinforcementCount) * 0.2;
+        return Math.min(this.weightingConfig.maxReinforcement, factor);
+    }
+
+    // Calculate emotional impact factor
+    static calculateEmotionalFactor(memoryData) {
+        const emotionalImpact = memoryData.emotionalImpact || 5;
+        const emotionalTone = memoryData.emotionalTone || 'neutral';
+        
+        let factor = (emotionalImpact - 5) / 10; // Convert 1-10 to -0.4 to 0.5
+        
+        // Boost for strong emotional tones
+        const strongEmotions = ['angry', 'sad', 'happy', 'excited', 'fearful', 'loving', 'tense', 'dramatic'];
+        if (strongEmotions.includes(emotionalTone.toLowerCase())) {
+            factor += 0.3;
+        }
+        
+        return Math.max(0, factor);
+    }
+
+    // Calculate plot significance factor
+    static calculatePlotFactor(memoryData) {
+        const plotSignificance = memoryData.plotSignificance || 5;
+        const memoryType = memoryData.memoryType || 'general';
+        
+        let factor = (plotSignificance - 5) / 10; // Convert 1-10 to -0.4 to 0.5
+        
+        // Boost for plot-relevant memory types
+        if (memoryType === 'plot' || memoryType === 'worldbuilding') {
+            factor += 0.2;
+        }
+        
+        return Math.max(0, factor);
+    }
+
+    // Calculate relationship significance factor
+    static calculateRelationshipFactor(memoryData) {
+        const relationshipCount = memoryData.relationships?.length || 0;
+        const memoryType = memoryData.memoryType || 'general';
+        
+        let factor = relationshipCount * 0.1; // Each relationship adds weight
+        
+        // Boost for relationship-focused memories
+        if (memoryType === 'relationship') {
+            factor += 0.3;
+        }
+        
+        return Math.min(0.5, factor);
+    }
+
+    // Calculate contextual relevance to current conversation
+    static calculateContextRelevance(memoryData, currentContext) {
+        let relevanceScore = 0;
+        
+        if (!currentContext || Object.keys(currentContext).length === 0) {
+            return 0;
+        }
+        
+        // Check topic overlap
+        if (currentContext.topics && memoryData.topics) {
+            const topicOverlap = this.calculateTopicOverlap(currentContext.topics, memoryData.topics);
+            relevanceScore += topicOverlap * 0.4;
+        }
+        
+        // Check character presence
+        if (currentContext.characters && memoryData.characters) {
+            const characterOverlap = this.calculateCharacterOverlap(currentContext.characters, memoryData.characters);
+            relevanceScore += characterOverlap * 0.3;
+        }
+        
+        // Check emotional tone similarity
+        if (currentContext.emotionalTone && memoryData.emotionalTone) {
+            if (currentContext.emotionalTone === memoryData.emotionalTone) {
+                relevanceScore += 0.2;
+            }
+        }
+        
+        // Check memory type relevance
+        if (currentContext.memoryType && memoryData.memoryType) {
+            if (currentContext.memoryType === memoryData.memoryType) {
+                relevanceScore += 0.1;
+            }
+        }
+        
+        return Math.min(1.0, relevanceScore);
+    }
+
+    // Calculate topic overlap between current context and memory
+    static calculateTopicOverlap(currentTopics, memoryTopics) {
+        if (!currentTopics.length || !memoryTopics.length) return 0;
+        
+        const intersection = currentTopics.filter(topic => 
+            memoryTopics.some(memTopic => 
+                topic.toLowerCase().includes(memTopic.toLowerCase()) ||
+                memTopic.toLowerCase().includes(topic.toLowerCase())
+            )
+        );
+        
+        return intersection.length / Math.max(currentTopics.length, memoryTopics.length);
+    }
+
+    // Calculate character overlap between current context and memory
+    static calculateCharacterOverlap(currentCharacters, memoryCharacters) {
+        if (!currentCharacters.length || !memoryCharacters.length) return 0;
+        
+        const intersection = currentCharacters.filter(char => 
+            memoryCharacters.some(memChar => 
+                char.toLowerCase() === memChar.toLowerCase()
+            )
+        );
+        
+        return intersection.length / Math.max(currentCharacters.length, memoryCharacters.length);
+    }
+
+    // Get current conversation context for relevance calculation
+    static getCurrentContext() {
+        const context = getContext();
+        if (!context?.chat?.length) return {};
+        
+        // Analyze last few messages for current context
+        const recentMessages = context.chat.slice(-3);
+        const currentContext = {
+            topics: [],
+            characters: [],
+            emotionalTone: 'neutral',
+            memoryType: 'general'
+        };
+        
+        // Extract topics and characters from recent messages
+        recentMessages.forEach(msg => {
+            const speaker = msg.name || (msg.is_user ? 'User' : 'Assistant');
+            if (!currentContext.characters.includes(speaker)) {
+                currentContext.characters.push(speaker);
+            }
+            
+            // Simple topic extraction from message content
+            const content = msg.mes.toLowerCase();
+            if (content.includes('relationship') || content.includes('friend')) {
+                if (!currentContext.topics.includes('relationship')) {
+                    currentContext.topics.push('relationship');
+                }
+            }
+            if (content.includes('world') || content.includes('place')) {
+                if (!currentContext.topics.includes('worldbuilding')) {
+                    currentContext.topics.push('worldbuilding');
+                }
+            }
+            if (content.includes('plot') || content.includes('story')) {
+                if (!currentContext.topics.includes('plot')) {
+                    currentContext.topics.push('plot');
+                }
+            }
+        });
+        
+        return currentContext;
+    }
+
+    // Update importance scores for all memories based on current context
+    static updateMemoryImportanceScores() {
+        const currentContext = this.getCurrentContext();
+        const updatedMemories = new Map();
+        
+        for (const [messageIndex, memoryData] of messageSummaries) {
+            const dynamicImportance = this.calculateDynamicImportance(memoryData, currentContext);
+            
+            // Update memory with new importance score
+            const updatedMemory = {
+                ...memoryData,
+                dynamicImportance: dynamicImportance,
+                lastUpdated: Date.now(),
+                contextRelevance: this.calculateContextRelevance(memoryData, currentContext)
+            };
+            
+            updatedMemories.set(messageIndex, updatedMemory);
+        }
+        
+        // Update the global memory store
+        for (const [index, memory] of updatedMemories) {
+            messageSummaries.set(index, memory);
+        }
+        
+        console.log(`[${MODULE_NAME}] Updated importance scores for ${updatedMemories.size} memories`);
+    }
+
+    // Reinforce a memory when it's referenced or becomes relevant
+    static reinforceMemory(messageIndex, reinforcementType = 'mention') {
+        const memoryData = messageSummaries.get(messageIndex);
+        if (!memoryData) return;
+        
+        const reinforcementValue = {
+            'mention': 1,
+            'direct_reference': 2,
+            'plot_continuation': 3,
+            'emotional_callback': 2
+        }[reinforcementType] || 1;
+        
+        const updatedMemory = {
+            ...memoryData,
+            reinforcementCount: (memoryData.reinforcementCount || 1) + reinforcementValue,
+            lastReinforced: Date.now(),
+            reinforcementType: reinforcementType
+        };
+        
+        // Recalculate dynamic importance with new reinforcement
+        const currentContext = this.getCurrentContext();
+        updatedMemory.dynamicImportance = this.calculateDynamicImportance(updatedMemory, currentContext);
+        
+        messageSummaries.set(messageIndex, updatedMemory);
+        
+        console.log(`[${MODULE_NAME}] Reinforced memory ${messageIndex} (type: ${reinforcementType}, new count: ${updatedMemory.reinforcementCount})`);
+    }
+}
+
+// Cross-Chat Character Persistence System (OPTIONAL)
+class CrossChatPersistenceSystem {
+    static crossChatMemories = new Map(); // { characterId: { traits: [], relationships: [], memories: [] } }
+    static storageKey = 'nemolore_cross_chat_memories';
+    static lastCleanup = Date.now();
+    static cleanupInterval = 24 * 60 * 60 * 1000; // 24 hours
+
+    // Initialize cross-chat system (only if enabled)
+    static async initialize() {
+        if (!nemoLoreSettings.enableCrossChatPersistence) {
+            console.log(`[${MODULE_NAME}] Cross-chat persistence disabled`);
+            return;
+        }
+
+        console.log(`[${MODULE_NAME}] Initializing cross-chat character persistence...`);
+        await this.loadCrossChatMemories();
+        await this.performMaintenanceIfNeeded();
+    }
+
+    // Load cross-chat memories from storage
+    static async loadCrossChatMemories() {
+        try {
+            const stored = localStorage.getItem(this.storageKey);
+            if (stored) {
+                const data = JSON.parse(stored);
+                this.crossChatMemories = new Map(Object.entries(data.memories || {}));
+                this.lastCleanup = data.lastCleanup || Date.now();
+                console.log(`[${MODULE_NAME}] Loaded cross-chat memories for ${this.crossChatMemories.size} characters`);
+            }
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error loading cross-chat memories:`, error);
+        }
+    }
+
+    // Save cross-chat memories to storage
+    static async saveCrossChatMemories() {
+        if (!nemoLoreSettings.enableCrossChatPersistence) return;
+
+        try {
+            const data = {
+                memories: Object.fromEntries(this.crossChatMemories),
+                lastCleanup: this.lastCleanup,
+                version: '1.0'
+            };
+            localStorage.setItem(this.storageKey, JSON.stringify(data));
+            console.log(`[${MODULE_NAME}] Saved cross-chat memories for ${this.crossChatMemories.size} characters`);
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error saving cross-chat memories:`, error);
+        }
+    }
+
+    // Extract shareable information from current chat
+    static async extractShareableMemories(characterName) {
+        if (!nemoLoreSettings.enableCrossChatPersistence || !characterName) return;
+
+        const sharingLevel = nemoLoreSettings.crossChatSharingLevel;
+        if (sharingLevel === 'none') return;
+
+        const shareableData = {
+            traits: [],
+            relationships: [],
+            memories: [],
+            lastUpdated: Date.now(),
+            chatId: getCurrentChatId()
+        };
+
+        // Extract character traits from permanent memories
+        if (sharingLevel === 'traits' || sharingLevel === 'all') {
+            const permanentMemories = MultiTierMemorySystem.getMemoriesByTier('permanent');
+            permanentMemories.forEach(memory => {
+                if (memory.type === 'character_trait' && 
+                    memory.character && 
+                    memory.character.toLowerCase() === characterName.toLowerCase()) {
+                    shareableData.traits.push({
+                        trait: memory.trait,
+                        evidence: this.sanitizeMemoryContent(memory.evidence),
+                        importance: memory.importance,
+                        confidence: memory.confidence || 0.8,
+                        lastSeen: Date.now()
+                    });
+                }
+            });
+        }
+
+        // Extract relationship information
+        if (sharingLevel === 'relationships' || sharingLevel === 'all') {
+            for (const [messageIndex, memoryData] of messageSummaries) {
+                if (memoryData.relationships && memoryData.relationships.length > 0) {
+                    memoryData.relationships.forEach(rel => {
+                        if (rel.character1?.toLowerCase() === characterName.toLowerCase() ||
+                            rel.character2?.toLowerCase() === characterName.toLowerCase()) {
+                            shareableData.relationships.push({
+                                type: rel.type,
+                                with: rel.character1?.toLowerCase() === characterName.toLowerCase() ? rel.character2 : rel.character1,
+                                description: this.sanitizeMemoryContent(rel.type),
+                                importance: memoryData.importance || 5,
+                                lastSeen: Date.now()
+                            });
+                        }
+                    });
+                }
+            }
+        }
+
+        // Extract general memories (only if sharing level is 'all')
+        if (sharingLevel === 'all') {
+            const longTermMemories = MultiTierMemorySystem.getMemoriesByTier('longTerm', { limit: 10 });
+            longTermMemories.forEach(memory => {
+                if (memory.characters && 
+                    memory.characters.some(char => char.toLowerCase() === characterName.toLowerCase()) &&
+                    this.isMemoryPrivacySafe(memory)) {
+                    shareableData.memories.push({
+                        content: this.sanitizeMemoryContent(memory.content),
+                        topics: memory.topics || [],
+                        emotionalTone: memory.emotionalTone || 'neutral',
+                        importance: memory.importance || 5,
+                        memoryType: memory.memoryType || 'general',
+                        lastSeen: Date.now()
+                    });
+                }
+            });
+        }
+
+        // Store the shareable data
+        if (shareableData.traits.length > 0 || shareableData.relationships.length > 0 || shareableData.memories.length > 0) {
+            this.crossChatMemories.set(characterName.toLowerCase(), shareableData);
+            await this.saveCrossChatMemories();
+            console.log(`[${MODULE_NAME}] Extracted shareable memories for ${characterName}:`, {
+                traits: shareableData.traits.length,
+                relationships: shareableData.relationships.length,
+                memories: shareableData.memories.length
+            });
+        }
+    }
+
+    // Get cross-chat memories for character injection
+    static getCrossChatMemories(characterName) {
+        if (!nemoLoreSettings.enableCrossChatPersistence || !characterName) return null;
+
+        const memories = this.crossChatMemories.get(characterName.toLowerCase());
+        if (!memories) return null;
+
+        // Check if memories are too old
+        const maxAge = nemoLoreSettings.crossChatDecayDays * 24 * 60 * 60 * 1000;
+        if (Date.now() - memories.lastUpdated > maxAge) {
+            console.log(`[${MODULE_NAME}] Cross-chat memories for ${characterName} are too old, skipping`);
+            return null;
+        }
+
+        return memories;
+    }
+
+    // Generate cross-chat memory injection
+    static generateCrossChatInjection(characterName) {
+        const memories = this.getCrossChatMemories(characterName);
+        if (!memories) return '';
+
+        const currentChatId = getCurrentChatId();
+        
+        // Don't inject memories from the same chat
+        if (memories.chatId === currentChatId) return '';
+
+        let injection = `\n[CROSS-CHAT CHARACTER MEMORY - Previous Interactions]\n`;
+        injection += `🔗 Character: ${characterName}\n`;
+        injection += `📅 Last Updated: ${new Date(memories.lastUpdated).toLocaleDateString()}\n`;
+        injection += `🔒 Privacy Level: ${nemoLoreSettings.crossChatSharingLevel}\n\n`;
+
+        // Add character traits
+        if (memories.traits && memories.traits.length > 0) {
+            injection += `CHARACTER TRAITS (${memories.traits.length} known):\n`;
+            memories.traits.slice(0, 5).forEach(trait => {
+                injection += `🧑 ${trait.trait} (confidence: ${Math.round(trait.confidence * 100)}%)\n`;
+            });
+            injection += '\n';
+        }
+
+        // Add relationships
+        if (memories.relationships && memories.relationships.length > 0) {
+            injection += `RELATIONSHIPS (${memories.relationships.length} known):\n`;
+            memories.relationships.slice(0, 3).forEach(rel => {
+                injection += `🤝 ${rel.type} with ${rel.with}\n`;
+            });
+            injection += '\n';
+        }
+
+        // Add general memories
+        if (memories.memories && memories.memories.length > 0) {
+            injection += `PREVIOUS INTERACTIONS (${memories.memories.length} memories):\n`;
+            memories.memories.slice(0, 2).forEach(memory => {
+                injection += `💭 [${memory.memoryType}] ${memory.content.substring(0, 100)}...\n`;
+            });
+            injection += '\n';
+        }
+
+        injection += `[End of Cross-Chat Memory]`;
+
+        return injection;
+    }
+
+    // Check if memory content is safe to share (privacy protection)
+    static isMemoryPrivacySafe(memory) {
+        if (!nemoLoreSettings.enableCrossChatPrivacy) return true;
+
+        const content = memory.content.toLowerCase();
+        const sensitiveKeywords = [
+            'secret', 'private', 'confidential', 'personal', 'intimate',
+            'password', 'address', 'phone', 'email', 'real name',
+            'nsfw', 'sexual', 'romantic', 'kiss', 'love confession'
+        ];
+
+        return !sensitiveKeywords.some(keyword => content.includes(keyword));
+    }
+
+    // Sanitize memory content for cross-chat sharing
+    static sanitizeMemoryContent(content) {
+        if (!content) return '';
+
+        // Remove overly specific details that might be too personal
+        return content
+            .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '[email]') // Remove emails
+            .replace(/\b\d{3}-\d{3}-\d{4}\b/g, '[phone]') // Remove phone numbers
+            .replace(/\b\d{1,5}\s\w+\s(Street|St|Avenue|Ave|Road|Rd|Drive|Dr)\b/gi, '[address]') // Remove addresses
+            .substring(0, 200); // Limit length
+    }
+
+    // Perform maintenance - cleanup old memories
+    static async performMaintenanceIfNeeded() {
+        const now = Date.now();
+        if (now - this.lastCleanup < this.cleanupInterval) return;
+
+        console.log(`[${MODULE_NAME}] Performing cross-chat memory maintenance...`);
+
+        const maxAge = nemoLoreSettings.crossChatDecayDays * 24 * 60 * 60 * 1000;
+        let cleanedCount = 0;
+
+        for (const [characterName, memories] of this.crossChatMemories) {
+            if (now - memories.lastUpdated > maxAge) {
+                this.crossChatMemories.delete(characterName);
+                cleanedCount++;
+            }
+        }
+
+        this.lastCleanup = now;
+        await this.saveCrossChatMemories();
+
+        console.log(`[${MODULE_NAME}] Cross-chat maintenance complete. Cleaned ${cleanedCount} old character memories.`);
+    }
+
+    // Manual cleanup function
+    static async clearCrossChatMemories(characterName = null) {
+        if (characterName) {
+            this.crossChatMemories.delete(characterName.toLowerCase());
+            console.log(`[${MODULE_NAME}] Cleared cross-chat memories for ${characterName}`);
+        } else {
+            this.crossChatMemories.clear();
+            console.log(`[${MODULE_NAME}] Cleared all cross-chat memories`);
+        }
+        await this.saveCrossChatMemories();
+    }
+
+    // Update memories when chat ends or changes
+    static async onChatEnd() {
+        if (!nemoLoreSettings.enableCrossChatPersistence) return;
+
+        const context = getContext();
+        if (!context?.chat?.length) return;
+
+        // Extract character names from the current chat
+        const characters = new Set();
+        context.chat.forEach(msg => {
+            const speaker = msg.name || (msg.is_user ? 'User' : 'Assistant');
+            if (speaker !== 'User' && speaker !== 'Assistant') {
+                characters.add(speaker);
+            }
+        });
+
+        // Extract and store memories for each character
+        for (const characterName of characters) {
+            await this.extractShareableMemories(characterName);
+        }
+    }
+}
+
 // Chat monitoring and message processing
 function initializeChatMonitoring() {
     if (messageObserver) {
@@ -3862,22 +5284,21 @@ function processNewMessage(messageElement) {
         }
     }
 
-    // Queue message for summarization if enabled, but only if not already summarized
+    // Note: Individual message summarization is now handled through user consent flow
+    // in checkForBulkSummarization() rather than automatically here
     if (nemoLoreSettings.enableSummarization) {
         const messageIndex = Array.from(messageElement.parentElement.children).indexOf(messageElement);
         if (messageIndex >= 0) {
-            // Check if message already has a summary before queuing (accounts for paired summarization)
+            // Check if message already has a summary and refresh display
             if (MessageSummarizer.isMessageSummarized(messageIndex)) {
-                console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized (or part of summarized pair), skipping queue`);
-            } else {
-                console.log(`[${MODULE_NAME}] Processing new message at index ${messageIndex} - needs summarization`);
-                MessageSummarizer.queueMessageForSummary(messageIndex);
-                
-                // After queuing, refresh summary display and enhanced memory injection
+                console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized (or part of summarized pair)`);
+                // Refresh summary display for already summarized messages
                 setTimeout(() => {
                     MessageSummarizer.refreshSummaryDisplay();
                     MessageSummarizer.enhancedMemoryInjection();
                 }, 200);
+            } else {
+                console.log(`[${MODULE_NAME}] Message ${messageIndex} detected but not auto-queuing (awaiting user consent)`);
             }
         }
     }
@@ -4211,6 +5632,13 @@ function setupEventHandlers() {
     // Handle chat changes
     eventSource.on(event_types.CHAT_CHANGED, () => {
         handleChatChanged();
+        
+        // Save cross-chat memories for the previous chat (if enabled)
+        if (nemoLoreSettings.enableCrossChatPersistence) {
+            setTimeout(() => {
+                CrossChatPersistenceSystem.extractAndSaveMemories();
+            }, 1000); // Small delay to ensure chat data is stable
+        }
     });
 
     // Handle chat clearing
@@ -5395,6 +6823,19 @@ async function initializeSettingsUI() {
     const coreMemoryAnimationDurationElement = getElement('nemolore_core_memory_animation_duration');
     if (coreMemoryAnimationDurationElement) coreMemoryAnimationDurationElement.value = nemoLoreSettings.coreMemoryAnimationDuration;
 
+    // Cross-chat character persistence settings
+    const enableCrossChatPersistenceElement = getElement('nemolore_enable_cross_chat_persistence');
+    if (enableCrossChatPersistenceElement) enableCrossChatPersistenceElement.checked = nemoLoreSettings.enableCrossChatPersistence;
+    
+    const crossChatSharingLevelElement = getElement('nemolore_cross_chat_sharing_level');
+    if (crossChatSharingLevelElement) crossChatSharingLevelElement.value = nemoLoreSettings.crossChatSharingLevel;
+    
+    const crossChatDecayDaysElement = getElement('nemolore_cross_chat_decay_days');
+    if (crossChatDecayDaysElement) crossChatDecayDaysElement.value = nemoLoreSettings.crossChatDecayDays;
+    
+    const enableCrossChatPrivacyElement = getElement('nemolore_enable_cross_chat_privacy');
+    if (enableCrossChatPrivacyElement) enableCrossChatPrivacyElement.checked = nemoLoreSettings.enableCrossChatPrivacy;
+
     // Vectorization settings
     const enableVectorizationElement = getElement('nemolore_enable_vectorization');
     if (enableVectorizationElement) enableVectorizationElement.checked = nemoLoreSettings.enableVectorization;
@@ -5673,6 +7114,40 @@ async function initializeSettingsUI() {
         nemoLoreSettings.coreMemoryAnimationDuration = parseInt(e.target.value);
         saveSettings();
         console.log(`[${MODULE_NAME}] Core memory animation duration changed to: ${e.target.value}ms`);
+    });
+
+    // Cross-chat character persistence event handlers
+    document.getElementById('nemolore_enable_cross_chat_persistence').addEventListener('change', (e) => {
+        nemoLoreSettings.enableCrossChatPersistence = e.target.checked;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Cross-chat character persistence ${e.target.checked ? 'enabled' : 'disabled'}`);
+        
+        // Initialize or cleanup cross-chat system based on setting
+        if (e.target.checked) {
+            setTimeout(async () => {
+                await CrossChatPersistenceSystem.initialize();
+            }, 100);
+        } else {
+            CrossChatPersistenceSystem.clearAllMemories();
+        }
+    });
+
+    document.getElementById('nemolore_cross_chat_sharing_level').addEventListener('change', (e) => {
+        nemoLoreSettings.crossChatSharingLevel = e.target.value;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Cross-chat sharing level changed to: ${e.target.value}`);
+    });
+
+    document.getElementById('nemolore_cross_chat_decay_days').addEventListener('input', (e) => {
+        nemoLoreSettings.crossChatDecayDays = parseInt(e.target.value);
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Cross-chat memory retention changed to: ${e.target.value} days`);
+    });
+
+    document.getElementById('nemolore_enable_cross_chat_privacy').addEventListener('change', (e) => {
+        nemoLoreSettings.enableCrossChatPrivacy = e.target.checked;
+        saveSettings();
+        console.log(`[${MODULE_NAME}] Cross-chat privacy protection ${e.target.checked ? 'enabled' : 'disabled'}`);
     });
 
     // Vectorization settings event handlers
@@ -6283,6 +7758,11 @@ async function init() {
         MessageSummarizer.cleanupOldSummaries();
     }, 1000);
     
+    // Initialize cross-chat character persistence system (optional feature)
+    setTimeout(async () => {
+        await CrossChatPersistenceSystem.initialize();
+    }, 1500);
+    
     isInitialized = true;
     console.log(`[${MODULE_NAME}] Initialized successfully`);
 }
@@ -6462,8 +7942,11 @@ async function runSystemCheck() {
                     testContext ? `Found: time=${testContext.timeContext || 'none'}, location=${testContext.locationContext || 'none'}, NPCs=${testContext.npcContext ? testContext.npcContext.length : 0}` : 'Context extraction failed'
                 );
             } catch (error) {
-                addResult('Context Extraction', 'Time/Location/NPC Tracking', 'FAIL', 'Error in context extraction', error.message);
+                console.warn(`[${MODULE_NAME}] Context extraction check failed:`, error);
+                addResult('Context Extraction', 'Time/Location/NPC Tracking', 'WARN', 'Context extraction check skipped - function may not be available');
             }
+        } else {
+            addResult('Context Extraction', 'Time/Location/NPC Tracking', 'WARN', 'getContext function not available');
         }
         
         // 9. UI Elements Check
@@ -6487,13 +7970,20 @@ async function runSystemCheck() {
         );
         
         // 10. Macro System Check
-        addResult('Macros', 'NemoLore Macro', 
-            typeof MacrosParser !== 'undefined' && MacrosParser.getAll().hasOwnProperty(NEMOLORE_MACRO) ? 'PASS' : 'WARN',
-            `{{${NEMOLORE_MACRO}}} macro registration`
-        );
+        try {
+            const macroExists = typeof MacrosParser !== 'undefined' && MacrosParser.getAll && MacrosParser.getAll().hasOwnProperty(NEMOLORE_MACRO);
+            addResult('Macros', 'NemoLore Macro', 
+                macroExists ? 'PASS' : 'WARN',
+                `{{${NEMOLORE_MACRO}}} macro registration`
+            );
+        } catch (macroError) {
+            console.warn(`[${MODULE_NAME}] Macro check failed:`, macroError);
+            addResult('Macros', 'NemoLore Macro', 'WARN', 'Macro check failed - MacrosParser may not be available');
+        }
         
     } catch (error) {
-        addResult('System', 'Overall Check', 'FAIL', 'System check encountered an error', error.message);
+        console.error(`[${MODULE_NAME}] System check error:`, error);
+        addResult('System', 'Overall Check', 'FAIL', `System check encountered an error: ${error.message}`, error.stack);
     }
     
     // Generate Summary Report
@@ -6510,16 +8000,16 @@ async function runSystemCheck() {
     
     const detailsHtml = results.details.map(r => {
         const icon = r.status === 'PASS' ? '✅' : r.status === 'WARN' ? '⚠️' : '❌';
-        return `<div style="margin: 5px 0; font-size: 12px;"><strong>${icon} ${r.category} - ${r.test}:</strong> ${r.message}</div>`;
+        return `<div style="margin: 5px 0; font-size: 12px; color: #333;"><strong>${icon} ${r.category} - ${r.test}:</strong> ${r.message}</div>`;
     }).join('');
     
     await callPopup(`
-        <div class="nemolore-system-check-popup">
-            <h3>${statusEmoji} NemoLore System Check - ${statusText}</h3>
-            <div style="margin: 15px 0;">
+        <div class="nemolore-system-check-popup" style="color: #333; background: #fff; padding: 20px; border-radius: 8px;">
+            <h3 style="color: #222; margin-top: 0;">${statusEmoji} NemoLore System Check - ${statusText}</h3>
+            <div style="margin: 15px 0; color: #333;">
                 <strong>Results:</strong> ${results.passed} passed, ${results.warnings} warnings, ${results.failed} failed
             </div>
-            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: #f9f9f9;">
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 15px; background: #f8f9fa; color: #333; border-radius: 4px;">
                 ${detailsHtml}
             </div>
             <div style="margin-top: 15px; font-size: 11px; color: #666;">

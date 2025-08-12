@@ -80,8 +80,11 @@
                     <div class="flex-container">
                         <label class="checkbox_label" for="nemolore_auto_summarize">
                             <input id="nemolore_auto_summarize" type="checkbox">
-                            Auto Summarize Messages
+                            Enable Automatic Chat Management Detection
                         </label>
+                        <small style="display: block; color: #666; margin-top: 5px;">
+                            When enabled, NemoLore will automatically detect unsummarized chats and prompt you for permission to manage them.
+                        </small>
                     </div>
                     <div class="flex-container">
                         <label for="nemolore_connection_profile">Connection Profile:</label>
@@ -250,6 +253,59 @@
                 </div>
             </div>
 
+            <!-- Cross-Chat Character Persistence Sub-drawer -->
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Cross-Chat Character Persistence (Optional)</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable" tabindex="0"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <div class="flex-container">
+                        <label class="checkbox_label" for="nemolore_enable_cross_chat_persistence">
+                            <input id="nemolore_enable_cross_chat_persistence" type="checkbox">
+                            Enable Cross-Chat Character Memory
+                        </label>
+                        <small style="display: block; color: #666; margin-top: 5px;">
+                            When enabled, NemoLore will remember character traits and relationships across different chats. <strong>Optional feature for enhanced continuity.</strong>
+                        </small>
+                    </div>
+                    <div class="flex-container">
+                        <label for="nemolore_cross_chat_sharing_level">Memory Sharing Level:</label>
+                        <select id="nemolore_cross_chat_sharing_level" class="text_pole">
+                            <option value="none">None (Disabled)</option>
+                            <option value="traits">Character Traits Only</option>
+                            <option value="relationships">Traits + Relationships</option>
+                            <option value="all">All Memories (Full Sharing)</option>
+                        </select>
+                        <small style="display: block; color: #666; margin-top: 5px;">
+                            Controls what character information is shared between different chats.
+                        </small>
+                    </div>
+                    <div class="flex-container">
+                        <label for="nemolore_cross_chat_decay_days">Memory Retention (days):</label>
+                        <input id="nemolore_cross_chat_decay_days" type="number" class="text_pole" min="1" max="365" value="90">
+                        <small style="display: block; color: #666; margin-top: 5px;">
+                            How long cross-chat memories are retained before they start decaying.
+                        </small>
+                    </div>
+                    <div class="flex-container">
+                        <label class="checkbox_label" for="nemolore_enable_cross_chat_privacy">
+                            <input id="nemolore_enable_cross_chat_privacy" type="checkbox">
+                            Enable Privacy Protection
+                        </label>
+                        <small style="display: block; color: #666; margin-top: 5px;">
+                            When enabled, prevents sharing of potentially sensitive or personal conversation content.
+                        </small>
+                    </div>
+                    <div class="flex-container">
+                        <small><strong>Privacy Note:</strong> Cross-chat memories are stored locally in your browser and never transmitted to external servers. You can disable this feature at any time.</small>
+                    </div>
+                    <div class="flex-container">
+                        <small><strong>How it works:</strong> When you switch between chats, NemoLore can remember character personalities, relationships, and important facts, creating continuity across conversations while respecting your privacy preferences.</small>
+                    </div>
+                </div>
+            </div>
+
             <!-- Vectorization & Semantic Search Sub-drawer -->
             <div class="inline-drawer">
                 <div class="inline-drawer-toggle inline-drawer-header">
@@ -392,7 +448,8 @@
             <summary><strong>Message Summarization</strong></summary>
             <div class="nemolore-settings-section">
                 <label><input id="nemolore_enable_summarization_fallback" type="checkbox"> Enable Summarization</label><br>
-                <label><input id="nemolore_auto_summarize_fallback" type="checkbox"> Auto Summarize Messages</label><br>
+                <label><input id="nemolore_auto_summarize_fallback" type="checkbox"> Enable Automatic Chat Management Detection</label><br>
+                <small style="color: #666;">When enabled, NemoLore will automatically detect unsummarized chats and prompt for permission.</small><br>
                 <label>Connection Profile: <select id="nemolore_connection_profile_fallback"><option value="">Same as Current</option></select></label><br>
                 <label>Completion Preset: <select id="nemolore_completion_preset_fallback"><option value="">Same as Current</option></select></label><br>
                 
