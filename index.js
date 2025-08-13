@@ -7776,7 +7776,23 @@ async function waitForSillyTavernReady() {
 // Load settings HTML
 async function loadSettingsHTML() {
     try {
-        const response = await fetch('/scripts/extensions/third-party/Nemo-Lore/settings.html');
+        // Use import.meta.url to get the current module path
+        let extensionPath = '/scripts/extensions/third-party/Nemo-Lore'; // fallback
+        
+        if (import.meta && import.meta.url) {
+            try {
+                const moduleUrl = new URL(import.meta.url);
+                const pathParts = moduleUrl.pathname.split('/');
+                const indexPos = pathParts.findIndex(part => part === 'third-party');
+                if (indexPos !== -1 && pathParts[indexPos + 1]) {
+                    extensionPath = `/scripts/extensions/third-party/${pathParts[indexPos + 1]}`;
+                }
+            } catch (e) {
+                console.warn(`[${MODULE_NAME}] Could not determine extension path, using fallback`);
+            }
+        }
+        
+        const response = await fetch(`${extensionPath}/settings.html`);
         if (!response.ok) {
             console.error(`[${MODULE_NAME}] Failed to load settings.html: ${response.status}`);
             return false;
