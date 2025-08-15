@@ -2545,11 +2545,13 @@ ${summaryData.text}
                 
                 try {
                     let result;
-                    // Use paired summarization if enabled
-                    if (nemoLoreSettings.enablePairedSummarization) {
-                        result = await this.summarizePairedMessages(messageIndex);
+                    // Use new approach: Message 0 = full summary, others = paired
+                    if (messageIndex === 0) {
+                        // Message 0: Use full content as summary
+                        result = await this.createFullSummaryForMessage0(messageIndex);
                     } else {
-                        result = await this.summarizeMessage(messageIndex);
+                        // Messages 1+: Use paired approach (1+2, 3+4, etc.)
+                        result = await this.processNewMessagePairing(messageIndex);
                     }
                     console.log(`[${MODULE_NAME}] Summarization result for message ${messageIndex}:`, result ? 'Success' : 'Failed');
                     processed++;
@@ -3027,18 +3029,40 @@ ${summaryData.text}
         
         const context = getContext();
         if (!context?.chat?.length || context.chat.length < 3) {
-            console.log(`[${MODULE_NAME}] Chat too short for lorebook creation`);
+            console.log(`[${MODULE_NAME}] Chat too short for processing`);
             return;
         }
 
-        // Check if we already have processed this chat
-        if (messageSummaries.size > 0) {
-            console.log(`[${MODULE_NAME}] Chat already has summaries, skipping lorebook creation prompt`);
+        // Check what kind of processing this chat needs
+        const unsummarizedCount = this.countUnsummarizedMessages();
+        
+        if (unsummarizedCount === 0) {
+            console.log(`[${MODULE_NAME}] Chat already fully processed`);
             return;
         }
 
-        // Simple direct prompt
-        await this.promptForLorebookCreation();
+        if (unsummarizedCount >= 20) {
+            // Existing chat with many messages - use bulk summarization
+            console.log(`[${MODULE_NAME}] Large existing chat detected (${unsummarizedCount} unsummarized), using bulk processing`);
+            await this.promptForBulkProcessing(unsummarizedCount);
+        } else {
+            // New or small chat - use normal lorebook creation flow
+            console.log(`[${MODULE_NAME}] Small chat detected, using lorebook creation flow`);
+            await this.promptForLorebookCreation();
+        }
+    }
+
+    static countUnsummarizedMessages() {
+        const context = getContext();
+        let count = 0;
+        
+        for (let i = 0; i < context.chat.length; i++) {
+            if (!this.isMessageSummarized(i)) {
+                count++;
+            }
+        }
+        
+        return count;
     }
 
     static async promptForLorebookCreation() {
@@ -3069,6 +3093,160 @@ ${summaryData.text}
             await this.processLorebookCreation();
         } else {
             console.log(`[${MODULE_NAME}] User declined lorebook creation`);
+        }
+    }
+
+    static async promptForBulkProcessing(unsummarizedCount) {
+        console.log(`[${MODULE_NAME}] promptForBulkProcessing called with ${unsummarizedCount} messages`);
+        
+        if (isPopupActive) {
+            console.log(`[${MODULE_NAME}] Popup already active, skipping bulk processing prompt`);
+            return;
+        }
+        
+        isPopupActive = true;
+        let action;
+        try {
+            action = await NotificationSystem.show(
+                `📚 Existing chat detected with ${unsummarizedCount} messages. Would you like NemoLore to process this chat?`,
+                [
+                    { action: 'yes', text: 'Yes, process chat' },
+                    { action: 'no', text: 'No, skip for now' }
+                ],
+                12000
+            );
+        } finally {
+            isPopupActive = false;
+        }
+        
+        if (action === 'yes') {
+            console.log(`[${MODULE_NAME}] User accepted bulk processing`);
+            await this.processBulkSummarization();
+        } else {
+            console.log(`[${MODULE_NAME}] User declined bulk processing`);
+        }
+    }
+
+    static async processBulkSummarization() {
+        console.log(`[${MODULE_NAME}] processBulkSummarization called`);
+        
+        const context = getContext();
+        const totalMessages = context.chat.length;
+        const CHUNK_SIZE = 20;
+        
+        try {
+            // Process in chunks of 20 messages
+            for (let startIndex = 0; startIndex < totalMessages; startIndex += CHUNK_SIZE) {
+                const endIndex = Math.min(startIndex + CHUNK_SIZE - 1, totalMessages - 1);
+                const chunkMessages = [];
+                
+                // Collect unsummarized messages in this chunk
+                for (let i = startIndex; i <= endIndex; i++) {
+                    if (!this.isMessageSummarized(i)) {
+                        chunkMessages.push({
+                            index: i,
+                            message: context.chat[i]
+                        });
+                    }
+                }
+                
+                if (chunkMessages.length === 0) {
+                    console.log(`[${MODULE_NAME}] Chunk ${startIndex}-${endIndex} already processed, skipping`);
+                    continue;
+                }
+                
+                console.log(`[${MODULE_NAME}] Processing chunk ${startIndex}-${endIndex} with ${chunkMessages.length} messages`);
+                
+                // Create bulk summary for this chunk
+                const chunkSummary = await this.createBulkChunkSummary(chunkMessages);
+                
+                if (chunkSummary) {
+                    // Mark all messages in this chunk as summarized 
+                    // Store the summary on the LAST message in the chunk (like message 20)
+                    const lastMessageIndex = endIndex;
+                    
+                    // Create the main summary entry on the last message
+                    const summaryData = {
+                        text: chunkSummary,
+                        originalLength: chunkMessages.reduce((sum, msg) => sum + (msg.message.mes?.length || 0), 0),
+                        timestamp: Date.now(),
+                        messageHash: getStringHash(chunkMessages.map(msg => msg.message.mes).join('')),
+                        context: {},
+                        isBulkSummary: true,
+                        bulkChunkStart: startIndex,
+                        bulkChunkEnd: endIndex,
+                        bulkMessageCount: chunkMessages.length
+                    };
+                    
+                    messageSummaries.set(lastMessageIndex, summaryData);
+                    this.saveSummaryToPersistentStorage(lastMessageIndex, summaryData);
+                    this.addSummaryIndicator(lastMessageIndex);
+                    
+                    // Mark other messages in chunk as bulk-processed (pointing to the main summary)
+                    for (const msgData of chunkMessages) {
+                        if (msgData.index !== lastMessageIndex) {
+                            const bulkMarker = {
+                                text: `[Bulk processed with chunk ending at message ${lastMessageIndex}]`,
+                                originalLength: msgData.message.mes?.length || 0,
+                                timestamp: Date.now(),
+                                messageHash: getStringHash(msgData.message.mes || ''),
+                                context: {},
+                                isBulkMarker: true,
+                                bulkSummaryAt: lastMessageIndex
+                            };
+                            
+                            messageSummaries.set(msgData.index, bulkMarker);
+                            this.saveSummaryToPersistentStorage(msgData.index, bulkMarker);
+                            this.addSummaryIndicator(msgData.index);
+                        }
+                    }
+                    
+                    console.log(`[${MODULE_NAME}] Completed bulk chunk ${startIndex}-${endIndex}, summary stored at message ${lastMessageIndex}`);
+                } else {
+                    console.warn(`[${MODULE_NAME}] Failed to create bulk summary for chunk ${startIndex}-${endIndex}`);
+                }
+                
+                // Progress notification
+                const progress = Math.round(((endIndex + 1) / totalMessages) * 100);
+                console.log(`[${MODULE_NAME}] Bulk processing progress: ${progress}%`);
+                
+                // Small delay between chunks
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            console.log(`[${MODULE_NAME}] Bulk summarization complete`);
+            
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error in bulk summarization:`, error);
+        }
+    }
+
+    static async createBulkChunkSummary(chunkMessages) {
+        try {
+            // Combine all messages in the chunk into cohesive text
+            const combinedText = chunkMessages.map(msgData => {
+                const speaker = msgData.message.name || (msgData.message.is_user ? 'User' : 'Assistant');
+                return `${speaker}: ${msgData.message.mes}`;
+            }).join('\n\n');
+
+            const prompt = `You are an expert narrative summarizer. Create a concise summary that captures the essential events and information from this sequence of ${chunkMessages.length} messages:
+
+${combinedText}
+
+Focus on:
+- Key plot developments and character actions
+- Important information revealed
+- Significant emotional moments or relationship changes
+- Any world-building details mentioned
+
+Provide a comprehensive but concise summary that preserves the essential narrative flow.`;
+
+            const response = await generateQuietPrompt(prompt, false);
+            return response?.trim() || null;
+            
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error creating bulk chunk summary:`, error);
+            return null;
         }
     }
 
@@ -3229,195 +3407,109 @@ Provide a brief summary that preserves the essential narrative elements and any 
         }
     }
 
-    static async promptForWorldFleshing(unsummarizedMessages) {
-        isPopupActive = true;
-        let action;
-        try {
-            action = await NotificationSystem.show(
-                `🌍 Would you like to flesh out the world? This will generate additional lore entries based on the chat content.`,
-                [
-                    { action: 'yes', text: 'Yes, flesh out the world' },
-                    { action: 'no', text: 'No, skip world building' }
-                ],
-                12000
-            );
-        } finally {
-            isPopupActive = false;
-        }
+    // Helper functions for ongoing message summarization
+    static async createFullSummaryForMessage0(messageIndex) {
+        const context = getContext();
+        const message = context.chat[messageIndex];
         
-        if (action === 'yes') {
-            console.log(`[${MODULE_NAME}] User accepted world fleshing - initiating lorebook generation`);
-            // Trigger world fleshing/lorebook generation here if needed
-        } else {
-            console.log(`[${MODULE_NAME}] User declined world fleshing`);
-        }
+        if (!message || messageIndex !== 0) return false;
         
-        await this.promptForChunkSummaries(unsummarizedMessages);
+        // Use full message content as summary for message 0
+        const summaryData = {
+            text: message.mes, // Full message content
+            originalLength: message.mes.length,
+            timestamp: Date.now(),
+            messageHash: getStringHash(message.mes),
+            context: {},
+            isFullSummary: true // Mark as full content
+        };
+        
+        messageSummaries.set(0, summaryData);
+        this.saveSummaryToPersistentStorage(0, summaryData);
+        this.addSummaryIndicator(0);
+        console.log(`[${MODULE_NAME}] Message 0 processed as full summary`);
+        
+        return true;
     }
 
-    static async promptForChunkSummaries(unsummarizedMessages) {
-        isPopupActive = true;
-        let action;
-        try {
-            action = await NotificationSystem.show(
-                `📝 Would you like to create chunk summaries for the <strong>${unsummarizedMessages.length}</strong> unsummarized messages? ⚠️ <em>This process may take some time and cannot be cancelled once started.</em>`,
-                [
-                    { action: 'yes', text: 'Yes, start summarization' },
-                    { action: 'no', text: 'No, keep messages as-is' }
-                ],
-                0 // No timeout - user must make a choice since this is the final step
-            );
-        } finally {
-            isPopupActive = false;
-        }
-        
-        if (action === 'yes') {
-            console.log(`[${MODULE_NAME}] User accepted chunk summaries - starting summarization`);
-            
-            // Show processing notification
-            await NotificationSystem.show(
-                `🔄 Starting message summarization... Please wait while ${unsummarizedMessages.length} messages are processed.`,
-                [],
-                3000
-            );
-            
-            // Start the actual summarization process
-            if (unsummarizedMessages.length > 10) {
-                console.log(`[${MODULE_NAME}] Starting bulk summarization for ${unsummarizedMessages.length} messages`);
-                await this.performBulkSummarization(unsummarizedMessages);
-            } else {
-                // Few messages, process individually
-                console.log(`[${MODULE_NAME}] Processing ${unsummarizedMessages.length} messages individually`);
-                for (const messageIndex of unsummarizedMessages) {
-                    this.queueMessageForSummary(messageIndex);
-                }
-            }
-        } else {
-            console.log(`[${MODULE_NAME}] User declined chunk summaries`);
-        }
-    }
-
-    static async performBulkSummarization(messageIndices) {
-        const BULK_CHUNK_SIZE = 20;
+    static async processNewMessagePairing(messageIndex) {
         const context = getContext();
         
-        try {
-            // Show progress notification
-            toastr.info(`📝 Starting bulk summarization of ${messageIndices.length} messages...`, 'NemoLore', { timeOut: 5000 });
-
-            // Process in chunks of 20
-            for (let i = 0; i < messageIndices.length; i += BULK_CHUNK_SIZE) {
-                const chunkIndices = messageIndices.slice(i, i + BULK_CHUNK_SIZE);
-                const chunkMessages = chunkIndices.map(idx => context.chat[idx]);
-                
-                console.log(`[${MODULE_NAME}] Processing bulk chunk: messages ${chunkIndices[0]}-${chunkIndices[chunkIndices.length - 1]}`);
-                
-                // Show progress
-                const progress = Math.round(((i + chunkIndices.length) / messageIndices.length) * 100);
-                toastr.info(`📝 Bulk summarizing... ${progress}% complete`, 'NemoLore', { timeOut: 3000 });
-
-                // Create bulk summary for this chunk
-                const chunkSummary = await this.createBulkChunkSummary(chunkMessages, chunkIndices);
-                
-                if (chunkSummary) {
-                    // Mark all messages in this chunk as summarized with the bulk summary
-                    for (const messageIndex of chunkIndices) {
-                        const message = context.chat[messageIndex];
-                        const summaryData = {
-                            text: chunkSummary,
-                            originalLength: message.mes?.length || 0,
-                            timestamp: Date.now(),
-                            messageHash: getStringHash(message.mes || ''),
-                            context: {},
-                            isBulkSummary: true,
-                            bulkChunkStart: chunkIndices[0],
-                            bulkChunkEnd: chunkIndices[chunkIndices.length - 1]
-                        };
-
-                        messageSummaries.set(messageIndex, summaryData);
-                        this.saveSummaryToPersistentStorage(messageIndex, summaryData);
-                        
-                        // Add summary indicator
-                        setTimeout(() => this.addSummaryIndicator(messageIndex), 100);
-                    }
-                    
-                    console.log(`[${MODULE_NAME}] Completed bulk chunk ${chunkIndices[0]}-${chunkIndices[chunkIndices.length - 1]}`);
-                } else {
-                    console.warn(`[${MODULE_NAME}] Failed to create bulk summary for chunk ${chunkIndices[0]}-${chunkIndices[chunkIndices.length - 1]}`);
-                }
-
-                // Small delay between chunks to prevent overwhelming the API
-                if (i + BULK_CHUNK_SIZE < messageIndices.length) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-            }
-
-            toastr.success(`✅ Bulk summarization complete! Processed ${messageIndices.length} messages`, 'NemoLore');
-            console.log(`[${MODULE_NAME}] Bulk summarization completed for ${messageIndices.length} messages`);
-
-            // Refresh summary indicators
-            setTimeout(() => this.refreshSummaryIndicators(), 500);
-
-        } catch (error) {
-            console.error(`[${MODULE_NAME}] Bulk summarization failed:`, error);
-            toastr.error('Bulk summarization failed. Check console for details.', 'NemoLore');
-        }
-    }
-
-    static async createBulkChunkSummary(messages, indices) {
-        try {
-            // Combine all messages in the chunk into a cohesive text
-            const combinedText = messages.map((msg, i) => {
-                const speaker = msg.name || (msg.is_user ? 'User' : 'Assistant');
-                return `${speaker}: ${msg.mes}`;
-            }).join('\n\n');
-
-            // Create bulk summarization prompt
-            const prompt = `You are an expert narrative summarizer. Create a concise summary that captures the essential events and information from this sequence of messages.
-
-SUMMARIZATION REQUIREMENTS:
-- Maximum ${nemoLoreSettings.summaryMaxLength * 2} tokens (bulk summary can be longer)
-- Past tense, factual tone
-- Cover the main events, character interactions, and plot developments
-- Include key details that would be important for understanding future context
-
-MESSAGES TO SUMMARIZE (Messages ${indices[0]} to ${indices[indices.length - 1]}):
-${combinedText}
-
-Provide only the summary, no additional commentary:`;
-
-            console.log(`[${MODULE_NAME}] Sending bulk summarization request for messages ${indices[0]}-${indices[indices.length - 1]}`);
-
-            // Use the same API approach as individual summarization
-            let response = null;
+        // For ongoing messages, check if we need to wait for a pair or process immediately
+        if (messageIndex % 2 === 1) {
+            // Odd message (1, 3, 5...) - wait for even pair unless chat is ending
+            const nextIndex = messageIndex + 1;
             
-            try {
-                response = await generateQuietPrompt(prompt, false);
-                console.log(`[${MODULE_NAME}] Bulk generateQuietPrompt succeeded for chunk ${indices[0]}-${indices[indices.length - 1]}`);
-            } catch (quietError) {
-                console.log(`[${MODULE_NAME}] Bulk generateQuietPrompt failed, trying generateRaw:`, quietError);
-                try {
-                    response = await generateRaw(prompt, '', true, false, false, null, false);
-                    console.log(`[${MODULE_NAME}] Bulk generateRaw succeeded for chunk ${indices[0]}-${indices[indices.length - 1]}`);
-                } catch (rawError) {
-                    console.error(`[${MODULE_NAME}] Both bulk API calls failed:`, rawError);
-                    throw rawError;
-                }
-            }
-
-            if (response && response.trim()) {
-                const summary = response.trim();
-                console.log(`[${MODULE_NAME}] Generated bulk summary for messages ${indices[0]}-${indices[indices.length - 1]}: "${summary.substring(0, 100)}..."`);
-                return summary;
+            // If next message already exists, process the pair
+            if (context.chat[nextIndex]) {
+                return await this.processPairSummary(messageIndex, nextIndex);
             } else {
-                console.warn(`[${MODULE_NAME}] No valid bulk response for messages ${indices[0]}-${indices[indices.length - 1]}`);
-                return null;
+                // Wait for the pair, mark as pending
+                console.log(`[${MODULE_NAME}] Message ${messageIndex} waiting for pair ${nextIndex}`);
+                // Don't process yet, will be processed when next message arrives
+                return true;
             }
-        } catch (error) {
-            console.error(`[${MODULE_NAME}] Error creating bulk chunk summary:`, error);
-            return null;
+        } else {
+            // Even message (2, 4, 6...) - process with previous odd message
+            const prevIndex = messageIndex - 1;
+            
+            if (context.chat[prevIndex] && !this.isMessageSummarized(prevIndex)) {
+                return await this.processPairSummary(prevIndex, messageIndex);
+            } else {
+                // Previous message already processed or doesn't exist, process individually
+                return await this.summarizeMessage(messageIndex);
+            }
         }
     }
+
+    static async processPairSummary(index1, index2) {
+        const context = getContext();
+        const message1 = context.chat[index1];
+        const message2 = context.chat[index2];
+        
+        if (!message1 || !message2) return false;
+        
+        // Summarize the pair together
+        const pairedSummary = await this.summarizePairedMessages(index1, index2);
+        
+        if (pairedSummary) {
+            // Store summary for the second message in the pair
+            const summaryData = {
+                text: pairedSummary,
+                originalLength: (message1.mes?.length || 0) + (message2.mes?.length || 0),
+                timestamp: Date.now(),
+                messageHash: getStringHash((message1.mes || '') + (message2.mes || '')),
+                context: {},
+                isPairedSummary: true,
+                pairedWith: index1 // The first message in the pair
+            };
+            
+            messageSummaries.set(index2, summaryData);
+            this.saveSummaryToPersistentStorage(index2, summaryData);
+            this.addSummaryIndicator(index2);
+            
+            // Mark the first message as summarized (paired with the second)
+            const pairedMarker = {
+                text: `[Summarized with message ${index2}]`,
+                originalLength: message1.mes?.length || 0,
+                timestamp: Date.now(),
+                messageHash: getStringHash(message1.mes || ''),
+                context: {},
+                isPairedMarker: true,
+                pairedWith: index2 // The message containing the actual summary
+            };
+            
+            messageSummaries.set(index1, pairedMarker);
+            this.saveSummaryToPersistentStorage(index1, pairedMarker);
+            this.addSummaryIndicator(index1);
+            
+            console.log(`[${MODULE_NAME}] Messages ${index1} and ${index2} summarized as pair`);
+            return true;
+        }
+        
+        return false;
+    }
+
 
     // Helper function to check if a message is already summarized (accounting for paired summarization)
     static isMessageSummarized(messageIndex) {
@@ -3426,24 +3518,8 @@ Provide only the summary, no additional commentary:`;
             return true;
         }
         
-        // For our new approach: message 0 is always individual
-        if (messageIndex === 0) {
-            return false; // Already checked above
-        }
-        
-        // For paired messages (1+2, 3+4, etc.), check if the pair has been processed
-        // Odd indices (1, 3, 5) are marked with pairedMarker pointing to even index summary
-        // Even indices (2, 4, 6) contain the actual paired summary
-        
-        if (messageIndex % 2 === 1) {
-            // Odd index: check if we have a paired marker or if next message has paired summary
-            const nextIndex = messageIndex + 1;
-            return messageSummaries.has(nextIndex) && messageSummaries.get(nextIndex)?.isPairedSummary;
-        } else {
-            // Even index: check if we have paired summary or if previous message has paired marker
-            const prevIndex = messageIndex - 1;
-            return messageSummaries.has(prevIndex) && messageSummaries.get(prevIndex)?.isPairedMarker;  
-        }
+        // No summary found at this index
+        return false;
     }
 
     static validateSummaryData(messageIndex, summaryData) {
@@ -4359,22 +4435,23 @@ function processNewMessage(messageElement) {
         }
     }
 
-    // Note: Individual message summarization is now handled through user consent flow
-    // in checkForBulkSummarization() rather than automatically here
+    // Automatic summarization for new messages during ongoing conversation
     if (nemoLoreSettings.enableSummarization) {
         const messageIndex = getMessageIndexFromElement(messageElement);
         
         if (messageIndex >= 0) {
             // Check if message already has a summary and refresh display
             if (MessageSummarizer.isMessageSummarized(messageIndex)) {
-                console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized (or part of summarized pair)`);
+                console.log(`[${MODULE_NAME}] Message ${messageIndex} already summarized`);
                 // Refresh summary display for already summarized messages
                 setTimeout(() => {
                     MessageSummarizer.refreshSummaryDisplay();
                     MessageSummarizer.enhancedMemoryInjection();
                 }, 200);
             } else {
-                console.log(`[${MODULE_NAME}] Message ${messageIndex} detected but not auto-queuing (awaiting user consent)`);
+                console.log(`[${MODULE_NAME}] New message ${messageIndex} detected, queuing for automatic summarization`);
+                // Automatically queue new messages for summarization
+                MessageSummarizer.queueMessageForSummary(messageIndex);
             }
         }
     }
