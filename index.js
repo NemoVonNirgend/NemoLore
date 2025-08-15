@@ -42,6 +42,14 @@ import {
 const MODULE_NAME = 'NemoLore';
 const EXTENSION_NAME = 'nemolore';
 
+// Memory hierarchy levels
+const MEMORY_LEVELS = {
+    INDIVIDUAL: 1,    // Single message summaries
+    PAIRED: 2,        // 2-message pair summaries  
+    CHUNK: 3,         // 4-8 message chunk summaries
+    SECTION: 4        // Major conversation section summaries
+};
+
 // Debug configuration - Set to false for production to reduce console spam
 const DEBUG_MODE = false; // Change to true for development debugging
 const debugLog = DEBUG_MODE ? console.log : () => {};
@@ -70,6 +78,10 @@ const NemoLoreState = {
     highlightedNouns: new Set(),
     processedMessages: new WeakSet(),
     summaryProcessingQueue: [],
+    
+    // Hierarchical memory system
+    hierarchicalSummaries: new Map(), // Stores multi-level summaries
+    memoryManager: null, // LLM-based memory manager instance
     
     // Timeout tracking for cleanup
     summaryTimeoutIds: new Set(),
@@ -2579,6 +2591,10 @@ ${summaryData.text}
             
             // Update enhanced memory injection for context
             this.enhancedMemoryInjection();
+            
+            // Generate hierarchical summaries for larger message groups
+            await this.generateHierarchicalSummariesForProcessedMessages(processed);
+            
             console.log(`[${MODULE_NAME}] Finished processing ${processed} messages`);
             
         } catch (error) {
@@ -4000,13 +4016,48 @@ Provide a brief summary that preserves the essential narrative elements and any 
     }
 
     static async enhancedMemoryInjection() {
-        // Enhanced version that includes semantic retrieval of relevant excluded messages
+        // Ultra-enhanced version using LLM-based memory management and hierarchical summaries
         const context = getContext();
         if (!context || !nemoLoreSettings.enableSummarization) {
             context?.setExtensionPrompt?.(`${MODULE_NAME}_summary_memory`, "");
             return;
         }
 
+        console.log(`[${MODULE_NAME}] Starting ultra-enhanced memory injection`);
+        
+        try {
+            // Use LLM Memory Manager for intelligent memory selection
+            const enhancedMemoryText = await LLMMemoryManager.prepareEnhancedMemoryInjection();
+            
+            // Fallback to traditional approach if LLM manager fails
+            if (!enhancedMemoryText) {
+                console.log(`[${MODULE_NAME}] LLM manager failed, using traditional approach`);
+                return await this.traditionalMemoryInjection();
+            }
+            
+            // Inject the intelligently selected and formatted memories
+            context.setExtensionPrompt(
+                `${MODULE_NAME}_summary_memory`, 
+                enhancedMemoryText,
+                2, // IN_PROMPT position (before main prompt)
+                1, // depth
+                false, // scan
+                0  // SYSTEM role
+            );
+            
+            console.log(`[${MODULE_NAME}] Ultra-enhanced memory injection complete`);
+            
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error in ultra-enhanced memory injection:`, error);
+            // Fallback to traditional approach
+            return await this.traditionalMemoryInjection();
+        }
+    }
+
+    static async traditionalMemoryInjection() {
+        // Fallback method using original approach
+        const context = getContext();
+        
         // Get regular summaries
         const summaries = this.collectSummariesForInjection();
         
@@ -4055,7 +4106,358 @@ Provide a brief summary that preserves the essential narrative elements and any 
             0  // SYSTEM role
         );
         
-        console.log(`[${MODULE_NAME}] Enhanced injection: ${summaries.length} summaries + ${relevantMessages.length} relevant messages`);
+        console.log(`[${MODULE_NAME}] Traditional injection: ${summaries.length} summaries + ${relevantMessages.length} relevant messages`);
+    }
+
+    static async generateHierarchicalSummariesForProcessedMessages(processedCount) {
+        if (processedCount < 4) return; // Need at least 4 messages for chunk summaries
+        
+        console.log(`[${MODULE_NAME}] Generating hierarchical summaries for ${processedCount} processed messages`);
+        
+        try {
+            const context = getContext();
+            if (!context) return;
+            
+            const totalMessages = context.chat.length;
+            const chunkSize = 4; // Create chunk summaries for every 4 pairs
+            
+            // Generate chunk-level summaries for groups of message pairs
+            for (let start = 0; start < totalMessages - chunkSize; start += chunkSize) {
+                const chunkIndices = [];
+                for (let i = start; i < Math.min(start + chunkSize, totalMessages); i++) {
+                    if (this.isMessageSummarized(i)) {
+                        chunkIndices.push(i);
+                    }
+                }
+                
+                if (chunkIndices.length >= 2) {
+                    // Create chunk-level summary
+                    await HierarchicalMemoryManager.createHierarchicalSummary(
+                        chunkIndices, 
+                        MEMORY_LEVELS.CHUNK
+                    );
+                }
+            }
+            
+            // Generate section-level summaries for larger conversation segments
+            const sectionSize = 16; // Create section summaries for every 16 messages
+            for (let start = 0; start < totalMessages - sectionSize; start += sectionSize) {
+                const sectionIndices = [];
+                for (let i = start; i < Math.min(start + sectionSize, totalMessages); i++) {
+                    if (this.isMessageSummarized(i)) {
+                        sectionIndices.push(i);
+                    }
+                }
+                
+                if (sectionIndices.length >= 4) {
+                    // Create section-level summary
+                    await HierarchicalMemoryManager.createHierarchicalSummary(
+                        sectionIndices, 
+                        MEMORY_LEVELS.SECTION
+                    );
+                }
+            }
+            
+            console.log(`[${MODULE_NAME}] Hierarchical summary generation complete`);
+            
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error generating hierarchical summaries:`, error);
+        }
+    }
+}
+
+// Hierarchical Memory Manager - Multi-level summarization system
+class HierarchicalMemoryManager {
+    static async createHierarchicalSummary(messageIndices, level = MEMORY_LEVELS.INDIVIDUAL) {
+        const context = getContext();
+        if (!context || messageIndices.length === 0) return null;
+
+        const summaryKey = `${level}_${messageIndices.join('_')}`;
+        
+        // Check if we already have this summary
+        if (NemoLoreState.hierarchicalSummaries.has(summaryKey)) {
+            return NemoLoreState.hierarchicalSummaries.get(summaryKey);
+        }
+
+        console.log(`[${MODULE_NAME}] Creating ${Object.keys(MEMORY_LEVELS)[level-1]} level summary for messages: ${messageIndices.join(', ')}`);
+
+        let summaryText = '';
+        const messages = messageIndices.map(i => context.chat[i]).filter(Boolean);
+        
+        if (messages.length === 0) return null;
+
+        switch (level) {
+            case MEMORY_LEVELS.INDIVIDUAL:
+                summaryText = await this.summarizeIndividualMessage(messages[0], messageIndices[0]);
+                break;
+            case MEMORY_LEVELS.PAIRED:
+                summaryText = await this.summarizePairedMessages(messages, messageIndices);
+                break;
+            case MEMORY_LEVELS.CHUNK:
+                summaryText = await this.summarizeChunk(messages, messageIndices);
+                break;
+            case MEMORY_LEVELS.SECTION:
+                summaryText = await this.summarizeSection(messages, messageIndices);
+                break;
+        }
+
+        if (summaryText) {
+            const summaryData = {
+                text: summaryText,
+                level: level,
+                messageIndices: messageIndices,
+                timestamp: Date.now(),
+                originalLength: messages.reduce((sum, m) => sum + (m.mes?.length || 0), 0)
+            };
+            
+            NemoLoreState.hierarchicalSummaries.set(summaryKey, summaryData);
+            console.log(`[${MODULE_NAME}] Created hierarchical summary: ${summaryKey}`);
+            return summaryData;
+        }
+
+        return null;
+    }
+
+    static async summarizeIndividualMessage(message, messageIndex) {
+        // For individual messages, use concise summarization
+        const prompt = `Provide a concise summary of this message in 1-2 sentences, focusing on key actions, decisions, or information:
+
+"${message.mes}"
+
+Summary:`;
+
+        return await this.generateSummary(prompt);
+    }
+
+    static async summarizePairedMessages(messages, messageIndices) {
+        const messageTexts = messages.map((m, i) => `Message ${messageIndices[i]}: "${m.mes}"`).join('\n\n');
+        
+        const prompt = `Summarize these related messages as a cohesive narrative, capturing the flow and key developments:
+
+${messageTexts}
+
+Summary:`;
+
+        return await this.generateSummary(prompt);
+    }
+
+    static async summarizeChunk(messages, messageIndices) {
+        const messageTexts = messages.map((m, i) => `[${messageIndices[i]}] ${m.mes}`).join('\n');
+        
+        const prompt = `Create a comprehensive summary of this conversation chunk, identifying main themes, character developments, and plot progression:
+
+${messageTexts}
+
+Summary:`;
+
+        return await this.generateSummary(prompt);
+    }
+
+    static async summarizeSection(messages, messageIndices) {
+        const messageTexts = messages.map((m, i) => `[${messageIndices[i]}] ${m.mes}`).join('\n');
+        
+        const prompt = `Provide a high-level summary of this major conversation section, focusing on overarching themes, character arcs, world-building elements, and significant plot developments:
+
+${messageTexts}
+
+Section Summary:`;
+
+        return await this.generateSummary(prompt);
+    }
+
+    static async generateSummary(prompt) {
+        try {
+            // Use the same API as MessageSummarizer for consistency
+            const response = await MessageSummarizer.generateTextWithAPI(prompt);
+            return response?.choices?.[0]?.message?.content?.trim() || null;
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error generating hierarchical summary:`, error);
+            return null;
+        }
+    }
+
+    static getRelevantSummariesForContext(recentMessageIndices, maxDetail = MEMORY_LEVELS.PAIRED) {
+        const relevantSummaries = [];
+        
+        // Get summaries at different levels based on proximity to recent context
+        for (const [key, summary] of NemoLoreState.hierarchicalSummaries) {
+            if (summary.level <= maxDetail) {
+                // Calculate relevance based on temporal proximity and level
+                const proximity = this.calculateProximity(summary.messageIndices, recentMessageIndices);
+                if (proximity > 0) {
+                    relevantSummaries.push({
+                        ...summary,
+                        proximity: proximity,
+                        key: key
+                    });
+                }
+            }
+        }
+
+        // Sort by relevance (higher level summaries for distant content, detailed for recent)
+        relevantSummaries.sort((a, b) => {
+            if (a.proximity !== b.proximity) return b.proximity - a.proximity;
+            return a.level - b.level; // Prefer lower levels (more detailed) for same proximity
+        });
+
+        return relevantSummaries;
+    }
+
+    static calculateProximity(summaryIndices, recentIndices) {
+        const summaryMax = Math.max(...summaryIndices);
+        const recentMin = Math.min(...recentIndices);
+        const gap = Math.abs(recentMin - summaryMax);
+        
+        // Higher proximity for closer messages
+        return Math.max(0, 100 - gap);
+    }
+}
+
+// LLM-based Memory Manager - Intelligent memory selection and preparation
+class LLMMemoryManager {
+    static async selectRelevantMemories(recentContext, maxMemories = 5) {
+        const context = getContext();
+        if (!context || !recentContext) return [];
+
+        console.log(`[${MODULE_NAME}] LLM Memory Manager selecting relevant memories for context`);
+
+        // Get all available memory sources
+        const hierarchicalSummaries = Array.from(NemoLoreState.hierarchicalSummaries.values());
+        const vectorResults = await this.getVectorMemories(recentContext);
+        const lorebookEntries = await this.getLorebookMemories(recentContext);
+
+        // Combine all memory sources with metadata
+        const allMemories = [
+            ...hierarchicalSummaries.map(s => ({
+                type: 'hierarchical',
+                content: s.text,
+                level: s.level,
+                indices: s.messageIndices,
+                relevance: 0 // Will be scored by LLM
+            })),
+            ...vectorResults.map(v => ({
+                type: 'vector',
+                content: v.text,
+                similarity: v.score,
+                messageIndex: v.metadata.originalIndex,
+                relevance: 0
+            })),
+            ...lorebookEntries.map(l => ({
+                type: 'lorebook',
+                content: `${l.title}: ${l.content}`,
+                relevance: 0
+            }))
+        ];
+
+        if (allMemories.length === 0) return [];
+
+        // Use LLM to score and select most relevant memories
+        const selectedMemories = await this.llmSelectMemories(recentContext, allMemories, maxMemories);
+        
+        console.log(`[${MODULE_NAME}] LLM selected ${selectedMemories.length} relevant memories`);
+        return selectedMemories;
+    }
+
+    static async llmSelectMemories(recentContext, memories, maxMemories) {
+        if (memories.length <= maxMemories) return memories;
+
+        const memoryList = memories.map((m, i) => 
+            `${i + 1}. [${m.type.toUpperCase()}] ${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}`
+        ).join('\n\n');
+
+        const prompt = `Given this recent conversation context, select the ${maxMemories} most relevant memories that would enhance the AI's understanding and response quality. Consider narrative continuity, character development, world-building, and thematic relevance.
+
+RECENT CONTEXT:
+${recentContext}
+
+AVAILABLE MEMORIES:
+${memoryList}
+
+Respond with only the numbers of the ${maxMemories} most relevant memories, separated by commas (e.g., "1, 3, 7, 12, 15"):`;
+
+        try {
+            const response = await MessageSummarizer.generateTextWithAPI(prompt);
+            const selectedNumbers = response?.choices?.[0]?.message?.content?.trim()
+                .split(',')
+                .map(n => parseInt(n.trim()) - 1)
+                .filter(n => n >= 0 && n < memories.length)
+                .slice(0, maxMemories);
+
+            return selectedNumbers.map(i => memories[i]).filter(Boolean);
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error in LLM memory selection:`, error);
+            // Fallback: return first maxMemories items
+            return memories.slice(0, maxMemories);
+        }
+    }
+
+    static async getVectorMemories(recentContext) {
+        if (!nemoLoreSettings.enableVectorization) return [];
+        
+        try {
+            return await MessageSummarizer.semanticSearchRelevantMessages(recentContext, 10);
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] Error getting vector memories:`, error);
+            return [];
+        }
+    }
+
+    static async getLorebookMemories(recentContext) {
+        // Extract nouns from recent context for lorebook matching
+        const nouns = NounDetector.detectNouns(recentContext);
+        const relevantEntries = [];
+
+        if (typeof world_info !== 'undefined' && world_info?.globalSelect) {
+            const currentLorebook = world_info.globalSelect;
+            const entries = currentLorebook?.entries;
+
+            if (entries) {
+                for (const entry of Object.values(entries)) {
+                    if (entry.key?.some(key => 
+                        nouns.some(noun => noun.toLowerCase().includes(key.toLowerCase()) || 
+                                  key.toLowerCase().includes(noun.toLowerCase()))
+                    )) {
+                        relevantEntries.push({
+                            title: entry.comment || 'Unnamed Entry',
+                            content: entry.content || '',
+                            keys: entry.key || []
+                        });
+                    }
+                }
+            }
+        }
+
+        return relevantEntries.slice(0, 5); // Limit lorebook entries
+    }
+
+    static async prepareEnhancedMemoryInjection() {
+        const context = getContext();
+        if (!context) return '';
+
+        // Get recent context for memory selection
+        const recentMessages = context.chat.slice(-3);
+        const recentContext = recentMessages.map(m => m.mes).join(' ').substring(0, 1000);
+
+        if (!recentContext.trim()) return '';
+
+        // Get LLM-selected relevant memories
+        const selectedMemories = await this.selectRelevantMemories(recentContext, 8);
+
+        if (selectedMemories.length === 0) return '';
+
+        // Format memories for injection
+        let injectionText = '[Enhanced Memory Context]:\n';
+        
+        selectedMemories.forEach((memory, index) => {
+            const prefix = memory.type === 'hierarchical' ? `[Summary L${memory.level}]` :
+                          memory.type === 'vector' ? `[Relevant Message]` :
+                          `[Lorebook]`;
+            
+            injectionText += `${prefix} ${memory.content}\n`;
+        });
+
+        console.log(`[${MODULE_NAME}] Prepared enhanced memory injection with ${selectedMemories.length} memories`);
+        return injectionText;
     }
 }
 
@@ -4755,6 +5157,10 @@ function setupEventHandlers() {
         loadedSummariesChatId = null;
         isLorebookCreationInProgress = false;
         isProcessingSummaries = false;
+        
+        // Clear hierarchical memory system
+        NemoLoreState.hierarchicalSummaries.clear();
+        NemoLoreState.memoryManager = null;
         summaryProcessingQueue.length = 0;
         totalChatTokens = 0;
     });
