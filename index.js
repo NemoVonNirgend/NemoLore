@@ -6724,29 +6724,7 @@ async function waitForSillyTavernReady() {
     checkReady();
 }
 
-// Load settings HTML
-async function loadSettingsHTML() {
-    try {
-        // Get the current script path dynamically to avoid hardcoded paths
-        const scriptElement = document.querySelector('script[src*="index.js"]');
-        const scriptPath = scriptElement ? scriptElement.src : '';
-        const extensionPath = scriptPath.replace(/\/index\.js.*$/, '');
-        const settingsUrl = `${extensionPath}/settings.html`;
-        
-        const response = await fetch(settingsUrl);
-        if (!response.ok) {
-            console.error(`[${MODULE_NAME}] Failed to load settings.html: ${response.status}`);
-            return false;
-        }
-        const settingsHtml = await response.text();
-        $('#extensions_settings2').append(settingsHtml);
-        console.log(`[${MODULE_NAME}] Settings HTML loaded successfully`);
-        return true;
-    } catch (error) {
-        console.error(`[${MODULE_NAME}] Error loading settings HTML:`, error);
-        return false;
-    }
-}
+
 
 // Inject CSS styles for core memory animations and tooltips
 function injectCoreMemoryStyles() {
@@ -7198,14 +7176,7 @@ async function init() {
         }
     }, 1000); // Increased delay to avoid race conditions
     
-    // Load settings HTML and then initialize
-    const settingsLoaded = await loadSettingsHTML();
-    if (settingsLoaded) {
-        // Wait a moment for DOM to update, then initialize settings
-        setTimeout(() => {
-            initializeSettingsUI();
-        }, 100);
-    }
+    // Settings UI will be loaded separately in the jQuery entry point
     
     // Load summaries for current chat after a short delay to ensure everything is ready
     setTimeout(() => {
@@ -7220,13 +7191,31 @@ async function init() {
 }
 
 // Extension lifecycle - SillyTavern will call this automatically
-jQuery(() => {
+jQuery(async () => {
+    console.log(`[${MODULE_NAME}] Loading extension...`);
+    
+    // Load settings
+    loadSettings();
+    
+    // Load settings HTML
+    const settingsLoaded = await loadSettingsHTML();
+    if (settingsLoaded) {
+        console.log(`[${MODULE_NAME}] Settings HTML loaded, initializing UI...`);
+        // Wait a moment for DOM to update, then initialize settings
+        setTimeout(() => {
+            initializeSettingsUI();
+        }, 100);
+    } else {
+        console.error(`[${MODULE_NAME}] Failed to load settings HTML`);
+    }
+    
+    // Initialize the extension core functionality
     init();
     
     // Register NemoLore macro for summary injection
     MacrosParser.registerMacro(NEMOLORE_MACRO, () => getNemoLoreSummaries());
     
-    console.log(`[${MODULE_NAME}] Macro registered: {{${NEMOLORE_MACRO}}}`);
+    console.log(`[${MODULE_NAME}] Extension loaded successfully. Macro registered: {{${NEMOLORE_MACRO}}}`);
 });
 
 // System Check Function - Tests all core NemoLore functionality
@@ -7461,6 +7450,30 @@ async function runSystemCheck() {
     `);
     
     return results;
+}
+
+// Load settings HTML manually (required for third-party extensions)
+async function loadSettingsHTML() {
+    try {
+        // Get the current script path dynamically to avoid hardcoded paths
+        const scriptElement = document.querySelector('script[src*="NemoLore/index.js"]');
+        const scriptPath = scriptElement ? scriptElement.src : '';
+        const extensionPath = scriptPath.replace(/\/index\.js.*$/, '');
+        const settingsUrl = `${extensionPath}/settings.html`;
+        
+        const response = await fetch(settingsUrl);
+        if (!response.ok) {
+            console.error(`[${MODULE_NAME}] Failed to load settings.html: ${response.status}`);
+            return false;
+        }
+        const settingsHtml = await response.text();
+        $('#extensions_settings2').append(settingsHtml);
+        console.log(`[${MODULE_NAME}] Settings HTML loaded successfully`);
+        return true;
+    } catch (error) {
+        console.error(`[${MODULE_NAME}] Error loading settings HTML:`, error);
+        return false;
+    }
 }
 
 export { MODULE_NAME };
