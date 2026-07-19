@@ -35,7 +35,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
         emit('started', job);
 
         try {
-            const context = await contextFactory?.(job) ?? {};
+            const context = (await contextFactory?.(job)) ?? {};
             job.result = await agent.run(snapshot(job), {
                 ...context,
                 signal: job.controller.signal,
@@ -67,7 +67,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
     function enqueue(input) {
         if (input.dedupeKey && activeDedupeKeys.has(input.dedupeKey)) {
-            return jobs.get(activeDedupeKeys.get(input.dedupeKey));
+            return snapshot(jobs.get(activeDedupeKeys.get(input.dedupeKey)));
         }
 
         const job = createHelperJob(input);
