@@ -1,4 +1,5 @@
 import { createContextContribution } from './context-contribution.js';
+import { createContextPackage } from './context-package.js';
 
 function normalizeOutput(value) {
     if (!value) return [];
@@ -73,8 +74,7 @@ export function createContextInjector({ registry, logger } = {}) {
     }
 
     async function inject(request = {}, options = {}) {
-        const result = await build(request, options);
-        return Object.freeze({ ...result, text: render(result, options) });
+        return createContextPackage(await build(request, options));
     }
 
     return Object.freeze({ build, render, inject });
