@@ -11,6 +11,7 @@ export function createLifecycle({ logger, state }) {
         start() {
             transition('starting');
             state.isInitialized = false;
+            state.startErrorRecovery();
         },
 
         markLegacyLoaded() {
@@ -25,6 +26,7 @@ export function createLifecycle({ logger, state }) {
         fail(error) {
             failure = error;
             transition('failed');
+            state.stopErrorRecovery();
             logger.error('Extension startup failed.', error);
         },
 
