@@ -1,6 +1,7 @@
 import {
     chat_metadata,
     saveMetadata,
+    getCurrentChatId,
     extension_prompt_types,
     extension_prompt_roles,
     MAX_INJECTION_DEPTH,
@@ -32,7 +33,9 @@ import { createContextInjector } from './src/context/context-injector.js';
 import { createContextRegistry } from './src/context/context-registry.js';
 import { createMemoryContextContributor } from './src/context/contributors/memory-context-contributor.js';
 import { createSillyTavernContextBridge } from './src/integrations/sillytavern-context-bridge.js';
+import { createSillyTavernContextRequestFactory } from './src/integrations/sillytavern-context-request-factory.js';
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
+import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
@@ -83,7 +86,6 @@ const lorebooks = createLorebookRepository({
 });
 
 const providers = createProviderRegistry({ logger });
-
 if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
     providers.register('async', createOpenAICompatibleProvider({
         endpoint: settings.asyncApiEndpoint,
@@ -101,7 +103,6 @@ const memoryExtractors = Object.freeze({
     atomicFact: createAtomicFactExtractor({ generation: providers, logger }),
     stateChange: createStateChangeExtractor({ generation: providers, logger }),
 });
-
 memoryPipeline.registerExtractor('episode', memoryExtractors.episode);
 memoryPipeline.registerExtractor('atomic-fact', memoryExtractors.atomicFact);
 memoryPipeline.registerExtractor('state-change', memoryExtractors.stateChange);
@@ -111,7 +112,6 @@ const memoryProcessors = Object.freeze({
     contradictionDetector: createContradictionDetector({ logger }),
     importanceScorer: createImportanceScorer({ logger }),
 });
-
 memoryPipeline.registerProcessor(memoryProcessors.deduplicator);
 memoryPipeline.registerProcessor(memoryProcessors.contradictionDetector);
 memoryPipeline.registerProcessor(memoryProcessors.importanceScorer);
@@ -123,7 +123,6 @@ const memoryRetrieval = Object.freeze({
     budget: createTokenBudget(),
     composer: createContextComposer(),
 });
-
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
 
 const contextRegistry = createContextRegistry({ logger });
@@ -131,37 +130,17 @@ const contextContributors = Object.freeze({
     memory: createMemoryContextContributor({ retrieval: memoryRetriever, logger }),
 });
 contextRegistry.register('memory', contextContributors.memory);
-
 const contextInjector = createContextInjector({ registry: contextRegistry, logger });
+
 const extensionPromptAdapter = createSillyTavernExtensionPromptAdapter({ resolveContext: getContext, logger });
 const contextBridge = createSillyTavernContextBridge({
     injector: contextInjector,
     promptAdapter: extensionPromptAdapter,
     slotConfig: {
-        [CONTEXT_POSITIONS.BEFORE_SYSTEM]: {
-            position: extension_prompt_types.BEFORE_PROMPT,
-            depth: 0,
-            scan: false,
-            role: extension_prompt_roles.SYSTEM,
-        },
-        [CONTEXT_POSITIONS.AFTER_SYSTEM]: {
-            position: extension_prompt_types.IN_PROMPT,
-            depth: 0,
-            scan: false,
-            role: extension_prompt_roles.SYSTEM,
-        },
-        [CONTEXT_POSITIONS.BEFORE_CHAT]: {
-            position: extension_prompt_types.IN_CHAT,
-            depth: MAX_INJECTION_DEPTH,
-            scan: false,
-            role: extension_prompt_roles.SYSTEM,
-        },
-        [CONTEXT_POSITIONS.AFTER_CHAT]: {
-            position: extension_prompt_types.IN_CHAT,
-            depth: 0,
-            scan: false,
-            role: extension_prompt_roles.SYSTEM,
-        },
+        [CONTEXT_POSITIONS.BEFORE_SYSTEM]: { position: extension_prompt_types.BEFORE_PROMPT, depth: 0, scan: false, role: extension_prompt_roles.SYSTEM },
+        [CONTEXT_POSITIONS.AFTER_SYSTEM]: { position: extension_prompt_types.IN_PROMPT, depth: 0, scan: false, role: extension_prompt_roles.SYSTEM },
+        [CONTEXT_POSITIONS.BEFORE_CHAT]: { position: extension_prompt_types.IN_CHAT, depth: MAX_INJECTION_DEPTH, scan: false, role: extension_prompt_roles.SYSTEM },
+        [CONTEXT_POSITIONS.AFTER_CHAT]: { position: extension_prompt_types.IN_CHAT, depth: 0, scan: false, role: extension_prompt_roles.SYSTEM },
     },
     logger,
 });
@@ -175,18 +154,27 @@ const helperRuntime = createHelperAgentRuntime({
     registry: helperAgents,
     logger,
     concurrency: settings.helperAgentConcurrency,
-    contextFactory: () => ({
-        lorebooks,
-        memory: memoryPipeline,
-        retrieval: memoryRetriever,
-        context: contextInjector,
-    }),
+    contextFactory: () => ({ lorebooks, memory: memoryPipeline, retrieval: memoryRetriever, context: contextInjector }),
 });
-
 const postReplyDispatcher = createPostReplyDispatcher({ runtime: helperRuntime, settings, logger });
 
 function registerHelperWorkflow(name, handler) {
     return helperAgents.register(name, createCallbackHelperAgent({ name, handler }));
+}
+
+const contextRequestFactory = createSillyTavernContextRequestFactory({
+    getChatId: getCurrentChatId,
+    getContext,
+});
+
+function wrapGenerationInterceptor(next, overrides = {}) {
+    return createSillyTavernGenerationOrchestrator({
+        contextBridge,
+        postReply: postReplyDispatcher,
+        requestFactory: overrides.requestFactory ?? contextRequestFactory,
+        next,
+        logger,
+    });
 }
 
 const nounDetector = createNounDetector({ settings, logger });
@@ -199,11 +187,7 @@ globalThis.NemoLore = Object.freeze({
     settings,
     state,
     lifecycle,
-    providers: Object.freeze({
-        registry: providers,
-        createSillyTavernProvider,
-        createOpenAICompatibleProvider,
-    }),
+    providers: Object.freeze({ registry: providers, createSillyTavernProvider, createOpenAICompatibleProvider }),
     agents: Object.freeze({
         registry: helperAgents,
         tasks: helperTasks,
@@ -217,6 +201,8 @@ globalThis.NemoLore = Object.freeze({
         bridge: contextBridge,
         adapter: extensionPromptAdapter,
         contributors: contextContributors,
+        requestFactory: contextRequestFactory,
+        wrapGenerationInterceptor,
     }),
     memory: Object.freeze({
         sourceLedger,
@@ -244,7 +230,6 @@ globalThis.NemoLore = Object.freeze({
 });
 
 lifecycle.start();
-
 try {
     await import('./index.js');
     lifecycle.markLegacyLoaded();
