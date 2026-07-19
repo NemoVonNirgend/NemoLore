@@ -15,7 +15,7 @@ Capture changes such as trust shifts, injuries, location, possession, faction st
 Do not emit unchanged facts or speculative changes.`;
 
 export function createStateChangeExtractor({ generation, logger }) {
-    const base = createLlmExtractor({
+    return createLlmExtractor({
         name: 'state-change',
         type: MEMORY_TYPES.WORLD_STATE,
         generation,
@@ -60,13 +60,4 @@ export function createStateChangeExtractor({ generation, logger }) {
             };
         },
     });
-
-    return async function extract(input, context = {}) {
-        const candidates = await base(input, context);
-        return candidates.map(candidate => ({ ...candidate, type: candidate.data.stateType === 'relationship'
-            ? MEMORY_TYPES.RELATIONSHIP
-            : candidate.data.stateType === 'entity'
-                ? MEMORY_TYPES.ENTITY
-                : MEMORY_TYPES.WORLD_STATE }));
-    };
 }
