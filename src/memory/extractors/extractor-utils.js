@@ -20,8 +20,8 @@ export function createLlmExtractor({
         throw new TypeError(`Unsupported memory type for ${name}: ${type}`);
     }
 
-    return async function extract(input, context = {}) {
-        const prompt = buildPrompt(input, context);
+    async function extract({ input, sources = [], context = {} } = {}) {
+        const prompt = buildPrompt(input, { ...context, sources });
         const result = await generation.generate({
             systemPrompt,
             prompt,
@@ -31,18 +31,25 @@ export function createLlmExtractor({
         }, context.generationOptions);
 
         const candidates = normalizeCandidateArray(result.text ?? result)
-            .map((candidate, index) => mapCandidate(candidate, { input, context, index }))
+            .map((candidate, index) => mapCandidate(candidate, {
+                input,
+                sources,
+                context,
+                index,
+            }))
             .filter(Boolean)
             .map(candidate => ({
                 ...candidate,
-                type,
+                type: candidate.type ?? type,
                 confidence: clamp(candidate.confidence ?? 0.7),
                 importance: clamp(candidate.importance ?? 0.5),
             }));
 
         logger?.debug('Memory extraction completed.', { extractor: name, count: candidates.length });
         return candidates;
-    };
+    }
+
+    return Object.freeze({ name, type, extract });
 }
 
 export function normalizeStrings(value) {
