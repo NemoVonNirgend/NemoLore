@@ -5,15 +5,16 @@ export function createKeyedLock() {
         const normalizedKey = String(key ?? 'default');
         const previous = tails.get(normalizedKey) ?? Promise.resolve();
         let release;
-        const current = new Promise(resolve => { release = resolve; });
-        tails.set(normalizedKey, previous.then(() => current));
+        const gate = new Promise(resolve => { release = resolve; });
+        const tail = previous.then(() => gate);
+        tails.set(normalizedKey, tail);
 
         await previous;
         try {
             return await operation();
         } finally {
             release();
-            if (tails.get(normalizedKey) === current) tails.delete(normalizedKey);
+            if (tails.get(normalizedKey) === tail) tails.delete(normalizedKey);
         }
     }
 
