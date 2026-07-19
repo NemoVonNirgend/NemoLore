@@ -27,8 +27,6 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
     async function execute(job) {
         const agent = registry.get(job.agent);
-        if (!agent) throw new Error(`Unknown helper agent: ${job.agent}`);
-
         job.status = HELPER_JOB_STATUS.RUNNING;
         job.startedAt = new Date().toISOString();
         running += 1;
@@ -66,6 +64,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
     }
 
     function enqueue(input) {
+        if (!registry.has(input?.agent)) throw new Error(`Unknown helper agent: ${input?.agent}`);
         if (input.dedupeKey && activeDedupeKeys.has(input.dedupeKey)) {
             return snapshot(jobs.get(activeDedupeKeys.get(input.dedupeKey)));
         }
