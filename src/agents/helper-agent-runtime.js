@@ -63,20 +63,41 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
         }
     }
 
-    function enqueue(input) {
+    function prepare(input) {
         if (!registry.has(input?.agent)) throw new Error(`Unknown helper agent: ${input?.agent}`);
         if (input.dedupeKey && activeDedupeKeys.has(input.dedupeKey)) {
-            return snapshot(jobs.get(activeDedupeKeys.get(input.dedupeKey)));
+            return { snapshot: snapshot(jobs.get(activeDedupeKeys.get(input.dedupeKey))) };
         }
 
         const job = createHelperJob(input);
         jobs.set(job.id, job);
         if (job.dedupeKey) activeDedupeKeys.set(job.dedupeKey, job.id);
         queue.push(job);
-        sortQueue();
         emit('queued', job);
+        return { job, snapshot: snapshot(job) };
+    }
+
+    function enqueue(input) {
+        const prepared = prepare(input);
+        if (prepared.job) sortQueue();
         queueMicrotask(drain);
-        return snapshot(job);
+        return prepared.snapshot;
+    }
+
+    function enqueueMany(inputs = []) {
+        const snapshots = [];
+        let added = false;
+
+        for (const input of inputs) {
+            const prepared = prepare(input);
+            snapshots.push(prepared.snapshot);
+            added ||= Boolean(prepared.job);
+        }
+
+        if (added) sortQueue();
+        queueMicrotask(drain);
+        logger?.debug('Queued helper job batch.', { count: snapshots.length, concurrency });
+        return Object.freeze(snapshots);
     }
 
     function cancel(id, reason = 'cancelled') {
@@ -100,6 +121,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
     return Object.freeze({
         enqueue,
+        enqueueMany,
         cancel,
         subscribe,
         get: id => snapshot(jobs.get(id)),
