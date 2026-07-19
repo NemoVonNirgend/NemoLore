@@ -5,6 +5,8 @@ import { createNemoLoreState } from './src/core/state.js';
 import { createLifecycle } from './src/core/lifecycle.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createHighlighter } from './src/ui/highlighting.js';
+import { createNotificationCenter } from './src/ui/notification-center.js';
+import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
 
 const logger = createLogger({ moduleName: MODULE_NAME });
 const settings = createSettings();
@@ -12,6 +14,8 @@ const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
+const notifications = createNotificationCenter({ logger });
+const popups = createPopupCoordinator({ state, logger });
 
 /**
  * Temporary compatibility container exposed during the modular migration.
@@ -28,6 +32,8 @@ globalThis.NemoLore = Object.freeze({
     services: Object.freeze({
         nounDetector,
         highlighter,
+        notifications,
+        popups,
     }),
 });
 
