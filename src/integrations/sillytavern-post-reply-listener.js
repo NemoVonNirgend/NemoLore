@@ -42,6 +42,7 @@ export function createSillyTavernPostReplyListener({
             const previousUser = findPreviousUserMessage(chat, assistantIndex);
             const chatId = getChatId?.() ?? context?.chatId ?? null;
             const messageId = assistantMessage.send_date ?? assistantMessage.extra?.id ?? assistantIndex;
+            const messages = [previousUser?.message, assistantMessage].filter(Boolean);
             const sources = [
                 previousUser && {
                     chatId,
@@ -61,8 +62,10 @@ export function createSillyTavernPostReplyListener({
                 chatId,
                 messageId: String(messageId),
                 input: sources.map(source => `${source.role}: ${source.text}`).join('\n\n'),
+                messages,
                 sources,
                 context: {
+                    messages,
                     assistantIndex,
                     userIndex: previousUser?.index ?? null,
                     assistantMessage,
