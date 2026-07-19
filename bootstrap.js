@@ -28,6 +28,7 @@ lifecycle.start();
 try {
     await import('./index.js');
     lifecycle.markLegacyLoaded();
+    lifecycle.markReady();
     logger.info('Legacy compatibility module loaded through modular bootstrap.');
 } catch (error) {
     lifecycle.fail(error);
