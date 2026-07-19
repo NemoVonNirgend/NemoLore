@@ -1,4 +1,11 @@
-import { chat_metadata, saveMetadata } from '../../../../script.js';
+import {
+    chat_metadata,
+    saveMetadata,
+    extension_prompt_types,
+    extension_prompt_roles,
+    MAX_INJECTION_DEPTH,
+} from '../../../../script.js';
+import { getContext } from '../../../extensions.js';
 import {
     createNewWorldInfo,
     deleteWorldInfo,
@@ -14,9 +21,12 @@ import { createLogger } from './src/core/logger.js';
 import { createSettings } from './src/core/settings.js';
 import { createNemoLoreState } from './src/core/state.js';
 import { createLifecycle } from './src/core/lifecycle.js';
+import { CONTEXT_POSITIONS } from './src/context/context-contribution.js';
 import { createContextInjector } from './src/context/context-injector.js';
 import { createContextRegistry } from './src/context/context-registry.js';
 import { createMemoryContextContributor } from './src/context/contributors/memory-context-contributor.js';
+import { createSillyTavernContextBridge } from './src/integrations/sillytavern-context-bridge.js';
+import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
@@ -128,6 +138,43 @@ const contextInjector = createContextInjector({
     logger,
 });
 
+const extensionPromptAdapter = createSillyTavernExtensionPromptAdapter({
+    resolveContext: getContext,
+    logger,
+});
+
+const contextBridge = createSillyTavernContextBridge({
+    injector: contextInjector,
+    promptAdapter: extensionPromptAdapter,
+    slotConfig: {
+        [CONTEXT_POSITIONS.BEFORE_SYSTEM]: {
+            position: extension_prompt_types.BEFORE_PROMPT,
+            depth: 0,
+            scan: false,
+            role: extension_prompt_roles.SYSTEM,
+        },
+        [CONTEXT_POSITIONS.AFTER_SYSTEM]: {
+            position: extension_prompt_types.IN_PROMPT,
+            depth: 0,
+            scan: false,
+            role: extension_prompt_roles.SYSTEM,
+        },
+        [CONTEXT_POSITIONS.BEFORE_CHAT]: {
+            position: extension_prompt_types.IN_CHAT,
+            depth: MAX_INJECTION_DEPTH,
+            scan: false,
+            role: extension_prompt_roles.SYSTEM,
+        },
+        [CONTEXT_POSITIONS.AFTER_CHAT]: {
+            position: extension_prompt_types.IN_CHAT,
+            depth: 0,
+            scan: false,
+            role: extension_prompt_roles.SYSTEM,
+        },
+    },
+    logger,
+});
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -146,6 +193,8 @@ globalThis.NemoLore = Object.freeze({
     context: Object.freeze({
         registry: contextRegistry,
         injector: contextInjector,
+        bridge: contextBridge,
+        adapter: extensionPromptAdapter,
         contributors: contextContributors,
     }),
     memory: Object.freeze({
@@ -166,6 +215,7 @@ globalThis.NemoLore = Object.freeze({
         memory: memoryPipeline,
         retrieval: memoryRetriever,
         context: contextInjector,
+        contextBridge,
         nounDetector,
         highlighter,
         notifications,
