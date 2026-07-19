@@ -25,28 +25,31 @@ import { createHelperAgentRegistry } from './src/agents/helper-agent-registry.js
 import { createHelperAgentRuntime } from './src/agents/helper-agent-runtime.js';
 import { createHelperTaskRegistry } from './src/agents/helper-task-registry.js';
 import { createPostReplyDispatcher } from './src/agents/post-reply-dispatcher.js';
-import { MODULE_NAME } from './src/core/constants.js';
-import { createLogger } from './src/core/logger.js';
-import { createSettings } from './src/core/settings.js';
-import { createNemoLoreState } from './src/core/state.js';
-import { createLifecycle } from './src/core/lifecycle.js';
 import { CONTEXT_POSITIONS } from './src/context/context-contribution.js';
 import { createContextInjector } from './src/context/context-injector.js';
 import { createContextRegistry } from './src/context/context-registry.js';
 import { createMemoryContextContributor } from './src/context/contributors/memory-context-contributor.js';
+import { MODULE_NAME } from './src/core/constants.js';
+import { createKeyedLock } from './src/core/keyed-lock.js';
+import { createLifecycle } from './src/core/lifecycle.js';
+import { createLogger } from './src/core/logger.js';
+import { createSettings } from './src/core/settings.js';
+import { createNemoLoreState } from './src/core/state.js';
 import { createSillyTavernContextBridge } from './src/integrations/sillytavern-context-bridge.js';
 import { createSillyTavernContextRequestFactory } from './src/integrations/sillytavern-context-request-factory.js';
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
-import { createNounDetector } from './src/lore/noun-detector.js';
+import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
+import { createLoreHelperWorkflow } from './src/lore/lore-helper-workflow.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
+import { createNounDetector } from './src/lore/noun-detector.js';
 import { createAtomicFactExtractor } from './src/memory/extractors/atomic-fact-extractor.js';
 import { createEpisodeExtractor } from './src/memory/extractors/episode-extractor.js';
 import { createStateChangeExtractor } from './src/memory/extractors/state-change-extractor.js';
-import { createMemoryStore } from './src/memory/memory-store.js';
 import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
+import { createMemoryStore } from './src/memory/memory-store.js';
 import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
 import { createDeduplicator } from './src/memory/processors/deduplicator.js';
 import { createImportanceScorer } from './src/memory/processors/importance-scorer.js';
@@ -57,9 +60,12 @@ import { createRedundancyFilter } from './src/memory/retrieval/redundancy-filter
 import { createRelevanceScorer } from './src/memory/retrieval/relevance-scorer.js';
 import { createTokenBudget } from './src/memory/retrieval/token-budget.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
+import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
-import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
+import { createSummaryHelperWorkflow } from './src/summary/summary-helper-workflow.js';
+import { createSummaryService } from './src/summary/summary-service.js';
+import { createSummaryStore } from './src/summary/summary-store.js';
 import { createHighlighter } from './src/ui/highlighting.js';
 import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
@@ -68,6 +74,7 @@ const logger = createLogger({ moduleName: MODULE_NAME });
 const settings = createSettings();
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
+const writeLock = createKeyedLock();
 
 const worldInfo = createWorldInfoAdapter({
     createWorld: createNewWorldInfo,
@@ -78,7 +85,6 @@ const worldInfo = createWorldInfoAdapter({
     updateWorldList: updateWorldInfoList,
     logger,
 });
-
 const lorebooks = createLorebookRepository({
     adapter: worldInfo,
     metadata: chat_metadata,
@@ -100,7 +106,6 @@ if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
-
 const memoryExtractors = Object.freeze({
     episode: createEpisodeExtractor({ generation: providers, logger }),
     atomicFact: createAtomicFactExtractor({ generation: providers, logger }),
@@ -128,6 +133,10 @@ const memoryRetrieval = Object.freeze({
 });
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
 
+const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
+const summaryService = createSummaryService({ generation: providers, store: summaryStore, settings, logger });
+const loreGeneration = createLoreGenerationService({ generation: providers, lorebooks, lock: writeLock, logger });
+
 const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
     memory: createMemoryContextContributor({ retrieval: memoryRetriever, logger }),
@@ -152,39 +161,32 @@ const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: providers, tasks: helperTasks, logger }));
 helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
-
-const deferredWorkflowHandlers = new Map();
-function runDeferredWorkflow(name, payload, context) {
-    const handler = deferredWorkflowHandlers.get(name);
-    if (!handler) {
-        logger.debug('Skipped unregistered helper workflow.', { name });
-        return { skipped: true, reason: 'handler-not-registered', name };
-    }
-    return handler(payload, context);
-}
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
-    handler: (payload, context) => runDeferredWorkflow('summary', payload, context),
+    handler: createSummaryHelperWorkflow({ summary: summaryService }),
 }));
 helperAgents.register('lore', createCallbackHelperAgent({
     name: 'lore',
-    handler: (payload, context) => runDeferredWorkflow('lore', payload, context),
+    handler: createLoreHelperWorkflow({ lore: loreGeneration }),
 }));
 
 const helperRuntime = createHelperAgentRuntime({
     registry: helperAgents,
     logger,
     concurrency: settings.helperAgentConcurrency,
-    contextFactory: () => ({ lorebooks, memory: memoryPipeline, retrieval: memoryRetriever, context: contextInjector }),
+    contextFactory: () => ({
+        lorebooks,
+        loreGeneration,
+        summary: summaryService,
+        summaryStore,
+        memory: memoryPipeline,
+        retrieval: memoryRetriever,
+        context: contextInjector,
+    }),
 });
 const postReplyDispatcher = createPostReplyDispatcher({ runtime: helperRuntime, settings, logger });
 
 function registerHelperWorkflow(name, handler) {
-    if (name === 'summary' || name === 'lore') {
-        if (typeof handler !== 'function') throw new TypeError(`${name} helper workflow requires a handler.`);
-        deferredWorkflowHandlers.set(name, handler);
-        return handler;
-    }
     return helperAgents.register(name, createCallbackHelperAgent({ name, handler }));
 }
 
@@ -192,7 +194,6 @@ const contextRequestFactory = createSillyTavernContextRequestFactory({
     getChatId: getCurrentChatId,
     getContext,
 });
-
 function wrapGenerationInterceptor(next, overrides = {}) {
     return createSillyTavernGenerationOrchestrator({
         contextBridge,
@@ -239,6 +240,8 @@ const publicApi = Object.freeze({
         requestFactory: contextRequestFactory,
         wrapGenerationInterceptor,
     }),
+    summary: Object.freeze({ store: summaryStore, service: summaryService }),
+    lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
     memory: Object.freeze({
         sourceLedger,
         store: memoryStore,
@@ -250,6 +253,9 @@ const publicApi = Object.freeze({
     services: Object.freeze({
         worldInfo,
         lorebooks,
+        loreGeneration,
+        summary: summaryService,
+        summaryStore,
         generation: providers,
         agents: helperRuntime,
         postReply: postReplyDispatcher,
