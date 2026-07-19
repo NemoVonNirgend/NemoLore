@@ -2,6 +2,8 @@ import {
     chat_metadata,
     saveMetadata,
     getCurrentChatId,
+    eventSource,
+    event_types,
     extension_prompt_types,
     extension_prompt_roles,
     MAX_INJECTION_DEPTH,
@@ -36,6 +38,7 @@ import { createSillyTavernContextBridge } from './src/integrations/sillytavern-c
 import { createSillyTavernContextRequestFactory } from './src/integrations/sillytavern-context-request-factory.js';
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
+import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
@@ -150,6 +153,24 @@ const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: providers, tasks: helperTasks, logger }));
 helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
 
+const deferredWorkflowHandlers = new Map();
+function runDeferredWorkflow(name, payload, context) {
+    const handler = deferredWorkflowHandlers.get(name);
+    if (!handler) {
+        logger.debug('Skipped unregistered helper workflow.', { name });
+        return { skipped: true, reason: 'handler-not-registered', name };
+    }
+    return handler(payload, context);
+}
+helperAgents.register('summary', createCallbackHelperAgent({
+    name: 'summary',
+    handler: (payload, context) => runDeferredWorkflow('summary', payload, context),
+}));
+helperAgents.register('lore', createCallbackHelperAgent({
+    name: 'lore',
+    handler: (payload, context) => runDeferredWorkflow('lore', payload, context),
+}));
+
 const helperRuntime = createHelperAgentRuntime({
     registry: helperAgents,
     logger,
@@ -159,6 +180,11 @@ const helperRuntime = createHelperAgentRuntime({
 const postReplyDispatcher = createPostReplyDispatcher({ runtime: helperRuntime, settings, logger });
 
 function registerHelperWorkflow(name, handler) {
+    if (name === 'summary' || name === 'lore') {
+        if (typeof handler !== 'function') throw new TypeError(`${name} helper workflow requires a handler.`);
+        deferredWorkflowHandlers.set(name, handler);
+        return handler;
+    }
     return helperAgents.register(name, createCallbackHelperAgent({ name, handler }));
 }
 
@@ -170,19 +196,27 @@ const contextRequestFactory = createSillyTavernContextRequestFactory({
 function wrapGenerationInterceptor(next, overrides = {}) {
     return createSillyTavernGenerationOrchestrator({
         contextBridge,
-        postReply: postReplyDispatcher,
         requestFactory: overrides.requestFactory ?? contextRequestFactory,
         next,
         logger,
     });
 }
 
+const postReplyListener = createSillyTavernPostReplyListener({
+    eventSource,
+    messageReceivedEvent: event_types.MESSAGE_RECEIVED,
+    getContext,
+    getChatId: getCurrentChatId,
+    dispatcher: postReplyDispatcher,
+    logger,
+});
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
 const popups = createPopupCoordinator({ state, logger });
 
-globalThis.NemoLore = Object.freeze({
+const publicApi = Object.freeze({
     logger,
     settings,
     state,
@@ -193,6 +227,7 @@ globalThis.NemoLore = Object.freeze({
         tasks: helperTasks,
         runtime: helperRuntime,
         postReply: postReplyDispatcher,
+        postReplyListener,
         registerWorkflow: registerHelperWorkflow,
     }),
     context: Object.freeze({
@@ -228,10 +263,21 @@ globalThis.NemoLore = Object.freeze({
         popups,
     }),
 });
+globalThis.NemoLore = publicApi;
 
 lifecycle.start();
 try {
     await import('./index.js');
+
+    const legacyInterceptor = globalThis.nemolore_intercept_messages;
+    if (typeof legacyInterceptor === 'function') {
+        globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(legacyInterceptor);
+        logger.info('Installed modular NemoLore generation interceptor.');
+    } else {
+        logger.warn('Legacy NemoLore interceptor was not found; context bridge remains available manually.');
+    }
+
+    postReplyListener.install();
     lifecycle.markLegacyLoaded();
     lifecycle.markReady();
     logger.info('Legacy compatibility module loaded through modular bootstrap.');
