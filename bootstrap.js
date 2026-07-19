@@ -22,6 +22,9 @@ import { createEpisodeExtractor } from './src/memory/extractors/episode-extracto
 import { createStateChangeExtractor } from './src/memory/extractors/state-change-extractor.js';
 import { createMemoryStore } from './src/memory/memory-store.js';
 import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
+import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
+import { createDeduplicator } from './src/memory/processors/deduplicator.js';
+import { createImportanceScorer } from './src/memory/processors/importance-scorer.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
@@ -82,6 +85,16 @@ memoryPipeline.registerExtractor('episode', memoryExtractors.episode);
 memoryPipeline.registerExtractor('atomic-fact', memoryExtractors.atomicFact);
 memoryPipeline.registerExtractor('state-change', memoryExtractors.stateChange);
 
+const memoryProcessors = Object.freeze({
+    deduplicator: createDeduplicator({ logger }),
+    contradictionDetector: createContradictionDetector({ logger }),
+    importanceScorer: createImportanceScorer({ logger }),
+});
+
+memoryPipeline.registerProcessor(memoryProcessors.deduplicator);
+memoryPipeline.registerProcessor(memoryProcessors.contradictionDetector);
+memoryPipeline.registerProcessor(memoryProcessors.importanceScorer);
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -109,6 +122,7 @@ globalThis.NemoLore = Object.freeze({
         store: memoryStore,
         pipeline: memoryPipeline,
         extractors: memoryExtractors,
+        processors: memoryProcessors,
     }),
     services: Object.freeze({
         worldInfo,
