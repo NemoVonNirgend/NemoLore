@@ -4,6 +4,10 @@ import {
     normalizeGenerationResult,
 } from './generation-provider.js';
 
+function now() {
+    return globalThis.performance?.now?.() ?? Date.now();
+}
+
 export function createProviderRegistry({ logger, defaultProvider = null } = {}) {
     const providers = new Map();
     let activeProvider = defaultProvider;
@@ -38,13 +42,13 @@ export function createProviderRegistry({ logger, defaultProvider = null } = {}) 
         const providerName = options.provider ?? activeProvider;
         const provider = get(providerName);
         const request = createGenerationRequest(input);
-        const startedAt = performance.now?.() ?? Date.now();
+        const startedAt = now();
 
         try {
             const result = await provider.generate(request);
             logger?.debug('Generation completed.', {
                 provider: providerName,
-                durationMs: Math.round((performance.now?.() ?? Date.now()) - startedAt),
+                durationMs: Math.round(now() - startedAt),
             });
             return normalizeGenerationResult(result, providerName);
         } catch (error) {
