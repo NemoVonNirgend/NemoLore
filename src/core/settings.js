@@ -55,6 +55,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
     asyncApiKey: '',
     asyncApiModel: '',
     asyncApiEndpoint: '',
+
+    enableHelperAgents: false,
+    helperAgentConcurrency: 2,
+    helperAgentProvider: '',
+    helperMemoryAfterReply: true,
+    helperLoreAfterReply: false,
+    helperSummaryAfterReply: false,
 });
 
 export function createSettings(overrides = {}) {
