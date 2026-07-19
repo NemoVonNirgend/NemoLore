@@ -17,6 +17,9 @@ import { createLifecycle } from './src/core/lifecycle.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
+import { createAtomicFactExtractor } from './src/memory/extractors/atomic-fact-extractor.js';
+import { createEpisodeExtractor } from './src/memory/extractors/episode-extractor.js';
+import { createStateChangeExtractor } from './src/memory/extractors/state-change-extractor.js';
 import { createMemoryStore } from './src/memory/memory-store.js';
 import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
@@ -69,6 +72,16 @@ const memoryPipeline = createMemoryPipeline({
     logger,
 });
 
+const memoryExtractors = Object.freeze({
+    episode: createEpisodeExtractor({ generation: providers, logger }),
+    atomicFact: createAtomicFactExtractor({ generation: providers, logger }),
+    stateChange: createStateChangeExtractor({ generation: providers, logger }),
+});
+
+memoryPipeline.registerExtractor('episode', memoryExtractors.episode);
+memoryPipeline.registerExtractor('atomic-fact', memoryExtractors.atomicFact);
+memoryPipeline.registerExtractor('state-change', memoryExtractors.stateChange);
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -95,6 +108,7 @@ globalThis.NemoLore = Object.freeze({
         sourceLedger,
         store: memoryStore,
         pipeline: memoryPipeline,
+        extractors: memoryExtractors,
     }),
     services: Object.freeze({
         worldInfo,
