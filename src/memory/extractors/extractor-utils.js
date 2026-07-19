@@ -30,7 +30,7 @@ export function createLlmExtractor({
             metadata: { task: `memory-extraction:${name}` },
         }, context.generationOptions);
 
-        const candidates = normalizeCandidateArray(result.text ?? result);
+        const candidates = normalizeCandidateArray(result.text ?? result)
             .map((candidate, index) => mapCandidate(candidate, { input, context, index }))
             .filter(Boolean)
             .map(candidate => ({
