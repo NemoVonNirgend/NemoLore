@@ -25,6 +25,12 @@ import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
 import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
 import { createDeduplicator } from './src/memory/processors/deduplicator.js';
 import { createImportanceScorer } from './src/memory/processors/importance-scorer.js';
+import { createCandidateSelector } from './src/memory/retrieval/candidate-selector.js';
+import { createContextComposer } from './src/memory/retrieval/context-composer.js';
+import { createMemoryRetriever } from './src/memory/retrieval/memory-retriever.js';
+import { createRedundancyFilter } from './src/memory/retrieval/redundancy-filter.js';
+import { createRelevanceScorer } from './src/memory/retrieval/relevance-scorer.js';
+import { createTokenBudget } from './src/memory/retrieval/token-budget.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
@@ -95,6 +101,19 @@ memoryPipeline.registerProcessor(memoryProcessors.deduplicator);
 memoryPipeline.registerProcessor(memoryProcessors.contradictionDetector);
 memoryPipeline.registerProcessor(memoryProcessors.importanceScorer);
 
+const memoryRetrieval = Object.freeze({
+    selector: createCandidateSelector({ store: memoryStore }),
+    scorer: createRelevanceScorer(),
+    redundancy: createRedundancyFilter(),
+    budget: createTokenBudget(),
+    composer: createContextComposer(),
+});
+
+const memoryRetriever = createMemoryRetriever({
+    ...memoryRetrieval,
+    logger,
+});
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -123,12 +142,17 @@ globalThis.NemoLore = Object.freeze({
         pipeline: memoryPipeline,
         extractors: memoryExtractors,
         processors: memoryProcessors,
+        retrieval: Object.freeze({
+            ...memoryRetrieval,
+            retriever: memoryRetriever,
+        }),
     }),
     services: Object.freeze({
         worldInfo,
         lorebooks,
         generation: providers,
         memory: memoryPipeline,
+        retrieval: memoryRetriever,
         nounDetector,
         highlighter,
         notifications,
