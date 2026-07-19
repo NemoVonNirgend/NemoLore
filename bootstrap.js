@@ -17,6 +17,9 @@ import { createLifecycle } from './src/core/lifecycle.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
+import { createProviderRegistry } from './src/providers/provider-registry.js';
+import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
+import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
 import { createHighlighter } from './src/ui/highlighting.js';
 import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
@@ -45,6 +48,16 @@ const lorebooks = createLorebookRepository({
     logger,
 });
 
+const providers = createProviderRegistry({ logger });
+
+if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
+    providers.register('async', createOpenAICompatibleProvider({
+        endpoint: settings.asyncApiEndpoint,
+        apiKey: settings.asyncApiKey,
+        model: settings.asyncApiModel,
+    }));
+}
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -62,9 +75,15 @@ globalThis.NemoLore = Object.freeze({
     settings,
     state,
     lifecycle,
+    providers: Object.freeze({
+        registry: providers,
+        createSillyTavernProvider,
+        createOpenAICompatibleProvider,
+    }),
     services: Object.freeze({
         worldInfo,
         lorebooks,
+        generation: providers,
         nounDetector,
         highlighter,
         notifications,
