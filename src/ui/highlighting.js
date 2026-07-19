@@ -22,6 +22,8 @@ function isValidGeneratedHtml(html, logger) {
 }
 
 export function createHighlighter({ settings, state, logger }) {
+    const highlightedNouns = state.raw.collections.highlightedNouns;
+
     function highlight(element, nouns) {
         if (!settings.highlightNouns || !element || element.hasAttribute('data-nemolore-processed')) {
             return false;
@@ -57,7 +59,7 @@ export function createHighlighter({ settings, state, logger }) {
         }
 
         element.innerHTML = html;
-        for (const noun of nouns) state.highlightedNouns.add(noun);
+        for (const noun of nouns) highlightedNouns.add(noun);
         logger.debug('Applied noun highlighting.', { count: nouns.length });
         return true;
     }
