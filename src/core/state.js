@@ -121,3 +121,28 @@ export function stopErrorRecovery() {
     clearInterval(state.timers.recoveryInterval);
     state.timers.recoveryInterval = null;
 }
+
+export function createNemoLoreState({ logger } = {}) {
+    return Object.freeze({
+        raw: state,
+
+        get isInitialized() {
+            return state.lifecycle.isInitialized;
+        },
+        set isInitialized(value) {
+            state.lifecycle.isInitialized = Boolean(value);
+        },
+
+        reset() {
+            resetChatState();
+            stopErrorRecovery();
+            state.lifecycle.isInitialized = false;
+            logger?.debug('Canonical state reset.');
+        },
+
+        startErrorRecovery,
+        stopErrorRecovery,
+        addTimeout: addTrackedTimeout,
+        clearTimeouts: clearTrackedTimeouts,
+    });
+}
