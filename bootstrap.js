@@ -14,6 +14,9 @@ import { createLogger } from './src/core/logger.js';
 import { createSettings } from './src/core/settings.js';
 import { createNemoLoreState } from './src/core/state.js';
 import { createLifecycle } from './src/core/lifecycle.js';
+import { createContextInjector } from './src/context/context-injector.js';
+import { createContextRegistry } from './src/context/context-registry.js';
+import { createMemoryContextContributor } from './src/context/contributors/memory-context-contributor.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createNounDetector } from './src/lore/noun-detector.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
@@ -114,18 +117,22 @@ const memoryRetriever = createMemoryRetriever({
     logger,
 });
 
+const contextRegistry = createContextRegistry({ logger });
+const contextContributors = Object.freeze({
+    memory: createMemoryContextContributor({ retrieval: memoryRetriever, logger }),
+});
+contextRegistry.register('memory', contextContributors.memory);
+
+const contextInjector = createContextInjector({
+    registry: contextRegistry,
+    logger,
+});
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
 const popups = createPopupCoordinator({ state, logger });
 
-/**
- * Temporary compatibility container exposed during the modular migration.
- *
- * New modules should receive dependencies explicitly. The global bridge exists
- * only so legacy index.js can be migrated incrementally without a flag-day
- * rewrite of the extension.
- */
 globalThis.NemoLore = Object.freeze({
     logger,
     settings,
@@ -135,6 +142,11 @@ globalThis.NemoLore = Object.freeze({
         registry: providers,
         createSillyTavernProvider,
         createOpenAICompatibleProvider,
+    }),
+    context: Object.freeze({
+        registry: contextRegistry,
+        injector: contextInjector,
+        contributors: contextContributors,
     }),
     memory: Object.freeze({
         sourceLedger,
@@ -153,6 +165,7 @@ globalThis.NemoLore = Object.freeze({
         generation: providers,
         memory: memoryPipeline,
         retrieval: memoryRetriever,
+        context: contextInjector,
         nounDetector,
         highlighter,
         notifications,
