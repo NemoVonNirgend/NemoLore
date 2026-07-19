@@ -24,25 +24,26 @@ export function createMemoryContextContributor({ retrieval, logger } = {}) {
                 includeMetadata: options.includeMemoryMetadata ?? false,
             });
 
-            if (!result.context?.trim()) return [];
+            if (!result.text?.trim()) return [];
 
             logger?.debug('Memory context contribution prepared.', {
                 selected: result.selected?.length ?? 0,
-                tokens: result.estimatedTokens ?? 0,
+                tokens: result.usedTokens ?? 0,
             });
 
             return createContextContribution({
                 id: 'memory:retrieved',
                 source: 'memory',
                 title: 'Relevant Memory',
-                content: result.context,
+                content: result.text,
                 role: CONTEXT_ROLES.SYSTEM,
                 position: CONTEXT_POSITIONS.AFTER_SYSTEM,
                 priority: options.priority ?? 70,
-                estimatedTokens: result.estimatedTokens,
+                estimatedTokens: result.usedTokens,
                 metadata: {
-                    selectedIds: result.selected?.map(item => item.record?.id ?? item.id) ?? [],
+                    selectedIds: result.memoryIds ?? [],
                     omitted: result.omitted ?? [],
+                    groups: result.groups ?? {},
                     scores: result.selected?.map(item => ({
                         id: item.record?.id ?? item.id,
                         score: item.score,
