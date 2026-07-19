@@ -16,6 +16,12 @@ import {
     METADATA_KEY,
 } from '../../../world-info.js';
 
+import { createApiHelperAgent } from './src/agents/api-helper-agent.js';
+import { createMemoryHelperAgent, createCallbackHelperAgent } from './src/agents/builtin-helper-agents.js';
+import { createHelperAgentRegistry } from './src/agents/helper-agent-registry.js';
+import { createHelperAgentRuntime } from './src/agents/helper-agent-runtime.js';
+import { createHelperTaskRegistry } from './src/agents/helper-task-registry.js';
+import { createPostReplyDispatcher } from './src/agents/post-reply-dispatcher.js';
 import { MODULE_NAME } from './src/core/constants.js';
 import { createLogger } from './src/core/logger.js';
 import { createSettings } from './src/core/settings.js';
@@ -88,11 +94,7 @@ if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
 
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
-const memoryPipeline = createMemoryPipeline({
-    store: memoryStore,
-    sourceLedger,
-    logger,
-});
+const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
 
 const memoryExtractors = Object.freeze({
     episode: createEpisodeExtractor({ generation: providers, logger }),
@@ -122,10 +124,7 @@ const memoryRetrieval = Object.freeze({
     composer: createContextComposer(),
 });
 
-const memoryRetriever = createMemoryRetriever({
-    ...memoryRetrieval,
-    logger,
-});
+const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
 
 const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
@@ -133,16 +132,8 @@ const contextContributors = Object.freeze({
 });
 contextRegistry.register('memory', contextContributors.memory);
 
-const contextInjector = createContextInjector({
-    registry: contextRegistry,
-    logger,
-});
-
-const extensionPromptAdapter = createSillyTavernExtensionPromptAdapter({
-    resolveContext: getContext,
-    logger,
-});
-
+const contextInjector = createContextInjector({ registry: contextRegistry, logger });
+const extensionPromptAdapter = createSillyTavernExtensionPromptAdapter({ resolveContext: getContext, logger });
 const contextBridge = createSillyTavernContextBridge({
     injector: contextInjector,
     promptAdapter: extensionPromptAdapter,
@@ -175,6 +166,29 @@ const contextBridge = createSillyTavernContextBridge({
     logger,
 });
 
+const helperTasks = createHelperTaskRegistry({ logger });
+const helperAgents = createHelperAgentRegistry({ logger });
+helperAgents.register('api', createApiHelperAgent({ generation: providers, tasks: helperTasks, logger }));
+helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
+
+const helperRuntime = createHelperAgentRuntime({
+    registry: helperAgents,
+    logger,
+    concurrency: settings.helperAgentConcurrency,
+    contextFactory: () => ({
+        lorebooks,
+        memory: memoryPipeline,
+        retrieval: memoryRetriever,
+        context: contextInjector,
+    }),
+});
+
+const postReplyDispatcher = createPostReplyDispatcher({ runtime: helperRuntime, settings, logger });
+
+function registerHelperWorkflow(name, handler) {
+    return helperAgents.register(name, createCallbackHelperAgent({ name, handler }));
+}
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -190,6 +204,13 @@ globalThis.NemoLore = Object.freeze({
         createSillyTavernProvider,
         createOpenAICompatibleProvider,
     }),
+    agents: Object.freeze({
+        registry: helperAgents,
+        tasks: helperTasks,
+        runtime: helperRuntime,
+        postReply: postReplyDispatcher,
+        registerWorkflow: registerHelperWorkflow,
+    }),
     context: Object.freeze({
         registry: contextRegistry,
         injector: contextInjector,
@@ -203,15 +224,14 @@ globalThis.NemoLore = Object.freeze({
         pipeline: memoryPipeline,
         extractors: memoryExtractors,
         processors: memoryProcessors,
-        retrieval: Object.freeze({
-            ...memoryRetrieval,
-            retriever: memoryRetriever,
-        }),
+        retrieval: Object.freeze({ ...memoryRetrieval, retriever: memoryRetriever }),
     }),
     services: Object.freeze({
         worldInfo,
         lorebooks,
         generation: providers,
+        agents: helperRuntime,
+        postReply: postReplyDispatcher,
         memory: memoryPipeline,
         retrieval: memoryRetriever,
         context: contextInjector,
