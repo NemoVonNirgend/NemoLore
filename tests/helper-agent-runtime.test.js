@@ -34,6 +34,35 @@ test('runs helper jobs with bounded concurrency', async () => {
     assert.deepEqual(jobs.map(job => job.status), ['queued', 'queued', 'queued', 'queued']);
 });
 
+test('starts a helper batch concurrently up to available capacity', async () => {
+    const registry = createHelperAgentRegistry();
+    const started = [];
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+
+    for (const name of ['memory', 'summary', 'lore']) {
+        registry.register(name, {
+            async run() {
+                started.push(name);
+                await gate;
+                return name;
+            },
+        });
+    }
+
+    const runtime = createHelperAgentRuntime({ registry, concurrency: 3 });
+    runtime.enqueueMany([
+        { agent: 'memory', priority: 50 },
+        { agent: 'summary', priority: 40 },
+        { agent: 'lore', priority: 30 },
+    ]);
+
+    await tick();
+    assert.deepEqual(new Set(started), new Set(['memory', 'summary', 'lore']));
+    assert.equal(runtime.inspect().running, 3);
+    release();
+});
+
 test('deduplicates active jobs by key', async () => {
     const registry = createHelperAgentRegistry();
     registry.register('work', { async run() { await tick(); return true; } });
