@@ -1,4 +1,5 @@
 import { parseJsonResponse } from '../memory/extractors/json-response.js';
+import { createLoreEntityIndex } from './lore-entity-index.js';
 
 const SYSTEM_PROMPT = `Extract durable lore changes from roleplay text. Return JSON only as {"entries":[...]}. Each entry must include action (create|update|noop), key, title, content, keywords, and optional uid. Preserve manual prose where possible. Do not create entries for transient scene details.`;
 
@@ -20,10 +21,9 @@ function mergeKeywords(entry, existing) {
     return [...new Set([...current, entry.key, entry.title, ...entry.keywords].map(String).map(value => value.trim()).filter(Boolean))];
 }
 
-export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex, logger } = {}) {
+export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex = createLoreEntityIndex(), logger } = {}) {
     if (!generation?.generate) throw new TypeError('Lore generation service requires generation.');
     if (!lorebooks?.ensureForChat) throw new TypeError('Lore generation service requires lorebooks.');
-    if (!entityIndex?.resolve) throw new TypeError('Lore generation service requires an entity index.');
 
     async function generate(payload = {}) {
         if (!payload.chatId) throw new TypeError('Lore generation requires chatId.');
@@ -60,5 +60,5 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
         return { entries, applied, generation: result };
     }
 
-    return Object.freeze({ generate });
+    return Object.freeze({ generate, entityIndex });
 }
