@@ -301,10 +301,14 @@ let nemoLoreSettings = {
 };
 
 function legacySummaryAutomationEnabled() {
+    const owner = globalThis.NemoLore?.ownership?.ownerFor?.('summary');
+    if (owner) return owner === 'nemolore-legacy';
     return isLegacySummaryEngine(nemoLoreSettings);
 }
 
 function legacyLoreAutomationEnabled() {
+    const owner = globalThis.NemoLore?.ownership?.ownerFor?.('lore');
+    if (owner) return owner === 'nemolore-legacy';
     return isLegacyLoreEngine(nemoLoreSettings);
 }
 
@@ -1701,7 +1705,7 @@ SUMMARY FOCUS:`;
         };
     }
 
-    static async summarizeMessage(messageIndex) {
+    static async summarizeMessage(messageIndex, { manual = false } = {}) {
         if (!nemoLoreSettings.enableSummarization) return null;
         
         // Check if getContext is available (it's a global function)
@@ -1831,6 +1835,9 @@ SUMMARY FOCUS:`;
             }
             
             // Process the response (this code should be within the main try block)
+            const activeContext = getContext();
+            if (activeContext?.chat?.[messageIndex] !== message) return null;
+            if (!manual && !legacySummaryAutomationEnabled()) return null;
             if (response && response.trim()) {
                 const rawSummary = response.trim();
                 console.log(`[${MODULE_NAME}] Generated summary: "${rawSummary.substring(0, 100)}..."`);
@@ -2808,7 +2815,7 @@ ${summaryData.text}
             console.log(`[${MODULE_NAME}] Regenerating summary for message ${messageIndex}`);
             
             // Queue for regeneration
-            await this.summarizeMessage(messageIndex);
+            await this.summarizeMessage(messageIndex, { manual: true });
             
             // Update display
             this.addSummaryIndicator(messageIndex);
@@ -3265,6 +3272,8 @@ Provide a comprehensive but concise summary that preserves the essential narrati
             if (message1 && message2) {
                 // Summarize the pair together
                 const pairedSummary = await this.summarizePairedMessages(i, i + 1);
+                if (!legacySummaryAutomationEnabled()
+                    || getContext()?.chat?.[i] !== message1 || getContext()?.chat?.[i + 1] !== message2) return;
                 
                 if (pairedSummary) {
                     // Store summary for the second message in the pair
@@ -3404,6 +3413,8 @@ Provide a brief summary that preserves the essential narrative elements and any 
         
         // Summarize the pair together
         const pairedSummary = await this.summarizePairedMessages(index1, index2);
+        if (!legacySummaryAutomationEnabled()
+            || getContext()?.chat?.[index1] !== message1 || getContext()?.chat?.[index2] !== message2) return false;
         
         if (pairedSummary) {
             // Store summary for the second message in the pair

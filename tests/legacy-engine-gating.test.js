@@ -19,6 +19,9 @@ test('modular summary mode gates every legacy automatic queue and exclusion boun
     assert.match(source, /static shouldExcludeFromContext\(messageIndex\) \{\s*if \(!legacySummaryAutomationEnabled\(\)\) return false;/);
     assert.match(source, /globalThis\.nemolore_intercept_messages = function \(chat, contextSize, abort, type\) \{\s*if \(!legacySummaryAutomationEnabled\(\)\) return;/);
     assert.match(source, /legacySummaryAutomationEnabled\(\)\s*&& nemoLoreSettings\.autoSummarize/);
+    assert.match(source, /if \(!manual && !legacySummaryAutomationEnabled\(\)\) return null;/);
+    assert.match(source, /getContext\(\)\?\.chat\?\.\[index1\] !== message1/);
+    assert.match(source, /summarizeMessage\(messageIndex, \{ manual: true \}\)/);
 });
 
 test('modular lore mode gates legacy chat setup and periodic update boundaries', async () => {
