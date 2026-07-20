@@ -160,7 +160,7 @@ export function createModularSettingsController({ settings, save, observability,
         if (settings.presetMigration) {
             const migration = document.createElement('p');
             migration.className = 'nemolore-preset-migration';
-            migration.textContent = `Existing settings were matched to ${profileLabel()}. Legacy values are preserved until the modular data migration is completed.`;
+            migration.textContent = `Existing settings were matched to ${profileLabel()} and migrated to the modular runtime. The previous policy is retained only in the migration audit record.`;
             section.append(migration);
         }
         return section;

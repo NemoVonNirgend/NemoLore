@@ -1,10 +1,10 @@
 # NemoLore Architecture
 
-NemoLore is being migrated from a single-file extension into a set of small, dependency-directed modules. The migration is intentionally incremental: `index.js` remains the compatibility entrypoint until each subsystem has been extracted and verified.
+NemoLore is a modular SillyTavern extension composed from small, dependency-directed services. `bootstrap.js` is the only runtime entrypoint; the former single-file runtime was retired after its data and UI responsibilities were migrated.
 
 ## Design goals
 
-- Preserve current behavior during extraction.
+- Preserve user data through versioned migration.
 - Keep SillyTavern-specific APIs behind integration adapters.
 - Maintain one canonical runtime state store.
 - Separate persisted settings from ephemeral state.
@@ -14,7 +14,7 @@ NemoLore is being migrated from a single-file extension into a set of small, dep
 ## Dependency direction
 
 ```text
-index.js
+bootstrap.js
   -> core/lifecycle
       -> feature services
           -> integrations
@@ -24,7 +24,7 @@ index.js
 
 Feature modules may depend on `core` and `integrations`. Core modules must not import feature modules or UI modules.
 
-## Planned structure
+## Structure
 
 ```text
 src/
@@ -35,26 +35,24 @@ src/
     state.js
     lifecycle.js
   integrations/
-    sillytavern.js
-    events.js
-    generation.js
-    world-info.js
+    sillytavern-*.js
+    world-info-adapter.js
   memory/
-    summary-service.js
-    summary-queue.js
-    hierarchical-memory.js
-    core-memories.js
-    context-injector.js
+    extractors/
+    processors/
+    retrieval/
+    maintenance/
     memory-store.js
+    memory-persistence.js
   lore/
     noun-detector.js
     lorebook-service.js
     entry-generator.js
     entry-updater.js
-  retrieval/
-    embedding-provider.js
-    vector-store.js
-    semantic-search.js
+  summary/
+  context/
+  agents/
+  presets/
   providers/
     generation-client.js
     profile-provider.js
@@ -72,7 +70,7 @@ src/
     guards.js
 ```
 
-## Migration order
+## Completed migration
 
 1. Core constants, logging, settings defaults, and runtime state.
 2. Small utilities and SillyTavern adapters.
@@ -82,8 +80,8 @@ src/
 6. Lorebook generation and updates.
 7. Vector retrieval and embedding providers.
 8. UI composition and final lifecycle extraction.
-9. Reduce `index.js` to a thin bootstrap.
+9. Replace the legacy runtime and settings shell with `bootstrap.js` and the standalone modular UI.
 
-## Compatibility rule
+## Migration rule
 
-No extraction commit should intentionally change user-visible behavior. Behavioral modernization happens only after the modular migration has a stable baseline.
+Legacy settings and summaries are accepted only as versioned migration inputs. They cannot select an alternate runtime. Source data and policy snapshots remain recoverable, while all active execution uses modular services.

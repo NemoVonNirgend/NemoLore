@@ -25,3 +25,14 @@ test('manifest entry files and test workflow exist', async () => {
     ]);
     assert.equal(manifest.generate_interceptor, 'nemolore_intercept_messages');
 });
+
+test('bootstrap no longer loads the legacy runtime module', async () => {
+    const [bootstrap, settings] = await Promise.all([
+        readFile('bootstrap.js', 'utf8'),
+        readFile('settings.html', 'utf8'),
+    ]);
+    assert.doesNotMatch(bootstrap, /import\(['"]\.\/index\.js['"]\)/);
+    assert.match(bootstrap, /createModularUiBootstrap/);
+    assert.match(settings, /data-nemolore-modular-host/);
+    assert.ok(settings.length < 2_000, 'Settings template should remain a small modular host.');
+});

@@ -11,11 +11,11 @@ NemoLore presents story-scale policies instead of exposing its internal scheduli
 
 Definitions live in `src/presets/preset-registry.js`. They are immutable and versioned independently from stored user settings. A resolved preset combines its base policy with recognized explicit overrides.
 
-## Staged migration
+## Legacy cutover
 
-The first checkpoint classifies pre-preset settings and records a migration explanation without silently changing an existing installation's behavior. Clean installations use Long Form and the modular summary/lore engines immediately.
+Pre-preset settings are classified into the closest story profile. The previous policy is stored in the migration audit record, legacy summaries are imported into modular summary and memory storage, and active summary/lore engine modes are set to modular. Clean installations use Long Form immediately.
 
-Later checkpoints will replace direct module reads with resolved policy values, introduce preset cards and a small Advanced override surface, migrate every legacy data family, validate record counts and provenance, and finally disable legacy runtime execution.
+The standalone modular UI exposes four profile cards and a focused Advanced override surface. Legacy engine selectors, summary precedence switches, settings markup, observers, and generation interception have been removed.
 
 Migration is required to be idempotent, resumable, and source-preserving.
 

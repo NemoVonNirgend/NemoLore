@@ -9,7 +9,7 @@ import {
     extension_prompt_roles,
     MAX_INJECTION_DEPTH,
 } from '../../../../script.js';
-import { extension_settings, getContext } from '../../../extensions.js';
+import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../extensions.js';
 import {
     createNewWorldInfo,
     deleteWorldInfo,
@@ -75,14 +75,15 @@ import { createOpenAICompatibleProvider } from './src/providers/openai-compatibl
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createResilientGenerationRouter } from './src/providers/resilient-generation-router.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
-import { createSummaryCompatibilityCoordinator } from './src/summary/summary-compatibility-coordinator.js';
 import { createSummaryContextContributor } from './src/summary/summary-context-contributor.js';
 import { createSummaryHelperWorkflow } from './src/summary/summary-helper-workflow.js';
 import { createSummaryInputBuilder } from './src/summary/summary-input-builder.js';
 import { createSummaryService } from './src/summary/summary-service.js';
 import { createSummaryStore } from './src/summary/summary-store.js';
 import { createHighlighter } from './src/ui/highlighting.js';
+import { createChatHighlightingController } from './src/ui/chat-highlighting-controller.js';
 import { createModularSettingsController } from './src/ui/modular-settings-controller.js';
+import { createModularUiBootstrap } from './src/ui/modular-ui-bootstrap.js';
 import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
 
@@ -97,11 +98,6 @@ const persistSettings = updated => {
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
-const summaryCompatibility = createSummaryCompatibilityCoordinator({
-    settings,
-    extensionSettings: extension_settings,
-    logger,
-});
 const summaryInputBuilder = createSummaryInputBuilder({ settings, logger });
 const contextExclusion = createContextExclusionPolicy({ settings, logger });
 
@@ -312,9 +308,22 @@ const settingsController = createModularSettingsController({
     onPolicyChange: () => helperScheduling.reset(),
     logger,
 });
+const modularUi = createModularUiBootstrap({
+    renderTemplate: renderExtensionTemplateAsync,
+    settingsController,
+    logger,
+});
 
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
+const chatHighlighting = createChatHighlightingController({
+    eventSource,
+    messageEvent: event_types.MESSAGE_RECEIVED,
+    chatEvents: [event_types.CHAT_CHANGED, event_types.CHAT_LOADED],
+    nounDetector,
+    highlighter,
+    logger,
+});
 const notifications = createNotificationCenter({ logger });
 const popups = createPopupCoordinator({ state, logger });
 
@@ -350,11 +359,11 @@ const publicApi = Object.freeze({
     }),
     observability,
     settingsController,
+    ui: modularUi,
     summary: Object.freeze({
         store: summaryStore,
         service: summaryService,
         contributor: contextContributors.summary,
-        compatibility: summaryCompatibility,
         inputBuilder: summaryInputBuilder,
     }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
@@ -376,7 +385,6 @@ const publicApi = Object.freeze({
         loreGeneration,
         summary: summaryService,
         summaryStore,
-        summaryCompatibility,
         summaryInputBuilder,
         generation: generationRouter,
         providerRegistry: providers,
@@ -392,8 +400,10 @@ const publicApi = Object.freeze({
         contextExclusion,
         observability,
         settings: settingsController,
+        ui: modularUi,
         nounDetector,
         highlighter,
+        chatHighlighting,
         notifications,
         popups,
     }),
@@ -402,8 +412,7 @@ globalThis.NemoLore = publicApi;
 
 lifecycle.start();
 try {
-    summaryCompatibility.prepareLegacyImport();
-    await import('./index.js');
+    await modularUi.install();
 
     const modularExclusionInterceptor = createSillyTavernContextExclusionInterceptor({
         policy: contextExclusion,
@@ -417,8 +426,8 @@ try {
 
     memoryLifecycle.install();
     postReplyListener.install();
-    settingsController.install();
-    lifecycle.markLegacyLoaded();
+    chatHighlighting.install();
+    lifecycle.markUiReady();
     lifecycle.markReady();
     logger.info('NemoLore modular runtime ready; legacy data import remains available without legacy execution.');
 } catch (error) {
