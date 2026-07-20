@@ -45,9 +45,16 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
                 .map(workflow => ({ workflow })),
             decisions: [],
         };
-        const requests = scheduling.selected.map(item => requestFor(item.workflow, payload, dedupeBase));
+        const selected = scheduling.selected.filter(item => {
+            if (item.workflow !== 'summary') return true;
+            return settings.summaryEngineMode === 'modular';
+        });
+        const requests = selected.map(item => requestFor(item.workflow, payload, dedupeBase));
         if (!requests.length) {
-            logger?.debug('No post-reply helper jobs passed scheduling policy.', { decisions: scheduling.decisions });
+            logger?.debug('No post-reply helper jobs passed scheduling policy.', {
+                decisions: scheduling.decisions,
+                summaryEngineMode: settings.summaryEngineMode,
+            });
             return [];
         }
 
