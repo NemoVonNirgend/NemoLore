@@ -228,6 +228,33 @@ test('resolves object-shaped CHAT_LOADED payloads through getChatId', async () =
     assert.equal(starts.includes('[object Object]'), false);
 });
 
+test('reloads persisted memory when CHAT_LOADED repeats the active chat id', async () => {
+    const listeners = new Map();
+    const starts = [];
+    const lifecycle = createSillyTavernMemoryLifecycle({
+        eventSource: {
+            on(event, handler) { listeners.set(event, handler); },
+        },
+        chatChangedEvent: 'changed',
+        chatLoadedEvent: 'loaded',
+        getChatId: () => 'chat-a',
+        persistence: {
+            start(chatId) { starts.push(chatId); return []; },
+            async flush() {},
+        },
+        migrator: { async migrate() { return { migrated: 0 }; } },
+    });
+
+    lifecycle.install();
+    await lifecycle.activate('chat-a');
+    assert.deepEqual(starts, ['chat-a']);
+
+    listeners.get('loaded')({ detail: { id: 4 } });
+    await lifecycle.activate('chat-a');
+
+    assert.deepEqual(starts, ['chat-a', 'chat-a']);
+});
+
 test('detached debounced persistence logs failures without unhandled rejections', async () => {
     const failure = new Error('metadata write failed');
     const errors = [];

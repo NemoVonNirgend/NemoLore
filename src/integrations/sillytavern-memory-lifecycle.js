@@ -23,11 +23,11 @@ export function createSillyTavernMemoryLifecycle({
         };
     }
 
-    async function activateNow(chatId) {
+    async function activateNow(chatId, { force = false } = {}) {
         const nextChatId = chatId ? String(chatId) : null;
         if (!nextChatId) return { loaded: 0, migrated: 0, skipped: true };
         if (staleResult(nextChatId)) return staleResult(nextChatId);
-        if (currentChatId === nextChatId) {
+        if (currentChatId === nextChatId && !force) {
             return { loaded: 0, migrated: 0, skipped: true, reason: 'already-active' };
         }
         if (currentChatId && currentChatId !== nextChatId) {
@@ -45,9 +45,9 @@ export function createSillyTavernMemoryLifecycle({
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };
     }
 
-    function activate(chatId = getChatId?.()) {
+    function activate(chatId = getChatId?.(), options = {}) {
         const requestedChatId = chatId;
-        const activation = activationQueue.then(() => activateNow(requestedChatId));
+        const activation = activationQueue.then(() => activateNow(requestedChatId, options));
         activationQueue = activation.catch(() => {});
         return activation;
     }
@@ -59,10 +59,17 @@ export function createSillyTavernMemoryLifecycle({
         void activate(chatId).catch(error => logger?.error('Chat memory activation failed.', error));
     }
 
+    function onChatLoaded(eventChatId) {
+        const chatId = typeof eventChatId === 'string' || typeof eventChatId === 'number'
+            ? eventChatId
+            : getChatId?.();
+        void activate(chatId, { force: true }).catch(error => logger?.error('Loaded chat memory activation failed.', error));
+    }
+
     function install() {
         if (installed) return false;
         if (chatChangedEvent) eventSource.on(chatChangedEvent, onChatChanged);
-        if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) eventSource.on(chatLoadedEvent, onChatChanged);
+        if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) eventSource.on(chatLoadedEvent, onChatLoaded);
         installed = true;
         void activate().catch(error => logger?.error('Initial chat memory activation failed.', error));
         return true;
@@ -75,8 +82,8 @@ export function createSillyTavernMemoryLifecycle({
             eventSource.off?.(chatChangedEvent, onChatChanged);
         }
         if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) {
-            eventSource.removeListener?.(chatLoadedEvent, onChatChanged);
-            eventSource.off?.(chatLoadedEvent, onChatChanged);
+            eventSource.removeListener?.(chatLoadedEvent, onChatLoaded);
+            eventSource.off?.(chatLoadedEvent, onChatLoaded);
         }
         persistence.stop?.();
         installed = false;
