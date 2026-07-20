@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     excludeCommonWords: true,
 
     enableSummarization: true,
+    summaryEngineMode: 'legacy',
+    summaryInputMaxMessages: 50,
     connectionProfile: '',
     completionPreset: '',
     prefill: '',
