@@ -21,6 +21,15 @@
 - Duplicate native/modular summary and memory context contributions.
 - Late helper and migration commits after ownership or active-chat changes.
 - Ownership checks cloning complete native stores on generation hot paths.
+- Memory hydration when SillyTavern loads metadata for a chat ID that was
+  provisionally activated during bootstrap.
+- False legacy highlighting errors when SillyTavern replaces or rewrites a
+  rendered message during delayed verification.
+
+### Compatibility
+
+- Verified against SillyTavern 1.18.0 staging commit
+  `380e31e8c58d196969b6a0da74f431ba999c7e0a` with live DeepSeek V3 routing.
 
 ## 1.2.0 - 2026-07-20
 
