@@ -21,11 +21,19 @@ function mergeKeywords(entry, existing) {
     return [...new Set([...current, entry.key, entry.title, ...entry.keywords].map(String).map(value => value.trim()).filter(Boolean))];
 }
 
+function patchFor(entry, existing = null) {
+    return {
+        content: entry.content,
+        key: mergeKeywords(entry, existing),
+        comment: entry.title || existing?.comment || entry.key,
+    };
+}
+
 export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex = createLoreEntityIndex(), logger } = {}) {
     if (!generation?.generate) throw new TypeError('Lore generation service requires generation.');
     if (!lorebooks?.ensureForChat) throw new TypeError('Lore generation service requires lorebooks.');
 
-    async function generate(payload = {}) {
+    async function preview(payload = {}) {
         if (!payload.chatId) throw new TypeError('Lore generation requires chatId.');
         await lorebooks.ensureForChat(payload.chatId);
         const current = await lorebooks.load();
@@ -37,28 +45,66 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
             metadata: { task: 'lore-generation', chatId: payload.chatId },
         }, { provider: payload.provider, workflow: 'lore' });
 
-        const entries = normalizeEntries(result.text ?? result);
-        const applied = [];
-        await Promise.all(entries.map(entry => lock.run(`lore:${payload.chatId}:${entityIndex.normalizeIdentity(entry.key)}`, async () => {
-            const latest = await lorebooks.load();
-            const match = entityIndex.resolve(latest, entry);
+        const operations = normalizeEntries(result.text ?? result).map(entry => {
+            const match = entityIndex.resolve(current, entry);
             const resolvedUid = entry.uid ?? match?.uid ?? null;
-            if (entry.action === 'noop') return applied.push({ ...entry, resolvedUid, skipped: true, reason: 'model-noop' });
-            if (resolvedUid != null) {
-                const existing = match?.entry ?? null;
-                const value = await lorebooks.updateEntry(resolvedUid, {
-                    content: entry.content,
-                    key: mergeKeywords(entry, existing),
-                    comment: entry.title || existing?.comment || entry.key,
-                });
-                return applied.push({ ...entry, action: 'update', resolvedUid, matchedIdentity: match?.identity ?? null, value });
-            }
-            const value = await lorebooks.createEntry({ content: entry.content, key: mergeKeywords(entry), comment: entry.title || entry.key });
-            applied.push({ ...entry, action: 'create', value });
-        })));
-        logger?.debug('Applied generated lore changes.', { chatId: payload.chatId, count: applied.length });
-        return { entries, applied, generation: result };
+            return Object.freeze({
+                ...entry,
+                action: entry.action === 'noop' ? 'noop' : resolvedUid != null ? 'update' : 'create',
+                identity: entityIndex.normalizeIdentity(entry.key),
+                resolvedUid,
+                matchedIdentity: match?.identity ?? null,
+                existing: match?.entry ? structuredClone(match.entry) : null,
+            });
+        });
+
+        return Object.freeze({
+            chatId: String(payload.chatId),
+            provider: result.provider ?? payload.provider ?? null,
+            generatedAt: new Date().toISOString(),
+            operations,
+            generation: result,
+        });
     }
 
-    return Object.freeze({ generate, entityIndex });
+    async function apply(previewResult, { approvedIndexes = null } = {}) {
+        if (!previewResult?.chatId || !Array.isArray(previewResult.operations)) {
+            throw new TypeError('Lore apply requires a preview result.');
+        }
+        const approved = approvedIndexes == null ? null : new Set(approvedIndexes.map(Number));
+        const applied = [];
+
+        await Promise.all(previewResult.operations.map((operation, index) => {
+            if (approved && !approved.has(index)) {
+                applied.push({ ...operation, skipped: true, reason: 'not-approved' });
+                return Promise.resolve();
+            }
+            return lock.run(`lore:${previewResult.chatId}:${operation.identity}`, async () => {
+                if (operation.action === 'noop') {
+                    applied.push({ ...operation, skipped: true, reason: 'model-noop' });
+                    return;
+                }
+                const latest = await lorebooks.load();
+                const match = entityIndex.resolve(latest, operation);
+                const resolvedUid = operation.resolvedUid ?? match?.uid ?? null;
+                if (resolvedUid != null) {
+                    const existing = match?.entry ?? operation.existing ?? null;
+                    const value = await lorebooks.updateEntry(resolvedUid, patchFor(operation, existing));
+                    applied.push({ ...operation, action: 'update', resolvedUid, matchedIdentity: match?.identity ?? operation.matchedIdentity, value });
+                    return;
+                }
+                const value = await lorebooks.createEntry(patchFor(operation));
+                applied.push({ ...operation, action: 'create', value });
+            });
+        }));
+
+        logger?.debug('Applied generated lore changes.', { chatId: previewResult.chatId, count: applied.length });
+        return { ...previewResult, applied };
+    }
+
+    async function generate(payload = {}) {
+        return apply(await preview(payload));
+    }
+
+    return Object.freeze({ preview, apply, generate, entityIndex });
 }
