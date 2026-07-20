@@ -1,3 +1,5 @@
+import { assertActiveChat } from '../core/active-chat-guard.js';
+
 export function createSummaryManagementService({ store, summary, settings, saveSettings, getChatId, getContext, logger } = {}) {
     if (!store?.get || !store?.save) throw new TypeError('Summary management requires a summary store.');
 
@@ -7,8 +9,10 @@ export function createSummaryManagementService({ store, summary, settings, saveS
 
     async function edit(text, { chatId = getChatId?.(), metadata = {} } = {}) {
         if (!chatId) throw new TypeError('Summary edit requires chatId.');
+        assertActiveChat(getChatId, chatId);
         const existing = store.get(chatId);
-        return store.save(chatId, {
+        assertActiveChat(getChatId, chatId);
+        const record = await store.save(chatId, {
             ...(existing ?? {}),
             text,
             metadata: {
@@ -18,13 +22,18 @@ export function createSummaryManagementService({ store, summary, settings, saveS
                 editedAt: new Date().toISOString(),
             },
         });
+        assertActiveChat(getChatId, chatId);
+        return record;
     }
 
     async function regenerate({ chatId = getChatId?.(), provider, messages, sourceRange } = {}) {
         if (!summary?.summarize) throw new Error('Summary generation is unavailable.');
+        if (!chatId) throw new TypeError('Summary regeneration requires chatId.');
+        assertActiveChat(getChatId, chatId);
         const context = getContext?.() ?? {};
         const selected = messages ?? context.chat ?? [];
-        return summary.summarize({
+        assertActiveChat(getChatId, chatId);
+        const result = await summary.summarize({
             chatId,
             provider,
             messages: selected,
@@ -32,6 +41,8 @@ export function createSummaryManagementService({ store, summary, settings, saveS
             previousSummary: store.get(chatId)?.text ?? '',
             metadata: { manualRegeneration: true },
         });
+        assertActiveChat(getChatId, chatId);
+        return result;
     }
 
     function lineage(chatId = getChatId?.()) {

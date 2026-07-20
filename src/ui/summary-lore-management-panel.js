@@ -1,4 +1,5 @@
 import { createManagementPanelShell } from './management-panel-shell.js';
+import { isActiveChatChangedError } from '../core/active-chat-guard.js';
 import { createSummaryManagementService } from '../summary/summary-management-service.js';
 import { createLoreManagementService } from '../lore/lore-management-service.js';
 
@@ -31,6 +32,7 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
     let shell = null;
     let activeTab = 'summary';
     let pendingPreview = null;
+    let panelChatId = null;
 
     const summary = createSummaryManagementService({
         store: nemo.summary.store,
@@ -45,19 +47,39 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         lorebooks: nemo.lore.repository,
         generation: nemo.lore.generation,
         entityIndex: nemo.lore.generation.entityIndex,
+        getChatId: () => nemo.memory.persistence.activeChatId,
         logger,
     });
+
+    function handleActionError(label, error) {
+        if (isActiveChatChangedError(error)) {
+            logger?.warn('Closed stale summary/lore manager after the active chat changed.', {
+                expectedChatId: error.expectedChatId,
+                activeChatId: error.activeChatId,
+            });
+            close();
+            return;
+        }
+        logger?.error('Summary/lore manager action failed.', { label, error });
+    }
+
+    function actionButton(label, handler) {
+        return button(label, event => Promise.resolve()
+            .then(() => handler(event))
+            .catch(error => handleActionError(label, error)));
+    }
 
     function close() {
         shell?.overlay.remove();
         shell = null;
         pendingPreview = null;
+        panelChatId = null;
     }
 
     async function renderSummary() {
         shell.sidebar.replaceChildren();
         shell.detail.replaceChildren();
-        const record = summary.current();
+        const record = summary.current(panelChatId);
         const editor = textarea(record?.text ?? '', 14);
         const precedence = document.createElement('select');
         precedence.className = 'text_pole';
@@ -65,12 +87,12 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
             precedence.append(new Option(value, value, false, nemo.settings.summaryContextPrecedence === value));
         }
         const lineage = document.createElement('pre');
-        lineage.textContent = JSON.stringify(summary.lineage(), null, 2);
-        shell.sidebar.append(precedence, button('Apply precedence', () => summary.setPrecedence(precedence.value)));
+        lineage.textContent = JSON.stringify(summary.lineage(panelChatId), null, 2);
+        shell.sidebar.append(precedence, actionButton('Apply precedence', () => summary.setPrecedence(precedence.value)));
         shell.detail.append(
             editor,
-            button('Save summary', async () => { await summary.edit(editor.value); await renderSummary(); }),
-            button('Regenerate from current chat', async () => { await summary.regenerate({ messages: currentChatMessages() }); await renderSummary(); }),
+            actionButton('Save summary', async () => { await summary.edit(editor.value, { chatId: panelChatId }); await renderSummary(); }),
+            actionButton('Regenerate from current chat', async () => { await summary.regenerate({ chatId: panelChatId, messages: currentChatMessages() }); await renderSummary(); }),
             lineage,
         );
     }
@@ -85,7 +107,7 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         const list = document.createElement('div');
         const renderEntries = async () => {
             list.replaceChildren();
-            for (const entry of await lore.list({ search: search.value })) {
+            for (const entry of await lore.list({ search: search.value, chatId: panelChatId })) {
                 const row = document.createElement('button');
                 row.type = 'button';
                 row.className = 'menu_button nemolore-memory-item';
@@ -94,11 +116,13 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
                 list.append(row);
             }
         };
-        search.addEventListener('input', () => void renderEntries());
+        search.addEventListener('input', () => {
+            void renderEntries().catch(error => handleActionError('Refresh lore entries', error));
+        });
         const previewInput = textarea('', 6);
         previewInput.placeholder = 'Paste recent roleplay text to preview lore changes';
-        shell.sidebar.append(search, list, previewInput, button('Preview lore changes', async () => {
-            pendingPreview = await lore.preview({ chatId: nemo.memory.persistence.activeChatId, input: previewInput.value });
+        shell.sidebar.append(search, list, previewInput, actionButton('Preview lore changes', async () => {
+            pendingPreview = await lore.preview({ chatId: panelChatId, input: previewInput.value });
             renderPreview();
         }));
         await renderEntries();
@@ -120,11 +144,11 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
             title,
             content,
             identities,
-            button(entry.protected ? 'Remove protection' : 'Protect manual entry', async () => { await lore.protect(entry.uid, !entry.protected); await renderLore(); }),
+            actionButton(entry.protected ? 'Remove protection' : 'Protect manual entry', async () => { await lore.protect(entry.uid, !entry.protected, { chatId: panelChatId }); await renderLore(); }),
             duplicateIds,
-            button('Merge duplicates into this entry', async () => {
+            actionButton('Merge duplicates into this entry', async () => {
                 const ids = duplicateIds.value.split(',').map(value => value.trim()).filter(Boolean);
-                await lore.merge(entry.uid, ids);
+                await lore.merge(entry.uid, ids, { chatId: panelChatId });
                 await renderLore();
             }),
         );
@@ -154,8 +178,8 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
             shell.detail.append(row);
         });
         shell.detail.append(
-            button('Apply approved changes', async () => { await lore.apply(pendingPreview, approved); pendingPreview = null; await renderLore(); }),
-            button('Reject preview', () => { pendingPreview = null; void renderLore(); }),
+            actionButton('Apply approved changes', async () => { await lore.apply(pendingPreview, approved); pendingPreview = null; await renderLore(); }),
+            actionButton('Reject preview', async () => { pendingPreview = null; await renderLore(); }),
         );
     }
 
@@ -167,10 +191,11 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
 
     async function open() {
         if (shell?.overlay.isConnected) return shell.overlay;
+        panelChatId = nemo.memory.persistence.activeChatId;
         shell = createManagementPanelShell({ id: 'nemolore-summary-lore-manager', title: 'NemoLore Summary & Lore Manager', onClose: close });
         const tabs = document.createElement('div');
         tabs.className = 'flex-container';
-        tabs.append(button('Summary', () => void switchTab('summary')), button('Lore', () => void switchTab('lore')));
+        tabs.append(actionButton('Summary', () => switchTab('summary')), actionButton('Lore', () => switchTab('lore')));
         shell.header.insertBefore(tabs, shell.close);
         document.body.append(shell.overlay);
         await switchTab(activeTab);
