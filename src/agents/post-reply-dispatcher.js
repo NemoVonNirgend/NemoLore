@@ -3,22 +3,12 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
 
     function requestFor(workflow, payload, dedupeBase) {
         const provider = providerRouter?.routeFor?.(workflow) ?? null;
-        const common = {
-            chatId: payload.chatId,
-            messageId: payload.messageId,
-            provider,
-        };
+        const common = { chatId: payload.chatId, messageId: payload.messageId, provider };
 
         if (workflow === 'memory') {
             return {
                 agent: 'memory',
-                payload: {
-                    ...common,
-                    input: payload.input,
-                    sources: payload.sources,
-                    context: payload.context,
-                    provider,
-                },
+                payload: { ...common, input: payload.input, sources: payload.sources, context: payload.context, provider },
                 dedupeKey: dedupeBase ? `memory:${dedupeBase}` : null,
                 priority: 50,
                 metadata: { trigger: 'post-reply', batch: dedupeBase, workflow, provider },
@@ -34,26 +24,28 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
         };
     }
 
+    function engineAllows(workflow) {
+        if (workflow === 'summary') return settings.summaryEngineMode === 'modular';
+        if (workflow === 'lore') return settings.loreEngineMode === 'modular';
+        return true;
+    }
+
     function dispatch(payload = {}) {
         if (!settings.enableHelperAgents) return [];
-        const dedupeBase = payload.chatId && payload.messageId
-            ? `${payload.chatId}:${payload.messageId}`
-            : null;
+        const dedupeBase = payload.chatId && payload.messageId ? `${payload.chatId}:${payload.messageId}` : null;
         const scheduling = policy?.select?.(payload) ?? {
             selected: ['memory', 'summary', 'lore']
                 .filter(workflow => settings[`helper${workflow[0].toUpperCase()}${workflow.slice(1)}AfterReply`])
                 .map(workflow => ({ workflow })),
             decisions: [],
         };
-        const selected = scheduling.selected.filter(item => {
-            if (item.workflow !== 'summary') return true;
-            return settings.summaryEngineMode === 'modular';
-        });
+        const selected = scheduling.selected.filter(item => engineAllows(item.workflow));
         const requests = selected.map(item => requestFor(item.workflow, payload, dedupeBase));
         if (!requests.length) {
             logger?.debug('No post-reply helper jobs passed scheduling policy.', {
                 decisions: scheduling.decisions,
                 summaryEngineMode: settings.summaryEngineMode,
+                loreEngineMode: settings.loreEngineMode,
             });
             return [];
         }
