@@ -1,6 +1,10 @@
 {
   "name": "nemolore",
+<<<<<<< HEAD
   "version": "1.3.0",
+=======
+  "version": "1.4.0-rc.1",
+>>>>>>> dev/preset-architecture
   "description": "Memory management and automated lorebook creation toolkit for SillyTavern.",
   "private": true,
   "type": "module",

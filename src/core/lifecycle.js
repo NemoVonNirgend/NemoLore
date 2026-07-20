@@ -14,8 +14,8 @@ export function createLifecycle({ logger, state }) {
             state.startErrorRecovery();
         },
 
-        markLegacyLoaded() {
-            transition('legacy-loaded');
+        markUiReady() {
+            transition('ui-ready');
         },
 
         markReady() {

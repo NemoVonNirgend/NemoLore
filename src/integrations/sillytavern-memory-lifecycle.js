@@ -5,6 +5,7 @@ export function createSillyTavernMemoryLifecycle({
     getChatId,
     persistence,
     migrator,
+    onActivated,
     logger,
 } = {}) {
     if (!eventSource?.on) throw new TypeError('Memory lifecycle requires an event source.');
@@ -18,15 +19,29 @@ export function createSillyTavernMemoryLifecycle({
         const activeChatId = getChatId?.();
         if (activeChatId == null || String(activeChatId) === nextChatId) return null;
         return {
+<<<<<<< HEAD
             loaded: 0, migrated: 0, skipped: true, reason: 'stale-chat',
             requestedChatId: nextChatId, activeChatId: String(activeChatId),
+=======
+            loaded: 0,
+            migrated: 0,
+            skipped: true,
+            reason: 'stale-chat',
+            requestedChatId: nextChatId,
+            activeChatId: String(activeChatId),
+>>>>>>> dev/preset-architecture
         };
     }
 
     async function activateNow(chatId, { force = false } = {}) {
         const nextChatId = chatId ? String(chatId) : null;
         if (!nextChatId) return { loaded: 0, migrated: 0, skipped: true };
+<<<<<<< HEAD
         if (staleResult(nextChatId)) return staleResult(nextChatId);
+=======
+        let stale = staleResult(nextChatId);
+        if (stale) return stale;
+>>>>>>> dev/preset-architecture
         if (currentChatId === nextChatId && !force) {
             return { loaded: 0, migrated: 0, skipped: true, reason: 'already-active' };
         }
@@ -34,12 +49,27 @@ export function createSillyTavernMemoryLifecycle({
             try { await persistence.flush(); } catch (error) { logger?.error('Unable to flush previous chat memory.', error); }
         }
 
+<<<<<<< HEAD
         if (staleResult(nextChatId)) return staleResult(nextChatId);
         const loaded = persistence.start(nextChatId);
         const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
         if (staleResult(nextChatId)) return staleResult(nextChatId);
         if (migration.migrated) await persistence.flush();
         if (staleResult(nextChatId)) return staleResult(nextChatId);
+=======
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
+        const loaded = persistence.start(nextChatId);
+        const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
+        if (migration.migrated || migration.upgraded || migration.summaryImported) await persistence.flush();
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
+        await onActivated?.(nextChatId, { loaded, migration });
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
+>>>>>>> dev/preset-architecture
         currentChatId = nextChatId;
         logger?.debug('Activated chat memory persistence.', { chatId: nextChatId, loaded: loaded.length, migrated: migration.migrated });
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };
@@ -52,6 +82,7 @@ export function createSillyTavernMemoryLifecycle({
         return activation;
     }
 
+<<<<<<< HEAD
     function onChatChanged(eventChatId) {
         const chatId = typeof eventChatId === 'string' || typeof eventChatId === 'number'
             ? eventChatId
@@ -63,6 +94,21 @@ export function createSillyTavernMemoryLifecycle({
         const chatId = typeof eventChatId === 'string' || typeof eventChatId === 'number'
             ? eventChatId
             : getChatId?.();
+=======
+    function eventChatId(value) {
+        return typeof value === 'string' || typeof value === 'number'
+            ? value
+            : getChatId?.();
+    }
+
+    function onChatChanged(eventValue) {
+        const chatId = eventChatId(eventValue);
+        void activate(chatId).catch(error => logger?.error('Chat memory activation failed.', error));
+    }
+
+    function onChatLoaded(eventValue) {
+        const chatId = eventChatId(eventValue);
+>>>>>>> dev/preset-architecture
         void activate(chatId, { force: true }).catch(error => logger?.error('Loaded chat memory activation failed.', error));
     }
 

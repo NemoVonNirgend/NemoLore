@@ -44,7 +44,7 @@ test('modular lore mode selects modular work without mutating manual legacy sett
     assert.equal(coordinator.shouldRunModularLore(), true);
 });
 
-test('legacy lore mode never queues modular lore work', () => {
+test('retired legacy lore flags cannot prevent modular lore work', () => {
     let requests = null;
     const dispatcher = createPostReplyDispatcher({
         runtime: { enqueueMany(value) { requests = value; return value; } },
@@ -53,7 +53,7 @@ test('legacy lore mode never queues modular lore work', () => {
         providerRouter: { routeFor: () => 'async' },
     });
     dispatcher.dispatch({ chatId: 'chat', messageId: '1', input: 'Marcus arrived.', sources: [], context: {} });
-    assert.deepEqual(requests.map(request => request.agent), ['memory']);
+    assert.deepEqual(requests.map(request => request.agent), ['memory', 'lore']);
 });
 
 test('model create converges to update when identity already exists', async () => {

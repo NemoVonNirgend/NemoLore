@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createSummaryContextContributor } from '../src/summary/summary-context-contributor.js';
 import { createObservabilityService } from '../src/observability/observability-service.js';
 
-test('summary contributor prefers new summary and records source metadata', async () => {
+test('summary contributor injects modular summary and records source metadata', async () => {
     const contributor = createSummaryContextContributor({
         summaryStore: {
             get: () => ({ text: 'New continuity summary.', updatedAt: 20, sourceMessageIds: ['2'] }),
@@ -14,11 +14,11 @@ test('summary contributor prefers new summary and records source metadata', asyn
 
     const contribution = await contributor.contribute({ chatId: 'chat' });
     assert.match(contribution.content, /New continuity summary/);
-    assert.equal(contribution.metadata.summarySource, 'new');
-    assert.equal(contribution.metadata.precedence, 'new-first');
+    assert.equal(contribution.metadata.summarySource, 'modular');
+    assert.equal(contribution.metadata.precedence, 'modular-only');
 });
 
-test('summary contributor can prefer or exclusively select legacy summaries', async () => {
+test('summary contributor ignores retired legacy summary storage', async () => {
     const contributor = createSummaryContextContributor({
         summaryStore: { get: () => ({ text: 'New summary.' }) },
         legacySummaries: { chat: { summary: 'Legacy summary.' } },
@@ -26,8 +26,9 @@ test('summary contributor can prefer or exclusively select legacy summaries', as
     });
 
     const contribution = await contributor.contribute({ chatId: 'chat' });
-    assert.match(contribution.content, /Legacy summary/);
-    assert.equal(contribution.metadata.summarySource, 'legacy');
+    assert.match(contribution.content, /New summary/);
+    assert.doesNotMatch(contribution.content, /Legacy summary/);
+    assert.equal(contribution.metadata.summarySource, 'modular');
 });
 
 test('native NemoTavern running summary participates in legacy precedence ahead of settings chatSummaries', async () => {
@@ -113,6 +114,12 @@ test('observability snapshot exposes context, memory, summary, lore, and helper 
         },
         summaryStore: { get: () => ({ text: 'Summary text' }) },
         lorebooks: { getAssociatedName: () => 'NemoLore_chat' },
+        semanticMemory: { inspect: () => ({ available: true, indexedCount: 2, activeMemoryCount: 2 }) },
+        hostInterop: {
+            snapshot: () => ({ available: true, version: 'test-host' }),
+            observabilitySnapshot: () => ({ contextLedger: { entries: 1 }, provenance: { model: 'host-model' } }),
+        },
+        ownership: { snapshot: () => ({ summaryOwner: 'nemolore-modular' }) },
         getChatId: () => 'chat',
     });
 
@@ -127,7 +134,28 @@ test('observability snapshot exposes context, memory, summary, lore, and helper 
     assert.equal(snapshot.memory.byStatus.active, 1);
     assert.equal(snapshot.summary.text, 'Summary text');
     assert.equal(snapshot.lorebook, 'NemoLore_chat');
+    assert.equal(snapshot.semanticMemory.indexedCount, 2);
+    assert.equal(snapshot.host.version, 'test-host');
+    assert.equal(snapshot.ownership.summaryOwner, 'nemolore-modular');
     assert.equal(snapshot.helpers.byStatus.running, 1);
     assert.equal(snapshot.recentEvents.length, 2);
     assert.match(service.renderText(), /120\/500 tokens/);
+    assert.match(service.renderText(), /2 indexed/);
+    assert.match(service.renderText(), /NemoTavern host: available/);
+});
+
+test('observability rebuilds semantic memory and records the recovery event', async () => {
+    let rebuilds = 0;
+    const service = createObservabilityService({
+        semanticMemory: {
+            inspect: () => ({ available: true, indexedCount: 1 }),
+            rebuild: async () => { rebuilds += 1; return { enabled: true, rebuild: true, indexed: 3 }; },
+        },
+    });
+
+    const result = await service.rebuildSemanticIndex();
+    assert.equal(rebuilds, 1);
+    assert.equal(result.indexed, 3);
+    assert.equal(service.history().at(-1).type, 'semantic-memory');
+    assert.equal(service.history().at(-1).event, 'rebuild');
 });

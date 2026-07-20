@@ -46,6 +46,7 @@ function loreRepository(entries = {}) {
     };
 }
 
+<<<<<<< HEAD
 function deferred() {
     let resolve;
     let reject;
@@ -61,22 +62,18 @@ function isActiveChatChanged(error) {
 }
 
 test('summary manager edits records and persists precedence', async () => {
+=======
+test('summary manager edits modular records and preserves lineage', async () => {
+>>>>>>> dev/preset-architecture
     const store = summaryStore();
     await store.save('chat', { text: 'Old', sourceMessageIds: ['1'], sourceRange: { start: 0, end: 1 }, metadata: {} });
-    const settings = { summaryContextPrecedence: 'new-first' };
-    let persisted = null;
     const manager = createSummaryManagementService({
         store,
-        settings,
-        saveSettings: value => { persisted = { ...value }; },
         getChatId: () => 'chat',
     });
     const edited = await manager.edit('New text');
     assert.equal(edited.text, 'New text');
     assert.equal(edited.metadata.manuallyEdited, true);
-    manager.setPrecedence('legacy-first');
-    assert.equal(settings.summaryContextPrecedence, 'legacy-first');
-    assert.equal(persisted.summaryContextPrecedence, 'legacy-first');
     assert.deepEqual(manager.lineage().sourceRange, { start: 0, end: 1 });
 });
 
@@ -143,6 +140,8 @@ test('lore manager protects entries and merges duplicates', async () => {
         generation: { preview() {}, apply() {} },
         entityIndex: createLoreEntityIndex(),
     });
+    const listed = await manager.list();
+    assert.deepEqual(listed[0].normalizedIdentities, ['marcus', 'marcus']);
     await manager.protect(1, true);
     assert.equal(repository.book.entries[1].extensions.nemolore.protected, true);
     await manager.merge(1, [1, 2]);

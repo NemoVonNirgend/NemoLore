@@ -26,9 +26,31 @@ test('manifest entry files and test workflow exist', async () => {
     assert.equal(manifest.generate_interceptor, 'nemolore_intercept_messages');
 });
 
+<<<<<<< HEAD
 test('legacy settings resolve relative to the dynamically imported module', async () => {
     const source = await readFile('index.js', 'utf8');
     assert.match(source, /new URL\('\.\/settings\.html', import\.meta\.url\)/);
     assert.doesNotMatch(source, /script\[src\*=["']NemoLore\/index\.js/);
     await access('settings.html');
+=======
+test('bootstrap no longer loads the legacy runtime module', async () => {
+    const [bootstrap, settings] = await Promise.all([
+        readFile('bootstrap.js', 'utf8'),
+        readFile('settings.html', 'utf8'),
+    ]);
+    assert.doesNotMatch(bootstrap, /import\(['"]\.\/index\.js['"]\)/);
+    assert.match(bootstrap, /createModularUiBootstrap/);
+    assert.match(settings, /data-nemolore-modular-host/);
+    assert.ok(settings.length < 2_000, 'Settings template should remain a small modular host.');
+});
+
+test('bootstrap always registers the built-in SillyTavern generation provider', async () => {
+    const bootstrap = await readFile('bootstrap.js', 'utf8');
+
+    assert.match(bootstrap, /\bgenerateRaw\b/);
+    assert.match(
+        bootstrap,
+        /providers\.register\(['"]sillytavern['"],\s*createSillyTavernProvider\(/,
+    );
+>>>>>>> dev/preset-architecture
 });

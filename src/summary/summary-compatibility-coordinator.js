@@ -1,7 +1,6 @@
 import { linkExtensionSettingsNamespaces } from '../core/settings.js';
 
 export const SUMMARY_ENGINE_MODES = Object.freeze({
-    LEGACY: 'legacy',
     MODULAR: 'modular',
 });
 
@@ -16,26 +15,30 @@ export function createSummaryCompatibilityCoordinator({
     }
 
     function mode() {
-        return settings.summaryEngineMode === SUMMARY_ENGINE_MODES.MODULAR
-            ? SUMMARY_ENGINE_MODES.MODULAR
-            : SUMMARY_ENGINE_MODES.LEGACY;
+        return SUMMARY_ENGINE_MODES.MODULAR;
     }
 
     function loreMode() {
-        return settings.loreEngineMode === 'modular' ? 'modular' : 'legacy';
-    }
-
-    function needsSuppression() {
-        return mode() === SUMMARY_ENGINE_MODES.MODULAR || loreMode() === 'modular';
+        return 'modular';
     }
 
     function prepareLegacyImport() {
+<<<<<<< HEAD
         linkExtensionSettingsNamespaces(extensionSettings);
         if (!needsSuppression()) return false;
         logger?.info('Selected modular engines will gate legacy automatic generation.', {
             summaryMode: mode(),
             loreMode: loreMode(),
+=======
+        extensionSettings.nemolore ??= {};
+        Object.assign(extensionSettings.nemolore, {
+            enableSummarization: false,
+            autoSummarize: false,
+            enablePairedSummarization: false,
+            autoMode: false,
+>>>>>>> dev/preset-architecture
         });
+        logger?.info('Disabled retired legacy automatic generation after modular cutover.');
         return true;
     }
 
@@ -48,18 +51,22 @@ export function createSummaryCompatibilityCoordinator({
     }
 
     function shouldRunModularSummary() {
-        return mode() === SUMMARY_ENGINE_MODES.MODULAR
-            && Boolean(settings.enableHelperAgents)
+        return Boolean(settings.enableHelperAgents)
             && Boolean(settings.helperSummaryAfterReply);
     }
 
     function shouldRunModularLore() {
-        return loreMode() === 'modular'
-            && Boolean(settings.enableHelperAgents)
+        return Boolean(settings.enableHelperAgents)
             && Boolean(settings.helperLoreAfterReply);
     }
 
+<<<<<<< HEAD
     function dispose() {}
+=======
+    function dispose() {
+        return undefined;
+    }
+>>>>>>> dev/preset-architecture
 
     return Object.freeze({
         mode,

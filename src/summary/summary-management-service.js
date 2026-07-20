@@ -57,14 +57,5 @@ export function createSummaryManagementService({ store, summary, settings, saveS
         }) : null;
     }
 
-    function setPrecedence(value) {
-        const allowed = new Set(['new-first', 'legacy-first', 'new-only', 'legacy-only']);
-        if (!allowed.has(value)) throw new TypeError(`Unknown summary precedence: ${value}`);
-        settings.summaryContextPrecedence = value;
-        saveSettings?.(settings);
-        logger?.debug('Updated summary precedence.', { value });
-        return value;
-    }
-
-    return Object.freeze({ current, edit, regenerate, lineage, setPrecedence });
+    return Object.freeze({ current, edit, regenerate, lineage });
 }

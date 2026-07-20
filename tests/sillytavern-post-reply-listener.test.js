@@ -29,6 +29,8 @@ test('dispatches helper work from a completed assistant message', () => {
     assert.equal(dispatched.length, 1);
     assert.equal(dispatched[0].chatId, 'chat-1');
     assert.equal(dispatched[0].messageId, 'a1');
+    assert.equal(dispatched[0].messageCount, 2);
+    assert.equal(dispatched[0].context.chatLength, 2);
     assert.match(dispatched[0].input, /Where is the key/);
     assert.match(dispatched[0].input, /under the altar/);
     assert.deepEqual(dispatched[0].sources.map(source => source.role), ['user', 'assistant']);

@@ -38,7 +38,6 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         store: nemo.summary.store,
         summary: nemo.summary.service,
         settings: nemo.settings,
-        saveSettings: updated => nemo.settingsController?.set?.('summaryContextPrecedence', updated.summaryContextPrecedence),
         getChatId: () => nemo.memory.persistence.activeChatId,
         getContext: () => ({ chat: currentChatMessages() }),
         logger,
@@ -81,14 +80,14 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         shell.detail.replaceChildren();
         const record = summary.current(panelChatId);
         const editor = textarea(record?.text ?? '', 14);
-        const precedence = document.createElement('select');
-        precedence.className = 'text_pole';
-        for (const value of ['new-first', 'legacy-first', 'new-only', 'legacy-only']) {
-            precedence.append(new Option(value, value, false, nemo.settings.summaryContextPrecedence === value));
-        }
         const lineage = document.createElement('pre');
+<<<<<<< HEAD
         lineage.textContent = JSON.stringify(summary.lineage(panelChatId), null, 2);
         shell.sidebar.append(precedence, actionButton('Apply precedence', () => summary.setPrecedence(precedence.value)));
+=======
+        lineage.textContent = JSON.stringify(summary.lineage(), null, 2);
+        shell.sidebar.append('Modular summary context');
+>>>>>>> dev/preset-architecture
         shell.detail.append(
             editor,
             actionButton('Save summary', async () => { await summary.edit(editor.value, { chatId: panelChatId }); await renderSummary(); }),

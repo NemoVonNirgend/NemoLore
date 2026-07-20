@@ -99,3 +99,49 @@ test('deduplicates replayed jobs after successful completion', async () => {
     assert.equal(replay.status, 'succeeded');
     assert.equal(runs, 1);
 });
+<<<<<<< HEAD
+=======
+
+test('failed jobs release their dedupe key for a later retry', async () => {
+    const registry = createHelperAgentRegistry();
+    let runs = 0;
+    registry.register('work', {
+        async run() {
+            runs += 1;
+            if (runs === 1) throw new Error('temporary');
+            return true;
+        },
+    });
+    const runtime = createHelperAgentRuntime({ registry, concurrency: 1, logger: { error() {} } });
+    const first = runtime.enqueue({ agent: 'work', dedupeKey: 'retryable' });
+    await new Promise(resolve => {
+        const unsubscribe = runtime.subscribe((event, job) => {
+            if (event === 'failed' && job.id === first.id) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+
+    const retry = runtime.enqueue({ agent: 'work', dedupeKey: 'retryable' });
+    assert.notEqual(retry.id, first.id);
+    await new Promise(resolve => {
+        const unsubscribe = runtime.subscribe((event, job) => {
+            if (event === 'succeeded' && job.id === retry.id) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+    assert.equal(runs, 2);
+});
+
+test('reads concurrency dynamically after a profile change', () => {
+    const registry = createHelperAgentRegistry();
+    let concurrency = 1;
+    const runtime = createHelperAgentRuntime({ registry, concurrency: () => concurrency });
+    assert.equal(runtime.inspect().concurrency, 1);
+    concurrency = 3;
+    assert.equal(runtime.inspect().concurrency, 3);
+});
+>>>>>>> dev/preset-architecture

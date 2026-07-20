@@ -6,7 +6,14 @@ const SYSTEM_PROMPT = `Extract durable lore changes from roleplay text. Return J
 
 function normalizeEntries(value) {
     const parsed = parseJsonResponse(value);
-    const entries = Array.isArray(parsed) ? parsed : parsed.entries ?? parsed.items ?? [parsed];
+    const nested = parsed?.entries ?? parsed?.items;
+    const entries = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(nested)
+            ? nested
+            : nested && typeof nested === 'object'
+                ? Object.values(nested)
+                : [parsed];
     return entries.filter(Boolean).map(entry => ({
         action: String(entry.action ?? 'create').toLowerCase(),
         key: String(entry.key ?? entry.title ?? entry.uid ?? '').trim(),

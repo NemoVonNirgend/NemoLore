@@ -4,7 +4,11 @@ import {
     createContextContribution,
 } from '../context-contribution.js';
 
+<<<<<<< HEAD
 export function createMemoryContextContributor({ retrieval, persistence, ownership, logger } = {}) {
+=======
+export function createMemoryContextContributor({ retrieval, persistence, settings, ownership, logger } = {}) {
+>>>>>>> dev/preset-architecture
     if (!retrieval?.retrieve) throw new TypeError('Memory context contributor requires a retrieval service.');
 
     return Object.freeze({
@@ -14,9 +18,13 @@ export function createMemoryContextContributor({ retrieval, persistence, ownersh
             if (ownership?.ownerFor?.('memory') === 'nemotavern') return [];
             if (persistence) {
                 const requestChatId = request.chatId == null ? null : String(request.chatId);
+<<<<<<< HEAD
                 const persistedChatId = persistence.activeChatId == null
                     ? null
                     : String(persistence.activeChatId);
+=======
+                const persistedChatId = persistence.activeChatId == null ? null : String(persistence.activeChatId);
+>>>>>>> dev/preset-architecture
                 if (!requestChatId || requestChatId !== persistedChatId) {
                     logger?.debug('Skipped memory context for an inactive persistence chat.', {
                         requestChatId,
@@ -25,7 +33,10 @@ export function createMemoryContextContributor({ retrieval, persistence, ownersh
                     return [];
                 }
             }
+<<<<<<< HEAD
 
+=======
+>>>>>>> dev/preset-architecture
             const query = request.memoryQuery ?? {
                 text: request.text ?? request.prompt ?? '',
                 entityIds: request.entityIds ?? [],
@@ -33,10 +44,13 @@ export function createMemoryContextContributor({ retrieval, persistence, ownersh
                 types: request.memoryTypes,
             };
 
-            const result = retrieval.retrieve(query, {
-                maxTokens: options.memoryMaxTokens ?? request.memoryMaxTokens ?? 1200,
+            const result = await retrieval.retrieve(query, {
+                maxTokens: options.memoryMaxTokens ?? request.memoryMaxTokens ?? settings?.memoryContextBudget ?? 1200,
+                candidateLimit: options.memoryCandidateLimit ?? request.memoryCandidateLimit ?? settings?.memoryCandidateLimit ?? 16,
                 minScore: options.memoryMinScore ?? request.memoryMinScore ?? 0.1,
                 includeMetadata: options.includeMemoryMetadata ?? false,
+                vectorSearchLimit: settings?.vectorSearchLimit,
+                vectorSimilarityThreshold: settings?.vectorSimilarityThreshold,
             });
 
             if (!result.text?.trim()) return [];

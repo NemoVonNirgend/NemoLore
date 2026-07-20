@@ -1,9 +1,14 @@
 # NemoLore architecture
 
+<<<<<<< HEAD
 NemoLore uses a modular runtime behind a compatibility entrypoint. `manifest.json` loads `bootstrap.js`; the bootstrap constructs services and imports `index.js` to preserve established UI, manual workflows, highlighting, macro support, and other legacy behavior.
+=======
+NemoLore is a modular SillyTavern extension composed from small, dependency-directed services. `bootstrap.js` is the only runtime entrypoint; the former single-file runtime was retired after its data and UI responsibilities were migrated.
+>>>>>>> dev/preset-architecture
 
 The architecture is deliberately incremental. `index.js` is not yet a thin file, but automatic summary and lore ownership is selected explicitly so legacy and modular engines do not compete.
 
+<<<<<<< HEAD
 ## Startup sequence
 
 ```text
@@ -20,10 +25,19 @@ manifest.json
 ```
 
 The public read/integration surface is exposed as `globalThis.NemoLore`. Its main namespaces are `providers`, `agents`, `context`, `summary`, `lore`, `memory`, `observability`, `settingsController`, and `services`.
+=======
+- Preserve user data through versioned migration.
+- Keep SillyTavern-specific APIs behind integration adapters.
+- Maintain one canonical runtime state store.
+- Separate persisted settings from ephemeral state.
+- Make memory, lore, retrieval, providers, and UI independently testable.
+- Avoid circular dependencies.
+>>>>>>> dev/preset-architecture
 
 ## Dependency direction
 
 ```text
+<<<<<<< HEAD
 bootstrap / compatibility entrypoint
   -> feature services and workflows
       -> core contracts and stores
@@ -31,10 +45,19 @@ bootstrap / compatibility entrypoint
       -> providers
   -> UI controllers
       -> management services
+=======
+bootstrap.js
+  -> core/lifecycle
+      -> feature services
+          -> integrations
+          -> core state/settings/logger
+          -> utilities
+>>>>>>> dev/preset-architecture
 ```
 
 Core modules do not depend on UI. Feature logic receives host operations through adapters, allowing repository tests to use fakes without a SillyTavern DOM or backend.
 
+<<<<<<< HEAD
 ## Subsystems
 
 ### Core
@@ -102,3 +125,66 @@ Session-only:
 - Existing lorebooks and legacy summary sources are preserved during modular migration.
 
 New work should stay behind the current service/adapter boundaries. Redesigning the compatibility layer is out of scope unless a concrete host-runtime failure requires it.
+=======
+## Structure
+
+```text
+src/
+  core/
+    constants.js
+    logger.js
+    settings.js
+    state.js
+    lifecycle.js
+  integrations/
+    sillytavern-*.js
+    world-info-adapter.js
+  memory/
+    extractors/
+    processors/
+    retrieval/
+    maintenance/
+    memory-store.js
+    memory-persistence.js
+  lore/
+    noun-detector.js
+    lorebook-service.js
+    entry-generator.js
+    entry-updater.js
+  summary/
+  context/
+  agents/
+  presets/
+  providers/
+    generation-client.js
+    profile-provider.js
+    async-api-provider.js
+  ui/
+    panel.js
+    notifications.js
+    highlighting.js
+    tooltips.js
+    progress.js
+  utils/
+    dom.js
+    text.js
+    tokens.js
+    guards.js
+```
+
+## Completed migration
+
+1. Core constants, logging, settings defaults, and runtime state.
+2. Small utilities and SillyTavern adapters.
+3. Noun detection and highlighting.
+4. Summary storage, queueing, and context injection.
+5. Core and hierarchical memory.
+6. Lorebook generation and updates.
+7. Semantic memory indexing and retrieval through SillyTavern's built-in Vector Storage configuration.
+8. UI composition and final lifecycle extraction.
+9. Replace the legacy runtime and settings shell with `bootstrap.js` and the standalone modular UI.
+
+## Migration rule
+
+Legacy settings and summaries are accepted only as versioned migration inputs. They cannot select an alternate runtime. Source data and policy snapshots remain recoverable, while all active execution uses modular services.
+>>>>>>> dev/preset-architecture

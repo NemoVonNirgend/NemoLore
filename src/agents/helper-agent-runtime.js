@@ -9,6 +9,11 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
     const listeners = new Set();
     let running = 0;
 
+    function concurrencyLimit() {
+        const value = typeof concurrency === 'function' ? concurrency() : concurrency;
+        return Math.max(1, Number(value) || 1);
+    }
+
     function emit(event, job) {
         for (const listener of listeners) {
             try { listener(event, snapshot(job)); } catch (error) { logger?.error('Helper listener failed.', error); }
@@ -58,7 +63,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
     }
 
     function drain() {
-        while (running < concurrency && queue.length) {
+        while (running < concurrencyLimit() && queue.length) {
             const job = queue.shift();
             if (job.status === HELPER_JOB_STATUS.CANCELLED) continue;
             void execute(job);
@@ -98,7 +103,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
         if (added) sortQueue();
         queueMicrotask(drain);
-        logger?.debug('Queued helper job batch.', { count: snapshots.length, concurrency });
+        logger?.debug('Queued helper job batch.', { count: snapshots.length, concurrency: concurrencyLimit() });
         return Object.freeze(snapshots);
     }
 
@@ -128,6 +133,6 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
         subscribe,
         get: id => snapshot(jobs.get(id)),
         list: () => [...jobs.values()].map(snapshot),
-        inspect: () => Object.freeze({ running, queued: queue.length, concurrency }),
+        inspect: () => Object.freeze({ running, queued: queue.length, concurrency: concurrencyLimit() }),
     });
 }

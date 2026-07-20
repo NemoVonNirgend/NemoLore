@@ -1,5 +1,6 @@
 # Migration notes
 
+<<<<<<< HEAD
 The modular branch is intentionally compatibility-first. `bootstrap.js` owns the modular services and then imports `index.js`, which continues to provide established NemoLore behavior and UI. Migration is controlled per subsystem rather than as one irreversible switch.
 
 ## Before upgrading
@@ -58,3 +59,26 @@ The legacy engine does not consume every modular record format. If returning tem
 Older extension releases may ignore modular metadata but should not be expected to manage or clean it. A downgrade can also restore legacy automatic behavior without awareness of modular helper work performed earlier. Keep the backup until every important chat and lorebook has been checked after downgrade.
 
 If an older release fails to load because it encounters newer data, restore the extension and user data as a matched pair from the backup rather than selectively deleting metadata fields.
+=======
+## Upgrading from a legacy NemoLore release
+
+Back up SillyTavern user data before switching branches. Install this branch in a directory named `NemoLore` and remove or disable duplicate copies.
+
+At bootstrap, NemoLore:
+
+1. Links `extension_settings.NemoLore` and `extension_settings.nemolore` to one live object.
+2. Classifies pre-profile settings into the nearest story profile.
+3. Records a source policy snapshot and migration audit in `presetMigration`.
+4. Imports legacy summary data into modular summary and memory storage.
+5. Normalizes summary and lore ownership to the modular runtime.
+
+The migration is idempotent. Reloading does not duplicate imported records or listeners. Legacy values remain useful as audit/source data but cannot turn the retired runtime back on.
+
+## NemoTavern coexistence
+
+When NemoTavern exposes its Nemo ownership APIs, NemoLore reads the live host state and elects one owner for memory, summary, and lore. This prevents both extensions from running the same automatic workflow. Manual managers remain available for NemoLore-owned data.
+
+## Downgrading
+
+Older releases do not understand preset policy, modular lineage, reviewed preferences, or semantic-index metadata. Keep a backup and expect older code to ignore those fields. Do not delete modular metadata merely to make a downgrade appear clean.
+>>>>>>> dev/preset-architecture

@@ -1,27 +1,45 @@
+<<<<<<< HEAD
+=======
+import { createActiveChatGuard } from '../core/active-chat-guard.js';
+>>>>>>> dev/preset-architecture
 import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
 import { MEMORY_TYPES } from './memory-types.js';
 import { createNemoTavernMemoryMigrator } from './nemotavern-memory-migrator.js';
 
+const MIGRATION_VERSION = 2;
+
 function collectLegacySummaries(value) {
     if (!value) return [];
     if (typeof value === 'string') return [{ content: value }];
-    if (Array.isArray(value)) return value.flatMap(collectLegacySummaries);
+    if (Array.isArray(value)) return value.flatMap((item, index) => collectLegacySummaries(item)
+        .map(summary => ({ messageIndex: summary.messageIndex ?? index, ...summary })));
     if (typeof value !== 'object') return [];
 
     if (typeof value.summary === 'string') return [{ ...value, content: value.summary }];
     if (typeof value.content === 'string') return [{ ...value, content: value.content }];
     if (typeof value.text === 'string') return [{ ...value, content: value.text }];
 
-    return Object.entries(value).flatMap(([key, nested]) => collectLegacySummaries(nested).map(item => ({ legacyKey: key, ...item })));
+    return Object.entries(value).flatMap(([key, nested]) => collectLegacySummaries(nested).map(item => ({
+        legacyKey: key,
+        messageIndex: item.messageIndex ?? (/^\d+$/.test(key) ? Number(key) : undefined),
+        ...item,
+    })));
 }
 
 export function createLegacyMemoryMigrator({
     store,
     sourceLedger,
+<<<<<<< HEAD
     settings,
     metadata,
     getMetadata,
     getChat,
+=======
+    summaryStore,
+    settings,
+    metadata,
+    getMetadata,
+>>>>>>> dev/preset-architecture
     getActiveChatId,
     saveMetadata,
     logger,
@@ -29,13 +47,17 @@ export function createLegacyMemoryMigrator({
 } = {}) {
     if (!store?.save) throw new TypeError('Legacy memory migrator requires a memory store.');
     const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Legacy memory migrator');
+<<<<<<< HEAD
     const nativeMigrator = createNemoTavernMemoryMigrator({
         store, sourceLedger, metadata, getMetadata, getChat, getActiveChatId, saveMetadata, logger, clock,
     });
+=======
+>>>>>>> dev/preset-architecture
 
     async function migrate(chatId) {
         const normalizedChatId = String(chatId ?? '');
         if (!normalizedChatId) return { migrated: 0, skipped: true, reason: 'missing-chat-id' };
+<<<<<<< HEAD
         if (getActiveChatId && String(getActiveChatId() ?? '') !== normalizedChatId) {
             return { migrated: 0, skipped: true, reason: 'stale-chat' };
         }
@@ -43,11 +65,16 @@ export function createLegacyMemoryMigrator({
         if (getActiveChatId && String(getActiveChatId() ?? '') !== normalizedChatId) {
             return { migrated: native.migrated, skipped: true, reason: 'stale-chat', sources: { native } };
         }
+=======
+        const shouldCommit = createActiveChatGuard(getActiveChatId, normalizedChatId);
+        if (!shouldCommit()) return { migrated: 0, skipped: true, reason: 'stale-chat' };
+>>>>>>> dev/preset-architecture
 
         const metadata = currentMetadata();
         metadata.nemolore ??= {};
         metadata.nemolore.migrations ??= {};
         const marker = metadata.nemolore.migrations.legacyChatSummaries;
+<<<<<<< HEAD
         if (marker?.chatId === normalizedChatId && marker?.completedAt) {
             return {
                 migrated: native.migrated,
@@ -55,6 +82,10 @@ export function createLegacyMemoryMigrator({
                 ...(native.skipped ? { reason: 'already-migrated' } : {}),
                 sources: { native, legacy: { migrated: 0, skipped: true } },
             };
+=======
+        if (marker?.chatId === normalizedChatId && marker?.completedAt && Number(marker.version) >= MIGRATION_VERSION) {
+            return { migrated: 0, skipped: true, reason: 'already-migrated' };
+>>>>>>> dev/preset-architecture
         }
 
         const legacyRoot = settings?.chatSummaries ?? {};
@@ -68,14 +99,31 @@ export function createLegacyMemoryMigrator({
             .filter(item => item.content);
 
         let migrated = 0;
+        let upgraded = 0;
         for (let index = 0; index < summaries.length; index += 1) {
             const item = summaries[index];
+            const messageIndexes = [...new Set([
+                item.messageIndex,
+                ...(Array.isArray(item.pairedIndices) ? item.pairedIndices : []),
+            ].filter(Number.isInteger))];
+            const sourceIds = messageIndexes.map(messageIndex => sourceLedger?.register?.({
+                chatId: normalizedChatId,
+                messageId: String(messageIndex),
+                messageIndex,
+                metadata: { migratedLegacySummary: true },
+            })?.id).filter(Boolean);
             const duplicate = store.query({
                 status: null,
                 predicate: record => record.metadata?.legacyMigration?.chatId === normalizedChatId
                     && record.metadata?.legacyMigration?.index === index,
             })[0];
-            if (duplicate) continue;
+            if (duplicate) {
+                if (sourceIds.length && !duplicate.sourceIds.length) {
+                    store.update(duplicate.id, { sourceIds });
+                    upgraded += 1;
+                }
+                continue;
+            }
 
             store.save({
                 type: MEMORY_TYPES.CONSOLIDATED,
@@ -84,6 +132,7 @@ export function createLegacyMemoryMigrator({
                 importance: 0.65,
                 confidence: 0.8,
                 tags: ['legacy-summary', 'migrated'],
+                sourceIds,
                 metadata: {
                     legacyMigration: {
                         source: 'chatSummaries',
@@ -97,19 +146,47 @@ export function createLegacyMemoryMigrator({
             migrated += 1;
         }
 
+        let summaryImported = false;
+        if (summaries.length && summaryStore?.save && !summaryStore.get(normalizedChatId)) {
+            await summaryStore.save(normalizedChatId, {
+                text: summaries.map(item => item.content).join('\n\n'),
+                sourceMessageIds: summaries.flatMap(item => [
+                    item.messageIndex,
+                    ...(Array.isArray(item.pairedIndices) ? item.pairedIndices : []),
+                ]).filter(Number.isInteger).map(String),
+                metadata: {
+                    engine: 'modular',
+                    importedFromLegacy: true,
+                    importedSummaryCount: summaries.length,
+                },
+            });
+            summaryImported = true;
+        }
+
+        if (!shouldCommit()) {
+            return { migrated, upgraded, summaryImported, skipped: true, reason: 'stale-chat' };
+        }
         metadata.nemolore.migrations.legacyChatSummaries = {
+            version: MIGRATION_VERSION,
             chatId: normalizedChatId,
             completedAt: clock.now(),
             migrated,
+            upgraded,
+            summaryImported,
             sourcePreserved: true,
         };
         await saveMetadata?.();
+<<<<<<< HEAD
         logger?.info('Migrated legacy NemoLore summaries.', { chatId: normalizedChatId, migrated });
         return {
             migrated: migrated + native.migrated,
             skipped: false,
             sources: { native, legacy: { migrated, skipped: false } },
         };
+=======
+        logger?.info('Migrated legacy NemoLore summaries.', { chatId: normalizedChatId, migrated, upgraded, summaryImported });
+        return { migrated, upgraded, summaryImported, skipped: false };
+>>>>>>> dev/preset-architecture
     }
 
     return Object.freeze({ migrate, collectLegacySummaries, native: nativeMigrator });

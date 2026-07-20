@@ -28,6 +28,25 @@ export function createObservabilityPanel({ observability, logger } = {}) {
         addDefinition(overview, 'Chat', data.chatId ?? '(none)');
         addDefinition(overview, 'Context', data.context ? `${data.context.usedTokens}/${data.context.maxTokens} tokens` : 'Not yet built');
         addDefinition(overview, 'Memories', `${data.memory.active} active / ${data.memory.total} total`);
+        if (data.semanticMemory) {
+            const semantic = data.semanticMemory;
+            const status = !semantic.enabled ? 'Disabled by profile'
+                : !semantic.available ? `Unavailable: ${semantic.unavailableReason ?? 'configure Vector Storage'}`
+                    : `${semantic.indexedCount}/${semantic.activeMemoryCount} indexed${semantic.dirtyCount ? `, ${semantic.dirtyCount} pending` : ''}`;
+            addDefinition(overview, 'Semantic memory', status);
+            addDefinition(overview, 'Embedding source', semantic.source ? `${semantic.source}${semantic.model ? ` · ${semantic.model}` : ''}` : 'None');
+            if (semantic.lastError) addDefinition(overview, 'Semantic error', semantic.lastError);
+            const rebuild = makeElement('button', 'menu_button', semantic.syncing ? 'Rebuilding…' : 'Rebuild Semantic Index');
+            rebuild.disabled = semantic.syncing || !semantic.enabled || !semantic.available || !semantic.activeChatId;
+            rebuild.addEventListener('click', async () => {
+                rebuild.disabled = true;
+                rebuild.textContent = 'Rebuilding…';
+                await observability.rebuildSemanticIndex?.();
+                render();
+            });
+            overview.append(makeElement('dt', '', 'Recovery'), makeElement('dd', '', ''));
+            overview.lastElementChild.append(rebuild);
+        }
         addDefinition(overview, 'Summary', data.summary?.text ? 'Available' : 'None');
         addDefinition(overview, 'Lorebook', data.lorebook ?? 'None');
         addDefinition(overview, 'Helpers', `${data.helpers.runtime?.running ?? 0} running, ${data.helpers.runtime?.queued ?? 0} queued`);

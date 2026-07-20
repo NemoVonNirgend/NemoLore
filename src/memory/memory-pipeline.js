@@ -27,6 +27,11 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
 
         const registeredSources = sources.map(source => sourceLedger.register(source));
         const sourceIds = registeredSources.map(source => source.id);
+        const ensureSources = () => {
+            for (const source of registeredSources) {
+                if (!sourceLedger.has(source.id)) sourceLedger.register(source);
+            }
+        };
         const selectedExtractor = typeof extractor === 'string'
             ? extractors.get(extractor)
             : extractor;
@@ -54,12 +59,23 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
 
             for (const processor of processors) {
                 if (!canCommit()) return saved;
+<<<<<<< HEAD
+=======
+                ensureSources();
+>>>>>>> dev/preset-architecture
                 current = await processor(current, { context, store, sourceLedger, shouldCommit: canCommit });
                 if (!canCommit()) return saved;
                 if (!current) break;
             }
 
+<<<<<<< HEAD
             if (current && canCommit()) saved.push(store.save(current));
+=======
+            if (current && canCommit()) {
+                ensureSources();
+                saved.push(store.save(current));
+            }
+>>>>>>> dev/preset-architecture
         }
 
         logger?.debug('Memory ingestion completed.', {

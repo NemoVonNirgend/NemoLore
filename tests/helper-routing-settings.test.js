@@ -35,6 +35,25 @@ test('routes workflows to overrides and falls back after provider failure', asyn
     assert.equal(router.routeFor('summary'), 'primary');
 });
 
+test('stale persisted provider names fall back to the active built-in provider', async () => {
+    const calls = [];
+    const registry = createRegistry({
+        primary: async () => { calls.push('primary'); return { text: 'ok' }; },
+    });
+    const router = createResilientGenerationRouter({
+        registry,
+        settings: {
+            helperAgentProvider: 'async',
+            helperSummaryProvider: 'removed-provider',
+            helperRetryCount: 0,
+        },
+    });
+
+    assert.equal(router.routeFor('summary'), 'primary');
+    assert.equal((await router.generate({}, { workflow: 'summary' })).text, 'ok');
+    assert.deepEqual(calls, ['primary']);
+});
+
 test('opens a circuit after repeated failures', async () => {
     let attempts = 0;
     const router = createResilientGenerationRouter({
@@ -78,17 +97,23 @@ test('scheduling policy enforces limits, minimums, and lore signals', () => {
     assert.equal(policy.evaluate('memory', { chatId: 'chat', messageCount: 5 }).allowed, true);
 });
 
+<<<<<<< HEAD
 test('engine-disabled workflows do not consume scheduling capacity or cooldowns', () => {
     let now = 100_000;
     const settings = {
         enableHelperAgents: true,
         summaryEngineMode: 'legacy',
         loreEngineMode: 'modular',
+=======
+test('profile cadence controls summary and lore frequency per chat', () => {
+    const settings = {
+>>>>>>> dev/preset-architecture
         helperMemoryAfterReply: false,
         helperSummaryAfterReply: true,
         helperLoreAfterReply: true,
         helperSummaryMinMessages: 0,
         helperLoreMinMessages: 0,
+<<<<<<< HEAD
         helperSummaryCooldownMs: 60_000,
         helperLoreCooldownMs: 60_000,
         helperLoreRequireSignal: false,
@@ -110,4 +135,25 @@ test('engine-disabled workflows do not consume scheduling capacity or cooldowns'
 
     now += 60_001;
     assert.equal(policy.evaluate('lore', { chatId: 'chat', messageCount: 1 }).allowed, true);
+=======
+        helperLoreRequireSignal: false,
+        helperMaxCallsPerReply: 3,
+        summaryChunkSize: 8,
+        loreUpdateStrategy: 'balanced',
+    };
+    const policy = createHelperSchedulingPolicy({ settings });
+    assert.deepEqual(policy.select({ chatId: 'chat', messageCount: 10 }).selected.map(item => item.workflow), ['summary', 'lore']);
+    const tooSoon = policy.select({ chatId: 'chat', messageCount: 12 });
+    assert.equal(tooSoon.decisions.find(item => item.workflow === 'summary').reason, 'message-cadence');
+    assert.equal(tooSoon.decisions.find(item => item.workflow === 'lore').reason, 'message-cadence');
+    assert.deepEqual(policy.select({ chatId: 'chat', messageCount: 18 }).selected.map(item => item.workflow), ['summary', 'lore']);
+
+    settings.summaryChunkSize = 4;
+    settings.loreUpdateStrategy = 'aggressive';
+    policy.reset();
+    policy.select({ chatId: 'chat', messageCount: 20 });
+    const aggressive = policy.select({ chatId: 'chat', messageCount: 21 });
+    assert.equal(aggressive.decisions.find(item => item.workflow === 'summary').reason, 'message-cadence');
+    assert.equal(aggressive.decisions.find(item => item.workflow === 'lore').allowed, true);
+>>>>>>> dev/preset-architecture
 });

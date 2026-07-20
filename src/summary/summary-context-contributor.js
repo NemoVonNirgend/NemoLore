@@ -4,16 +4,13 @@ import {
     createContextContribution,
 } from '../context/context-contribution.js';
 
-function extractLegacySummary(value) {
-    if (typeof value === 'string') return value.trim();
-    if (!value || typeof value !== 'object') return '';
-    return String(value.summary ?? value.text ?? value.content ?? '').trim();
-}
-
 export function createSummaryContextContributor({
     summaryStore,
+<<<<<<< HEAD
     legacySummaries = {},
     getMetadata,
+=======
+>>>>>>> dev/preset-architecture
     settings = {},
     ownership,
     logger,
@@ -22,6 +19,7 @@ export function createSummaryContextContributor({
 
     function resolve(chatId) {
         const current = summaryStore.get(chatId);
+<<<<<<< HEAD
         const nativeValue = getMetadata?.()?.nemolore?.summary;
         const configuredValue = legacySummaries?.[chatId];
         const nativeText = extractLegacySummary(nativeValue);
@@ -44,6 +42,9 @@ export function createSummaryContextContributor({
         }
         if (current?.text) return { text: current.text, source: 'new', record: current };
         return legacy ? { ...legacy, source: 'legacy' } : null;
+=======
+        return current?.text ? { text: current.text, source: 'modular', record: current } : null;
+>>>>>>> dev/preset-architecture
     }
 
     return Object.freeze({
@@ -77,8 +78,12 @@ export function createSummaryContextContributor({
                     summarySource: resolved.source,
                     summaryUpdatedAt: resolved.record?.updatedAt ?? null,
                     sourceMessageIds: resolved.record?.sourceMessageIds ?? [],
+<<<<<<< HEAD
                     precedence: settings.summaryContextPrecedence ?? 'new-first',
                     legacySummarySource: resolved.legacySource ?? null,
+=======
+                    precedence: 'modular-only',
+>>>>>>> dev/preset-architecture
                 },
             });
         },

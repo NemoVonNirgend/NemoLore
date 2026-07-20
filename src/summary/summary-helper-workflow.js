@@ -1,11 +1,7 @@
-export function createSummaryHelperWorkflow({ summary, inputBuilder, compatibility } = {}) {
+export function createSummaryHelperWorkflow({ summary, inputBuilder } = {}) {
     if (!summary?.summarize) throw new TypeError('Summary workflow requires summary service.');
 
     return async function run(payload = {}) {
-        if (compatibility && !compatibility.shouldRunModularSummary()) {
-            return { skipped: true, reason: 'summary-engine-mode' };
-        }
-
         const existingMessages = payload.messages ?? payload.context?.messages ?? [];
         const chat = payload.context?.chat ?? existingMessages;
         const built = inputBuilder?.build({

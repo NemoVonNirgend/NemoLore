@@ -1,6 +1,10 @@
 import {
     chat_metadata,
     generateRaw,
+<<<<<<< HEAD
+=======
+    user_avatar,
+>>>>>>> dev/preset-architecture
     saveMetadata,
     saveSettingsDebounced,
     getCurrentChatId,
@@ -9,8 +13,9 @@ import {
     extension_prompt_types,
     extension_prompt_roles,
     MAX_INJECTION_DEPTH,
+    getRequestHeaders,
 } from '../../../../script.js';
-import { extension_settings, getContext } from '../../../extensions.js';
+import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../extensions.js';
 import {
     createNewWorldInfo,
     deleteWorldInfo,
@@ -46,6 +51,7 @@ import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sill
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
 import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
+import { createSillyTavernVectorAdapter } from './src/integrations/sillytavern-vector-adapter.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createEngineOwnership, createNemoTavernHostInterop } from './src/integrations/nemotavern-host-interop.js';
 import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
@@ -58,6 +64,11 @@ import { createStateChangeExtractor } from './src/memory/extractors/state-change
 import { createLegacyMemoryMigrator } from './src/memory/legacy-memory-migrator.js';
 import { createMemoryPersistence } from './src/memory/memory-persistence.js';
 import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
+import { createMemoryAgingService } from './src/memory/maintenance/memory-aging-service.js';
+import { createMemoryConsolidationService } from './src/memory/maintenance/memory-consolidation-service.js';
+import { createMemoryMaintenanceService } from './src/memory/maintenance/memory-maintenance-service.js';
+import { createEpisodePromotionService } from './src/memory/maintenance/episode-promotion-service.js';
+import { createCorePromotionService } from './src/memory/maintenance/core-promotion-service.js';
 import { createMemoryStore } from './src/memory/memory-store.js';
 import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
 import { createDeduplicator } from './src/memory/processors/deduplicator.js';
@@ -68,20 +79,25 @@ import { createMemoryRetriever } from './src/memory/retrieval/memory-retriever.j
 import { createRedundancyFilter } from './src/memory/retrieval/redundancy-filter.js';
 import { createRelevanceScorer } from './src/memory/retrieval/relevance-scorer.js';
 import { createTokenBudget } from './src/memory/retrieval/token-budget.js';
+import { createSemanticMemoryIndex } from './src/memory/retrieval/semantic-memory-index.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createObservabilityService } from './src/observability/observability-service.js';
+import { createPreferenceContextContributor } from './src/preferences/preference-context-contributor.js';
+import { createPreferenceManagementService } from './src/preferences/preference-management-service.js';
+import { createPreferenceStore } from './src/preferences/preference-store.js';
 import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createResilientGenerationRouter } from './src/providers/resilient-generation-router.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
-import { createSummaryCompatibilityCoordinator } from './src/summary/summary-compatibility-coordinator.js';
 import { createSummaryContextContributor } from './src/summary/summary-context-contributor.js';
 import { createSummaryHelperWorkflow } from './src/summary/summary-helper-workflow.js';
 import { createSummaryInputBuilder } from './src/summary/summary-input-builder.js';
 import { createSummaryService } from './src/summary/summary-service.js';
 import { createSummaryStore } from './src/summary/summary-store.js';
 import { createHighlighter } from './src/ui/highlighting.js';
+import { createChatHighlightingController } from './src/ui/chat-highlighting-controller.js';
 import { createModularSettingsController } from './src/ui/modular-settings-controller.js';
+import { createModularUiBootstrap } from './src/ui/modular-ui-bootstrap.js';
 import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
 
@@ -97,11 +113,8 @@ const ownership = createEngineOwnership({ settings, hostInterop });
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
-const summaryCompatibility = createSummaryCompatibilityCoordinator({
-    settings,
-    extensionSettings: extension_settings,
-    logger,
-});
+const preferenceStore = createPreferenceStore({ settings, persist: persistSettings, logger });
+const preferenceManagement = createPreferenceManagementService({ store: preferenceStore });
 const summaryInputBuilder = createSummaryInputBuilder({ settings, logger });
 const contextExclusion = createContextExclusionPolicy({ settings, logger });
 
@@ -116,6 +129,10 @@ const worldInfo = createWorldInfoAdapter({
 });
 const lorebooks = createLorebookRepository({
     adapter: worldInfo,
+<<<<<<< HEAD
+=======
+    metadata: chat_metadata,
+>>>>>>> dev/preset-architecture
     getMetadata: () => chat_metadata,
     saveMetadata,
     metadataKey: METADATA_KEY,
@@ -133,21 +150,40 @@ providers.register('sillytavern', createSillyTavernProvider({
     }),
     logger,
 }));
+<<<<<<< HEAD
 if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
+=======
+function synchronizeAsyncProvider() {
+    if (providers.has('async')) providers.unregister('async');
+    if (!settings.enableAsyncApi || !settings.asyncApiEndpoint) return false;
+>>>>>>> dev/preset-architecture
     providers.register('async', createOpenAICompatibleProvider({
         endpoint: settings.asyncApiEndpoint,
         apiKey: settings.asyncApiKey,
         model: settings.asyncApiModel,
     }));
+    return true;
 }
+synchronizeAsyncProvider();
 const generationRouter = createResilientGenerationRouter({ registry: providers, settings, logger });
 
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
+const vectorAdapter = createSillyTavernVectorAdapter({
+    getRequestHeaders,
+    getVectorSettings: () => extension_settings.vectors,
+    logger,
+});
+const semanticMemoryIndex = createSemanticMemoryIndex({ store: memoryStore, adapter: vectorAdapter, settings, logger });
+const summaryStore = createSummaryStore({ metadata: chat_metadata, getMetadata: () => chat_metadata, saveMetadata });
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
     sourceLedger,
+<<<<<<< HEAD
+=======
+    metadata: chat_metadata,
+>>>>>>> dev/preset-architecture
     getMetadata: () => chat_metadata,
     saveMetadata,
     logger,
@@ -155,11 +191,19 @@ const memoryPersistence = createMemoryPersistence({
 const legacyMemoryMigrator = createLegacyMemoryMigrator({
     store: memoryStore,
     sourceLedger,
+<<<<<<< HEAD
     settings,
     getMetadata: () => chat_metadata,
     getChat: () => getContext()?.chat ?? [],
     getActiveChatId: getCurrentChatId,
+=======
+    summaryStore,
+    settings,
+    metadata: chat_metadata,
+    getMetadata: () => chat_metadata,
+>>>>>>> dev/preset-architecture
     saveMetadata,
+    getActiveChatId: getCurrentChatId,
     logger,
 });
 const memoryLifecycle = createSillyTavernMemoryLifecycle({
@@ -169,6 +213,7 @@ const memoryLifecycle = createSillyTavernMemoryLifecycle({
     getChatId: getCurrentChatId,
     persistence: memoryPersistence,
     migrator: legacyMemoryMigrator,
+    onActivated: chatId => semanticMemoryIndex.activate(chatId),
     logger,
 });
 
@@ -190,6 +235,14 @@ memoryPipeline.registerProcessor(memoryProcessors.deduplicator);
 memoryPipeline.registerProcessor(memoryProcessors.contradictionDetector);
 memoryPipeline.registerProcessor(memoryProcessors.importanceScorer);
 
+const memoryMaintenance = Object.freeze({
+    aging: createMemoryAgingService({ store: memoryStore, sourceLedger, settings, logger }),
+    consolidation: createMemoryConsolidationService({ store: memoryStore, settings, logger }),
+    episodePromotion: createEpisodePromotionService({ store: memoryStore, settings, logger }),
+    corePromotion: createCorePromotionService({ store: memoryStore, settings, logger }),
+});
+const memoryMaintenanceService = createMemoryMaintenanceService({ ...memoryMaintenance, logger });
+
 const memoryRetrieval = Object.freeze({
     selector: createCandidateSelector({ store: memoryStore }),
     scorer: createRelevanceScorer(),
@@ -197,9 +250,12 @@ const memoryRetrieval = Object.freeze({
     budget: createTokenBudget(),
     composer: createContextComposer(),
 });
-const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
+const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, semantic: semanticMemoryIndex, settings, logger });
 
+<<<<<<< HEAD
 const summaryStore = createSummaryStore({ getMetadata: () => chat_metadata, saveMetadata });
+=======
+>>>>>>> dev/preset-architecture
 const summaryService = createSummaryService({
     generation: generationRouter,
     store: summaryStore,
@@ -219,8 +275,11 @@ const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
     summary: createSummaryContextContributor({
         summaryStore,
+<<<<<<< HEAD
         legacySummaries: settings.chatSummaries,
         getMetadata: () => chat_metadata,
+=======
+>>>>>>> dev/preset-architecture
         settings,
         ownership,
         logger,
@@ -228,12 +287,24 @@ const contextContributors = Object.freeze({
     memory: createMemoryContextContributor({
         retrieval: memoryRetriever,
         persistence: memoryPersistence,
+<<<<<<< HEAD
         ownership,
+=======
+        settings,
+        ownership,
+        logger,
+    }),
+    preferences: createPreferenceContextContributor({
+        store: preferenceStore,
+        settings,
+        getPersonaId: () => user_avatar,
+>>>>>>> dev/preset-architecture
         logger,
     }),
 });
 contextRegistry.register('summary', contextContributors.summary);
 contextRegistry.register('memory', contextContributors.memory);
+contextRegistry.register('preferences', contextContributors.preferences);
 const contextInjector = createContextInjector({ registry: contextRegistry, logger });
 
 const extensionPromptAdapter = createSillyTavernExtensionPromptAdapter({ resolveContext: getContext, logger });
@@ -252,13 +323,20 @@ const contextBridge = createSillyTavernContextBridge({
 const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: generationRouter, tasks: helperTasks, logger }));
+<<<<<<< HEAD
 helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline, getActiveChatId: getCurrentChatId }));
+=======
+helperAgents.register('memory', createMemoryHelperAgent({
+    pipeline: memoryPipeline,
+    maintenance: memoryMaintenanceService,
+    getActiveChatId: getCurrentChatId,
+}));
+>>>>>>> dev/preset-architecture
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
     handler: createSummaryHelperWorkflow({
         summary: summaryService,
         inputBuilder: summaryInputBuilder,
-        compatibility: summaryCompatibility,
     }),
 }));
 helperAgents.register('lore', createCallbackHelperAgent({
@@ -269,7 +347,7 @@ helperAgents.register('lore', createCallbackHelperAgent({
 const helperRuntime = createHelperAgentRuntime({
     registry: helperAgents,
     logger,
-    concurrency: settings.helperAgentConcurrency,
+    concurrency: () => settings.helperAgentConcurrency,
     contextFactory: () => ({
         lorebooks,
         loreGeneration,
@@ -298,6 +376,8 @@ function registerHelperWorkflow(name, handler) {
 const contextRequestFactory = createSillyTavernContextRequestFactory({
     getChatId: getCurrentChatId,
     getContext,
+    getPersonaId: () => user_avatar,
+    settings,
 });
 function wrapGenerationInterceptor(next, overrides = {}) {
     return createSillyTavernGenerationOrchestrator({
@@ -324,6 +404,7 @@ const observability = createObservabilityService({
     memoryStore,
     summaryStore,
     lorebooks,
+    semanticMemory: semanticMemoryIndex,
     getChatId: getCurrentChatId,
     hostInterop,
     ownership,
@@ -335,15 +416,36 @@ const settingsController = createModularSettingsController({
     save: persistSettings,
     observability,
     providerRouter: generationRouter,
+<<<<<<< HEAD
+=======
+    onPolicyChange: () => helperScheduling.reset(),
+    onProviderConfigChange: synchronizeAsyncProvider,
+>>>>>>> dev/preset-architecture
     getChatId: getCurrentChatId,
     eventSource,
     chatChangedEvent: event_types.CHAT_CHANGED,
     chatLoadedEvent: event_types.CHAT_LOADED,
+<<<<<<< HEAD
+=======
+    logger,
+});
+const modularUi = createModularUiBootstrap({
+    renderTemplate: renderExtensionTemplateAsync,
+    settingsController,
+>>>>>>> dev/preset-architecture
     logger,
 });
 
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
+const chatHighlighting = createChatHighlightingController({
+    eventSource,
+    messageEvent: event_types.MESSAGE_RECEIVED,
+    chatEvents: [event_types.CHAT_CHANGED, event_types.CHAT_LOADED],
+    nounDetector,
+    highlighter,
+    logger,
+});
 const notifications = createNotificationCenter({ logger });
 const popups = createPopupCoordinator({ state, logger });
 
@@ -354,6 +456,8 @@ const publicApi = Object.freeze({
     ownership,
     state,
     lifecycle,
+    hostInterop,
+    ownership,
     providers: Object.freeze({
         registry: providers,
         router: generationRouter,
@@ -381,14 +485,15 @@ const publicApi = Object.freeze({
     }),
     observability,
     settingsController,
+    ui: modularUi,
     summary: Object.freeze({
         store: summaryStore,
         service: summaryService,
         contributor: contextContributors.summary,
-        compatibility: summaryCompatibility,
         inputBuilder: summaryInputBuilder,
     }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
+    preferences: Object.freeze({ store: preferenceStore, management: preferenceManagement, contributor: contextContributors.preferences }),
     memory: Object.freeze({
         sourceLedger,
         store: memoryStore,
@@ -398,7 +503,9 @@ const publicApi = Object.freeze({
         lifecycle: memoryLifecycle,
         extractors: memoryExtractors,
         processors: memoryProcessors,
+        maintenance: Object.freeze({ ...memoryMaintenance, service: memoryMaintenanceService }),
         retrieval: Object.freeze({ ...memoryRetrieval, retriever: memoryRetriever }),
+        semantic: Object.freeze({ adapter: vectorAdapter, index: semanticMemoryIndex }),
     }),
     services: Object.freeze({
         worldInfo,
@@ -406,7 +513,6 @@ const publicApi = Object.freeze({
         loreGeneration,
         summary: summaryService,
         summaryStore,
-        summaryCompatibility,
         summaryInputBuilder,
         generation: generationRouter,
         providerRegistry: providers,
@@ -414,15 +520,19 @@ const publicApi = Object.freeze({
         scheduling: helperScheduling,
         postReply: postReplyDispatcher,
         memory: memoryPipeline,
+        memoryMaintenance: memoryMaintenanceService,
         memoryPersistence,
         retrieval: memoryRetriever,
+        semanticMemory: semanticMemoryIndex,
         context: contextInjector,
         contextBridge,
         contextExclusion,
         observability,
         settings: settingsController,
+        ui: modularUi,
         nounDetector,
         highlighter,
+        chatHighlighting,
         notifications,
         popups,
     }),
@@ -445,34 +555,31 @@ async function installSettingsControllerWhenReady({ attempts = 20, delayMs = 250
 
 lifecycle.start();
 try {
-    summaryCompatibility.prepareLegacyImport();
-    await import('./index.js');
-    summaryCompatibility.restorePersistedSettings();
+    await modularUi.install();
 
-    const legacyInterceptor = globalThis.nemolore_intercept_messages;
-    if (typeof legacyInterceptor === 'function') {
-        const filteredLegacyInterceptor = createSillyTavernContextExclusionInterceptor({
-            policy: contextExclusion,
-            summaryStore,
-            getChatId: getCurrentChatId,
-            compatibility: summaryCompatibility,
-            next: legacyInterceptor,
-            logger,
-        });
-        globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(filteredLegacyInterceptor);
-        logger.info('Installed modular NemoLore generation interceptor.');
-    } else {
-        logger.warn('Legacy NemoLore interceptor was not found; context bridge remains available manually.');
-    }
+    const modularExclusionInterceptor = createSillyTavernContextExclusionInterceptor({
+        policy: contextExclusion,
+        summaryStore,
+        getChatId: getCurrentChatId,
+        getContext,
+        logger,
+    });
+    globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(modularExclusionInterceptor);
+    logger.info('Replaced the retired legacy interceptor with modular context orchestration.');
 
+    semanticMemoryIndex.start();
     memoryLifecycle.install();
     postReplyListener.install();
+<<<<<<< HEAD
     await installSettingsControllerWhenReady();
     lifecycle.markLegacyLoaded();
+=======
+    chatHighlighting.install();
+    lifecycle.markUiReady();
+>>>>>>> dev/preset-architecture
     lifecycle.markReady();
-    logger.info('Legacy compatibility module loaded through modular bootstrap.');
+    logger.info('NemoLore modular runtime ready; legacy data import remains available without legacy execution.');
 } catch (error) {
-    summaryCompatibility.restorePersistedSettings();
     lifecycle.fail(error);
     throw error;
 }

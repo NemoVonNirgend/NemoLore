@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSummaryDisplayController } from '../src/ui/summary-display-controller.js';
+<<<<<<< HEAD
 import { createModularSettingsController } from '../src/ui/modular-settings-controller.js';
+=======
+>>>>>>> dev/preset-architecture
 
 function createElement(tagName) {
     return {
@@ -167,6 +170,7 @@ test('installs and removes summary store and chat listeners idempotently', () =>
         dom.restore();
     }
 });
+<<<<<<< HEAD
 
 test('modular settings controller forwards host chat lifecycle integration', async () => {
     const dom = installFakeDocument();
@@ -197,3 +201,5 @@ test('modular settings controller forwards host chat lifecycle integration', asy
         dom.restore();
     }
 });
+=======
+>>>>>>> dev/preset-architecture

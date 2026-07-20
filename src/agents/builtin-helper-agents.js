@@ -1,13 +1,21 @@
 import { createActiveChatGuard } from '../core/active-chat-guard.js';
 
+<<<<<<< HEAD
 export function createMemoryHelperAgent({ pipeline, getActiveChatId } = {}) {
+=======
+export function createMemoryHelperAgent({ pipeline, maintenance, getActiveChatId } = {}) {
+>>>>>>> dev/preset-architecture
     if (!pipeline?.ingest) throw new TypeError('Memory helper agent requires a memory pipeline.');
 
     return Object.freeze({
         async run(job) {
             const payload = job.payload ?? {};
             const shouldCommit = createActiveChatGuard(getActiveChatId, payload.chatId);
+<<<<<<< HEAD
             if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [] };
+=======
+            if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
+>>>>>>> dev/preset-architecture
             const extractorNames = payload.extractors ?? ['episode', 'atomic-fact', 'state-change'];
             const results = [];
             const context = {
@@ -20,7 +28,11 @@ export function createMemoryHelperAgent({ pipeline, getActiveChatId } = {}) {
             };
 
             for (const extractor of extractorNames) {
+<<<<<<< HEAD
                 if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [] };
+=======
+                if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
+>>>>>>> dev/preset-architecture
                 results.push(...await pipeline.ingest({
                     extractor,
                     input: payload.input,
@@ -28,10 +40,21 @@ export function createMemoryHelperAgent({ pipeline, getActiveChatId } = {}) {
                     context,
                     shouldCommit,
                 }));
+<<<<<<< HEAD
                 if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [] };
+=======
+                if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
+>>>>>>> dev/preset-architecture
             }
 
-            return { memoryIds: results.map(record => record.id), records: results };
+            if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
+            const maintenanceResult = await maintenance?.run?.({
+                messageCount: payload.context?.chatLength ?? payload.messageCount,
+                shouldCommit,
+            });
+            if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
+
+            return { memoryIds: results.map(record => record.id), records: results, maintenance: maintenanceResult ?? null };
         },
     });
 }

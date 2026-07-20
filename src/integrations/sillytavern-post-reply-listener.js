@@ -62,12 +62,14 @@ export function createSillyTavernPostReplyListener({
                 previousUser && {
                     chatId,
                     messageId: String(previousUser.message.send_date ?? previousUser.index),
+                    messageIndex: previousUser.index,
                     role: 'user',
                     text: previousUser.message.mes ?? '',
                 },
                 {
                     chatId,
                     messageId: String(messageId),
+                    messageIndex: assistantIndex,
                     role: 'assistant',
                     text: assistantMessage.mes ?? '',
                 },
@@ -76,13 +78,18 @@ export function createSillyTavernPostReplyListener({
             return dispatcher.dispatch({
                 chatId,
                 messageId: String(messageId),
+                messageCount: assistantIndex + 1,
                 input: sources.map(source => `${source.role}: ${source.text}`).join('\n\n'),
                 messages,
                 sources,
                 messageCount: chat.length,
                 context: {
                     chat: chat.slice(0, assistantIndex + 1),
+<<<<<<< HEAD
                     chatLength: chat.length,
+=======
+                    chatLength: assistantIndex + 1,
+>>>>>>> dev/preset-architecture
                     messages,
                     generationType: messageType,
                     assistantIndex,

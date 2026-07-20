@@ -1,3 +1,6 @@
+import { PRESET_SETTING_KEYS, listPresets } from '../presets/preset-registry.js';
+import { selectPreset, setPresetOverride } from '../core/settings.js';
+
 const FIELDS = Object.freeze({
     enableHelperAgents: { type: 'checkbox', label: 'Enable parallel helper agents' },
     helperAgentConcurrency: { type: 'number', label: 'Concurrent helper jobs', min: 1, max: 6 },
@@ -6,6 +9,10 @@ const FIELDS = Object.freeze({
     helperSummaryProvider: { type: 'text', label: 'Summary provider override' },
     helperLoreProvider: { type: 'text', label: 'Lore provider override' },
     helperFallbackProvider: { type: 'text', label: 'Fallback provider' },
+    enableAsyncApi: { type: 'checkbox', label: 'Enable OpenAI-compatible provider' },
+    asyncApiEndpoint: { type: 'text', label: 'Async API endpoint' },
+    asyncApiKey: { type: 'password', label: 'Async API key' },
+    asyncApiModel: { type: 'text', label: 'Async API model' },
     helperMemoryAfterReply: { type: 'checkbox', label: 'Run memory after replies' },
     helperSummaryAfterReply: { type: 'checkbox', label: 'Run summary after replies' },
     helperLoreAfterReply: { type: 'checkbox', label: 'Run lore after replies' },
@@ -15,12 +22,34 @@ const FIELDS = Object.freeze({
     helperLoreRequireSignal: { type: 'checkbox', label: 'Require a lore-worthy signal' },
     helperRequestTimeoutMs: { type: 'number', label: 'Helper request timeout (ms)', min: 1000, max: 300000 },
     helperRetryCount: { type: 'number', label: 'Retry count', min: 0, max: 5 },
-    summaryEngineMode: { type: 'select', label: 'Summary engine (reload required)', options: ['legacy', 'modular'] },
-    loreEngineMode: { type: 'select', label: 'Automatic lore engine (reload required)', options: ['legacy', 'modular'] },
     summaryInputMaxMessages: { type: 'number', label: 'Summary input window', min: 2, max: 500 },
+    runningMemorySize: { type: 'number', label: 'Recent visible message window', min: 1, max: 1000 },
+    summaryChunkSize: { type: 'number', label: 'Summary consolidation chunk size', min: 0, max: 100 },
+    episodePromotionThreshold: { type: 'number', label: 'Episode promotion threshold', min: 0, max: 100 },
+    episodePromotionSourceMode: { type: 'select', label: 'Promoted episode source records', options: ['archive', 'retain'] },
     enableSummaryContext: { type: 'checkbox', label: 'Inject conversation summary' },
-    summaryContextPrecedence: { type: 'select', label: 'Summary precedence', options: ['new-first', 'legacy-first', 'new-only', 'legacy-only'] },
+    hideMessagesWhenThreshold: { type: 'checkbox', label: 'Hide messages outside the recent window' },
+    enableCoreMemories: { type: 'checkbox', label: 'Enable core memories' },
+    coreMemoryStartCount: { type: 'number', label: 'Core-memory promotion start', min: 1, max: 1000 },
+    coreMemoryImportanceThreshold: { type: 'number', label: 'Core-memory importance threshold', min: 0, max: 1 },
+    coreMemoryMaxPromotionsPerRun: { type: 'number', label: 'Core promotions per maintenance run', min: 1, max: 20 },
+    enableVectorization: { type: 'checkbox', label: 'Enable semantic vector retrieval' },
+    vectorSearchLimit: { type: 'number', label: 'Semantic retrieval result limit', min: 1, max: 50 },
+    vectorSimilarityThreshold: { type: 'number', label: 'Semantic similarity threshold', min: 0.1, max: 1 },
+    memoryAgingEnabled: { type: 'checkbox', label: 'Enable memory aging' },
+    memoryAgingGraceMessages: { type: 'number', label: 'Memory aging grace (messages)', min: 0, max: 10000 },
+    memoryAgingRate: { type: 'number', label: 'Memory aging rate', min: 0, max: 1 },
+    memoryAgingFloor: { type: 'number', label: 'Memory aging retrieval floor', min: 0, max: 1 },
+    memoryConsolidationEnabled: { type: 'checkbox', label: 'Enable memory consolidation' },
+    memoryConsolidationMinRecords: { type: 'number', label: 'Records needed for consolidation', min: 2, max: 100 },
+    memoryConsolidationBatchSize: { type: 'number', label: 'Consolidation batch size', min: 2, max: 100 },
+    memoryConsolidationSourceMode: { type: 'select', label: 'Consolidated source records', options: ['archive', 'retain'] },
+    memoryContextBudget: { type: 'number', label: 'Memory context token budget', min: 100, max: 20000 },
+    memoryCandidateLimit: { type: 'number', label: 'Memory retrieval candidate limit', min: 1, max: 500 },
     enableObservability: { type: 'checkbox', label: 'Enable observability history' },
+    enablePreferenceMemory: { type: 'checkbox', label: 'Inject reviewed cross-chat preferences' },
+    preferenceContextBudget: { type: 'number', label: 'Preference context token budget', min: 40, max: 4000 },
+    preferenceContextLimit: { type: 'number', label: 'Maximum accepted preferences', min: 1, max: 100 },
 });
 
 function createControl(key, definition, settings, onChange) {
@@ -54,7 +83,7 @@ function createControl(key, definition, settings, onChange) {
         const value = definition.type === 'checkbox' ? input.checked : definition.type === 'number' ? Number(input.value) : input.value;
         onChange(key, value);
     });
-    return row;
+    return { row, input };
 }
 
 export function createModularSettingsController({
@@ -62,6 +91,11 @@ export function createModularSettingsController({
     save,
     observability,
     providerRouter,
+<<<<<<< HEAD
+=======
+    onPolicyChange,
+    onProviderConfigChange,
+>>>>>>> dev/preset-architecture
     getChatId,
     eventSource,
     chatChangedEvent,
@@ -72,13 +106,92 @@ export function createModularSettingsController({
     let summaryDisplay = null;
     let memoryPanel = null;
     let summaryLorePanel = null;
+    let profileStatus = null;
+    const controls = new Map();
+    const presetButtons = new Map();
+
+    function profileLabel() {
+        const preset = listPresets().find(candidate => candidate.id === settings.preset);
+        return `${preset?.name ?? settings.preset}${Object.keys(settings.presetOverrides ?? {}).length ? ' — Customized' : ''}`;
+    }
+
+    function syncUi() {
+        if (profileStatus) profileStatus.textContent = `Active profile: ${profileLabel()}`;
+        for (const [id, button] of presetButtons) {
+            const selected = id === settings.preset;
+            button.classList.toggle('nemolore-preset-card-selected', selected);
+            button.setAttribute('aria-pressed', String(selected));
+        }
+        for (const [key, { input, definition }] of controls) {
+            if (definition.type === 'checkbox') input.checked = Boolean(settings[key]);
+            else input.value = settings[key] ?? '';
+        }
+    }
 
     function setSetting(key, value) {
-        settings[key] = value;
+        if (PRESET_SETTING_KEYS.includes(key)) Object.assign(settings, setPresetOverride(settings, key, value));
+        else settings[key] = value;
         save?.(settings);
-        if (key.includes('Provider')) providerRouter?.resetCircuit?.();
+        if (key === 'enableAsyncApi' || key.includes('Provider') || key.startsWith('asyncApi')) {
+            providerRouter?.resetCircuit?.();
+        }
+        if (key === 'enableAsyncApi' || key.startsWith('asyncApi')) onProviderConfigChange?.(settings);
         if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
+        if (PRESET_SETTING_KEYS.includes(key)) onPolicyChange?.(settings);
+        syncUi();
         return value;
+    }
+
+    function applyPreset(id) {
+        Object.assign(settings, selectPreset(settings, id));
+        save?.(settings);
+        providerRouter?.resetCircuit?.();
+        onPolicyChange?.(settings);
+        syncUi();
+        logger?.info('Selected NemoLore story profile.', { preset: id });
+        return settings;
+    }
+
+    function createPresetCards() {
+        const section = document.createElement('section');
+        section.className = 'nemolore-preset-section';
+        const introduction = document.createElement('p');
+        introduction.textContent = 'Choose how NemoLore should remember this kind of story. The profile configures summaries, memories, retrieval, lore, and context automatically.';
+        profileStatus = document.createElement('p');
+        profileStatus.className = 'nemolore-preset-status';
+        const grid = document.createElement('div');
+        grid.className = 'nemolore-preset-grid';
+        for (const preset of listPresets()) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'nemolore-preset-card';
+            const heading = document.createElement('span');
+            heading.className = 'nemolore-preset-card-title';
+            heading.textContent = preset.name;
+            if (preset.recommended) {
+                const badge = document.createElement('small');
+                badge.textContent = 'Recommended';
+                heading.append(badge);
+            }
+            const description = document.createElement('span');
+            description.className = 'nemolore-preset-card-description';
+            description.textContent = preset.description;
+            const features = document.createElement('span');
+            features.className = 'nemolore-preset-card-features';
+            features.textContent = preset.features.join(' · ');
+            button.append(heading, description, features);
+            button.addEventListener('click', () => applyPreset(preset.id));
+            presetButtons.set(preset.id, button);
+            grid.append(button);
+        }
+        section.append(introduction, profileStatus, grid);
+        if (settings.presetMigration) {
+            const migration = document.createElement('p');
+            migration.className = 'nemolore-preset-migration';
+            migration.textContent = `Existing settings were matched to ${profileLabel()} and migrated to the modular runtime. The previous policy is retained only in the migration audit record.`;
+            section.append(migration);
+        }
+        return section;
     }
 
     async function installSummaryDisplay() {
@@ -129,11 +242,25 @@ export function createModularSettingsController({
         const header = document.createElement('div');
         header.className = 'inline-drawer-toggle inline-drawer-header';
         const title = document.createElement('b');
-        title.textContent = 'Parallel Helpers & Context';
+        title.textContent = 'NemoLore Story Profile';
         header.append(title);
         const body = document.createElement('div');
         body.className = 'inline-drawer-content';
-        for (const [key, definition] of Object.entries(FIELDS)) body.append(createControl(key, definition, settings, setSetting));
+        body.append(createPresetCards());
+
+        const advanced = document.createElement('details');
+        advanced.className = 'nemolore-preset-advanced';
+        const advancedTitle = document.createElement('summary');
+        advancedTitle.textContent = 'Advanced tuning';
+        const advancedDescription = document.createElement('p');
+        advancedDescription.textContent = 'Changing profile-controlled values creates a custom variant. Some scheduling changes require reloading SillyTavern.';
+        advanced.append(advancedTitle, advancedDescription);
+        for (const [key, definition] of Object.entries(FIELDS)) {
+            const control = createControl(key, definition, settings, setSetting);
+            controls.set(key, { input: control.input, definition });
+            advanced.append(control.row);
+        }
+        body.append(advanced);
 
         const actions = document.createElement('div');
         actions.className = 'flex-container';
@@ -161,6 +288,7 @@ export function createModularSettingsController({
         body.append(actions);
         root.append(header, body);
         container.prepend(root);
+        syncUi();
         void installSummaryDisplay();
         logger?.debug('Installed modular NemoLore settings controls.');
         return true;
@@ -175,12 +303,16 @@ export function createModularSettingsController({
         summaryDisplay = null;
         root?.remove();
         root = null;
+        profileStatus = null;
+        controls.clear();
+        presetButtons.clear();
     }
 
     return Object.freeze({
         install,
         uninstall,
         set: setSetting,
+        selectPreset: applyPreset,
         installSummaryDisplay,
         openMemoryManager,
         openSummaryLoreManager,

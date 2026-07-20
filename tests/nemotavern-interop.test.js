@@ -5,6 +5,12 @@ import {
     createEngineOwnership,
     createNemoTavernHostInterop,
 } from '../src/integrations/nemotavern-host-interop.js';
+<<<<<<< HEAD
+=======
+import { createSettings } from '../src/core/settings.js';
+import { createMemoryContextContributor } from '../src/context/contributors/memory-context-contributor.js';
+import { createSummaryContextContributor } from '../src/summary/summary-context-contributor.js';
+>>>>>>> dev/preset-architecture
 
 test('engine ownership resolves stock legacy, NemoTavern, and modular modes dynamically', () => {
     const scope = {};
@@ -133,3 +139,64 @@ test('host interop snapshots native memory ledger and provenance without retaini
     assert.deepEqual(snapshot.contextLedger, memory);
     assert.deepEqual(snapshot.provenance, provenance);
 });
+<<<<<<< HEAD
+=======
+
+test('preset cutover keeps summary and lore modular while suppressing competing fork ownership', () => {
+    const settings = createSettings({
+        settingsSchemaVersion: 1,
+        summaryEngineMode: 'legacy',
+        loreEngineMode: 'legacy',
+        enableHelperAgents: false,
+        helperMemoryAfterReply: true,
+    });
+    const scope = {
+        NemoTavern: {
+            capabilities: {
+                snapshot: () => ({ summary: true, memory: true, lore: true }),
+                active: () => ({
+                    summary: true,
+                    memory: true,
+                    lore: true,
+                    memorySummary: true,
+                    loreSummary: true,
+                }),
+            },
+            memory: { isEnabled: () => true },
+            lore: { isEnabled: () => true, isSummaryEnabled: () => true },
+        },
+    };
+    const ownership = createEngineOwnership({
+        settings,
+        hostInterop: createNemoTavernHostInterop({ scope }),
+    });
+
+    assert.equal(settings.summaryEngineMode, 'modular');
+    assert.equal(settings.loreEngineMode, 'modular');
+    assert.deepEqual(ownership.snapshot(), {
+        summaryOwner: ENGINE_OWNERS.MODULAR,
+        loreOwner: ENGINE_OWNERS.MODULAR,
+        memoryOwner: ENGINE_OWNERS.MODULAR,
+    });
+
+    settings.enableHelperAgents = false;
+    assert.equal(ownership.ownerFor('memory'), ENGINE_OWNERS.NEMOTAVERN);
+    settings.enableHelperAgents = true;
+    assert.equal(ownership.ownerFor('memory'), ENGINE_OWNERS.MODULAR);
+});
+
+test('native ownership suppresses duplicate modular context contributors', async () => {
+    const ownership = { ownerFor: engine => engine === 'memory' || engine === 'summary' ? 'nemotavern' : 'none' };
+    const memory = createMemoryContextContributor({
+        retrieval: { retrieve: async () => { throw new Error('native-owned retrieval should not run'); } },
+        ownership,
+    });
+    const summary = createSummaryContextContributor({
+        summaryStore: { get: () => ({ text: 'duplicate' }) },
+        ownership,
+    });
+
+    assert.deepEqual(await memory.contribute({ chatId: 'chat' }), []);
+    assert.deepEqual(await summary.contribute({ chatId: 'chat' }), []);
+});
+>>>>>>> dev/preset-architecture
