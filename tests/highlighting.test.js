@@ -192,5 +192,8 @@ test('legacy highlighter delegates to the shared safe text-node pass', async () 
     assert.notEqual(start, -1);
     assert.notEqual(end, -1);
     assert.match(implementation, /highlightTextSegments\(element, nouns\)/);
+    assert.match(implementation, /if \(!element\.isConnected\) return/);
+    assert.match(implementation, /element\.removeAttribute\('data-nemolore-processed'\)/);
+    assert.match(implementation, /const retry = highlightTextSegments\(element, nouns\)/);
     assert.doesNotMatch(implementation, /element\.innerHTML|Generated invalid HTML/);
 });

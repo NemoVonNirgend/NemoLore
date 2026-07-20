@@ -600,10 +600,23 @@ class NounDetector {
         console.log(`[${MODULE_NAME}] Successfully applied ${result.count} noun highlights`);
 
         setTimeout(() => {
+            // SillyTavern can replace a message node while the verification
+            // timer is pending (for example during chat reload/render). The
+            // highlights belonged to the detached node in that case, so it is
+            // not evidence that highlighting failed on the live message.
+            if (!element.isConnected) return;
             const spans = element.querySelectorAll('.nemolore-highlighted-noun');
             console.log(`[${MODULE_NAME}] Verification: ${spans.length} highlighted spans found in DOM`);
             if (spans.length === 0) {
-                console.error(`[${MODULE_NAME}] ISSUE: Highlighting disappeared after applying!`);
+                // A live message can also have its contents rewritten in place.
+                // Clear the stale marker and restore any highlights that still
+                // apply instead of reporting an expected rerender as a failure.
+                element.removeAttribute('data-nemolore-processed');
+                const retry = highlightTextSegments(element, nouns);
+                if (retry.changed) {
+                    element.setAttribute('data-nemolore-processed', 'true');
+                    console.debug(`[${MODULE_NAME}] Reapplied ${retry.count} noun highlights after message rerender`);
+                }
             }
         }, 50);
     }
