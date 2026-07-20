@@ -30,6 +30,8 @@ export function createSummaryService({ generation, store, settings, logger } = {
             sourceRange: payload.sourceRange ?? null,
             paired: payload.paired ?? settings?.enablePairedSummarization,
             metadata: {
+                ...(previous?.metadata ?? {}),
+                ...(payload.metadata ?? {}),
                 engine: 'modular',
                 provider: result.provider ?? payload.provider ?? null,
                 inputMessageCount: messages.length,
