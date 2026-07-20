@@ -1,57 +1,64 @@
-export function createPostReplyDispatcher({ runtime, settings, logger } = {}) {
+export function createPostReplyDispatcher({ runtime, settings, policy, providerRouter, logger } = {}) {
     if (!runtime?.enqueueMany) throw new TypeError('Post-reply dispatcher requires a batch-capable helper runtime.');
 
-    function dispatch(payload = {}) {
-        if (!settings.enableHelperAgents) return [];
+    function requestFor(workflow, payload, dedupeBase) {
+        const provider = providerRouter?.routeFor?.(workflow) ?? null;
+        const common = {
+            chatId: payload.chatId,
+            messageId: payload.messageId,
+            provider,
+        };
 
-        const requests = [];
-        const dedupeBase = payload.chatId && payload.messageId
-            ? `${payload.chatId}:${payload.messageId}`
-            : null;
-
-        if (settings.helperMemoryAfterReply) {
-            requests.push({
+        if (workflow === 'memory') {
+            return {
                 agent: 'memory',
                 payload: {
+                    ...common,
                     input: payload.input,
                     sources: payload.sources,
                     context: payload.context,
+                    provider,
                 },
                 dedupeKey: dedupeBase ? `memory:${dedupeBase}` : null,
                 priority: 50,
-                metadata: { trigger: 'post-reply', batch: dedupeBase },
-            });
+                metadata: { trigger: 'post-reply', batch: dedupeBase, workflow, provider },
+            };
         }
 
-        if (settings.helperSummaryAfterReply) {
-            requests.push({
-                agent: 'summary',
-                payload,
-                dedupeKey: dedupeBase ? `summary:${dedupeBase}` : null,
-                priority: 40,
-                metadata: { trigger: 'post-reply', batch: dedupeBase },
-            });
-        }
+        return {
+            agent: workflow,
+            payload: { ...payload, provider },
+            dedupeKey: dedupeBase ? `${workflow}:${dedupeBase}` : null,
+            priority: workflow === 'summary' ? 40 : 30,
+            metadata: { trigger: 'post-reply', batch: dedupeBase, workflow, provider },
+        };
+    }
 
-        if (settings.helperLoreAfterReply) {
-            requests.push({
-                agent: 'lore',
-                payload,
-                dedupeKey: dedupeBase ? `lore:${dedupeBase}` : null,
-                priority: 30,
-                metadata: { trigger: 'post-reply', batch: dedupeBase },
-            });
+    function dispatch(payload = {}) {
+        if (!settings.enableHelperAgents) return [];
+        const dedupeBase = payload.chatId && payload.messageId
+            ? `${payload.chatId}:${payload.messageId}`
+            : null;
+        const scheduling = policy?.select?.(payload) ?? {
+            selected: ['memory', 'summary', 'lore']
+                .filter(workflow => settings[`helper${workflow[0].toUpperCase()}${workflow.slice(1)}AfterReply`])
+                .map(workflow => ({ workflow })),
+            decisions: [],
+        };
+        const requests = scheduling.selected.map(item => requestFor(item.workflow, payload, dedupeBase));
+        if (!requests.length) {
+            logger?.debug('No post-reply helper jobs passed scheduling policy.', { decisions: scheduling.decisions });
+            return [];
         }
-
-        if (!requests.length) return [];
 
         const jobs = runtime.enqueueMany(requests);
         logger?.debug('Dispatched concurrent post-reply helper batch.', {
             count: jobs.length,
             agents: requests.map(request => request.agent),
+            decisions: scheduling.decisions,
         });
         return jobs;
     }
 
-    return Object.freeze({ dispatch });
+    return Object.freeze({ dispatch, inspectPolicy: payload => policy?.select?.(payload) ?? null });
 }
