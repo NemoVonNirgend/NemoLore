@@ -36,6 +36,7 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         store: nemo.summary.store,
         summary: nemo.summary.service,
         settings: nemo.settings,
+        saveSettings: updated => nemo.settingsController?.set?.('summaryContextPrecedence', updated.summaryContextPrecedence),
         getChatId: () => nemo.memory.persistence.activeChatId,
         getContext: () => ({ chat: currentChatMessages() }),
         logger,
@@ -97,10 +98,7 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         const previewInput = textarea('', 6);
         previewInput.placeholder = 'Paste recent roleplay text to preview lore changes';
         shell.sidebar.append(search, list, previewInput, button('Preview lore changes', async () => {
-            pendingPreview = await lore.preview({
-                chatId: nemo.memory.persistence.activeChatId,
-                input: previewInput.value,
-            });
+            pendingPreview = await lore.preview({ chatId: nemo.memory.persistence.activeChatId, input: previewInput.value });
             renderPreview();
         }));
         await renderEntries();
@@ -113,12 +111,7 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
         const content = document.createElement('pre');
         content.textContent = entry.content ?? '';
         const identities = document.createElement('pre');
-        identities.textContent = JSON.stringify({
-            uid: entry.uid,
-            keys: entry.key,
-            normalizedIdentities: entry.normalizedIdentities,
-            protected: entry.protected,
-        }, null, 2);
+        identities.textContent = JSON.stringify({ uid: entry.uid, keys: entry.key, normalizedIdentities: entry.normalizedIdentities, protected: entry.protected }, null, 2);
         const duplicateIds = document.createElement('input');
         duplicateIds.type = 'text';
         duplicateIds.className = 'text_pole';
@@ -146,17 +139,17 @@ export function createSummaryLoreManagementPanel({ nemo = globalThis.NemoLore, l
             row.className = 'checkbox_label nemolore-lore-preview-operation';
             const check = document.createElement('input');
             check.type = 'checkbox';
-            check.checked = operation.action !== 'noop';
+            check.checked = operation.action !== 'noop' && !operation.protected;
             check.addEventListener('change', () => {
-                if (check.checked) approved.push(index);
-                else {
+                if (check.checked && !approved.includes(index)) approved.push(index);
+                else if (!check.checked) {
                     const position = approved.indexOf(index);
                     if (position >= 0) approved.splice(position, 1);
                 }
             });
             if (check.checked) approved.push(index);
             const text = document.createElement('span');
-            text.textContent = `${operation.action.toUpperCase()}: ${operation.title || operation.key}\n${operation.content}`;
+            text.textContent = `${operation.action.toUpperCase()}: ${operation.title || operation.key}${operation.protected ? ' [PROTECTED]' : ''}\n${operation.content}`;
             row.append(check, text);
             shell.detail.append(row);
         });
