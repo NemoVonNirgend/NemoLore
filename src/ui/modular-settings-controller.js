@@ -15,23 +15,11 @@ const FIELDS = Object.freeze({
     helperLoreRequireSignal: { type: 'checkbox', label: 'Require a lore-worthy signal' },
     helperRequestTimeoutMs: { type: 'number', label: 'Helper request timeout (ms)', min: 1000, max: 300000 },
     helperRetryCount: { type: 'number', label: 'Retry count', min: 0, max: 5 },
-    summaryEngineMode: {
-        type: 'select',
-        label: 'Summary engine (reload required)',
-        options: ['legacy', 'modular'],
-    },
-    loreEngineMode: {
-        type: 'select',
-        label: 'Automatic lore engine (reload required)',
-        options: ['legacy', 'modular'],
-    },
+    summaryEngineMode: { type: 'select', label: 'Summary engine (reload required)', options: ['legacy', 'modular'] },
+    loreEngineMode: { type: 'select', label: 'Automatic lore engine (reload required)', options: ['legacy', 'modular'] },
     summaryInputMaxMessages: { type: 'number', label: 'Summary input window', min: 2, max: 500 },
     enableSummaryContext: { type: 'checkbox', label: 'Inject conversation summary' },
-    summaryContextPrecedence: {
-        type: 'select',
-        label: 'Summary precedence',
-        options: ['new-first', 'legacy-first', 'new-only', 'legacy-only'],
-    },
+    summaryContextPrecedence: { type: 'select', label: 'Summary precedence', options: ['new-first', 'legacy-first', 'new-only', 'legacy-only'] },
     enableObservability: { type: 'checkbox', label: 'Enable observability history' },
 });
 
@@ -41,41 +29,29 @@ function createControl(key, definition, settings, onChange) {
     const label = document.createElement('label');
     label.htmlFor = `nemolore_modular_${key}`;
     label.textContent = definition.label;
-
     let input;
     if (definition.type === 'select') {
         input = document.createElement('select');
-        for (const value of definition.options) {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = value;
-            input.append(option);
-        }
+        for (const value of definition.options) input.append(new Option(value, value));
     } else {
         input = document.createElement('input');
         input.type = definition.type;
         if (definition.min != null) input.min = String(definition.min);
         if (definition.max != null) input.max = String(definition.max);
     }
-
     input.id = `nemolore_modular_${key}`;
     input.classList.add('text_pole');
     if (definition.type === 'checkbox') {
         input.checked = Boolean(settings[key]);
         label.classList.add('checkbox_label');
         label.prepend(input);
+        row.append(label);
     } else {
         input.value = settings[key] ?? '';
         row.append(label, input);
     }
-    if (definition.type === 'checkbox') row.append(label);
-
     input.addEventListener('change', () => {
-        const value = definition.type === 'checkbox'
-            ? input.checked
-            : definition.type === 'number'
-                ? Number(input.value)
-                : input.value;
+        const value = definition.type === 'checkbox' ? input.checked : definition.type === 'number' ? Number(input.value) : input.value;
         onChange(key, value);
     });
     return row;
@@ -85,6 +61,7 @@ export function createModularSettingsController({ settings, save, observability,
     let root = null;
     let summaryDisplay = null;
     let memoryPanel = null;
+    let summaryLorePanel = null;
 
     async function installSummaryDisplay() {
         if (summaryDisplay || !globalThis.NemoLore?.summary?.store) return false;
@@ -105,13 +82,22 @@ export function createModularSettingsController({ settings, save, observability,
                 import('../memory/memory-management-service.js'),
                 import('./memory-management-panel.js'),
             ]);
-            const management = createMemoryManagementService({
-                store: globalThis.NemoLore.memory.store,
+            memoryPanel = createMemoryManagementPanel({
+                management: createMemoryManagementService({ store: globalThis.NemoLore.memory.store, logger }),
                 logger,
             });
-            memoryPanel = createMemoryManagementPanel({ management, logger });
         }
         memoryPanel.open();
+        return true;
+    }
+
+    async function openSummaryLoreManager() {
+        if (!globalThis.NemoLore?.summary?.store || !globalThis.NemoLore?.lore?.repository) return false;
+        if (!summaryLorePanel) {
+            const { createSummaryLoreManagementPanel } = await import('./summary-lore-management-panel.js');
+            summaryLorePanel = createSummaryLoreManagementPanel({ nemo: globalThis.NemoLore, logger });
+        }
+        await summaryLorePanel.open();
         return true;
     }
 
@@ -119,13 +105,11 @@ export function createModularSettingsController({ settings, save, observability,
         if (!container || root?.isConnected) return false;
         root = document.createElement('div');
         root.className = 'inline-drawer nemolore-modular-settings';
-
         const header = document.createElement('div');
         header.className = 'inline-drawer-toggle inline-drawer-header';
         const title = document.createElement('b');
         title.textContent = 'Parallel Helpers & Context';
         header.append(title);
-
         const body = document.createElement('div');
         body.className = 'inline-drawer-content';
         const onChange = (key, value) => {
@@ -134,17 +118,20 @@ export function createModularSettingsController({ settings, save, observability,
             if (key.includes('Provider')) providerRouter?.resetCircuit?.();
             if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
         };
-        for (const [key, definition] of Object.entries(FIELDS)) {
-            body.append(createControl(key, definition, settings, onChange));
-        }
+        for (const [key, definition] of Object.entries(FIELDS)) body.append(createControl(key, definition, settings, onChange));
 
         const actions = document.createElement('div');
         actions.className = 'flex-container';
-        const manage = document.createElement('button');
-        manage.type = 'button';
-        manage.className = 'menu_button';
-        manage.textContent = 'Manage Memories';
-        manage.addEventListener('click', () => void openMemoryManager());
+        const memories = document.createElement('button');
+        memories.type = 'button';
+        memories.className = 'menu_button';
+        memories.textContent = 'Manage Memories';
+        memories.addEventListener('click', () => void openMemoryManager());
+        const summaryLore = document.createElement('button');
+        summaryLore.type = 'button';
+        summaryLore.className = 'menu_button';
+        summaryLore.textContent = 'Manage Summary & Lore';
+        summaryLore.addEventListener('click', () => void openSummaryLoreManager());
         const inspect = document.createElement('button');
         inspect.type = 'button';
         inspect.className = 'menu_button';
@@ -155,9 +142,8 @@ export function createModularSettingsController({ settings, save, observability,
         reset.className = 'menu_button';
         reset.textContent = 'Reset Provider Circuits';
         reset.addEventListener('click', () => providerRouter?.resetCircuit?.());
-        actions.append(manage, inspect, reset);
+        actions.append(memories, summaryLore, inspect, reset);
         body.append(actions);
-
         root.append(header, body);
         container.prepend(root);
         void installSummaryDisplay();
@@ -166,6 +152,8 @@ export function createModularSettingsController({ settings, save, observability,
     }
 
     function uninstall() {
+        summaryLorePanel?.close?.();
+        summaryLorePanel = null;
         memoryPanel?.close?.();
         memoryPanel = null;
         summaryDisplay?.uninstall?.();
@@ -179,8 +167,10 @@ export function createModularSettingsController({ settings, save, observability,
         uninstall,
         installSummaryDisplay,
         openMemoryManager,
+        openSummaryLoreManager,
         get element() { return root; },
         get summaryDisplay() { return summaryDisplay; },
         get memoryPanel() { return memoryPanel; },
+        get summaryLorePanel() { return summaryLorePanel; },
     });
 }
