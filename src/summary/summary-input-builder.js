@@ -20,13 +20,10 @@ export function createSummaryInputBuilder({ settings, logger } = {}) {
     function build({ chat = [], assistantIndex = chat.length - 1, previousSummary = null } = {}) {
         const normalized = chat
             .map(normalizeMessage)
-            .filter(Boolean);
+            .filter(message => message && message.index <= assistantIndex);
 
         const maxMessages = Math.max(2, Number(settings?.summaryInputMaxMessages ?? settings?.runningMemorySize ?? 50));
-        const endIndex = Math.min(normalized.length, Math.max(0, assistantIndex + 1));
-        const startIndex = Math.max(0, endIndex - maxMessages);
-        const messages = normalized.slice(startIndex, endIndex);
-
+        const messages = normalized.slice(-maxMessages);
         const result = Object.freeze({
             messages,
             sourceRange: messages.length
