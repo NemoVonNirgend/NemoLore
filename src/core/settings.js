@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     summaryContextPrecedence: 'new-first',
     summaryContextPriority: 80,
 
+    loreEngineMode: 'legacy',
     autoCreateLorebook: true,
     chatSummaries: {},
 
