@@ -18,6 +18,7 @@ export function createObservabilityService({
     summaryStore,
     lorebooks,
     semanticMemory,
+    preferenceStore,
     getChatId,
     logger,
     historyLimit = 100,
@@ -49,6 +50,8 @@ export function createObservabilityService({
         const jobs = helperRuntime?.list?.() ?? [];
         const memories = memoryStore?.list?.() ?? [];
         const summary = chatId ? summaryStore?.get?.(chatId) ?? null : null;
+        const preferences = preferenceStore?.list?.() ?? [];
+        const preferenceEvidence = preferenceStore?.listEvidence?.() ?? [];
 
         return Object.freeze({
             capturedAt: new Date().toISOString(),
@@ -73,6 +76,13 @@ export function createObservabilityService({
                 active: memories.filter(item => item.status === 'active').length,
             },
             semanticMemory: safeClone(semanticMemory?.inspect?.() ?? null),
+            preferences: {
+                total: preferences.length,
+                evidence: preferenceEvidence.length,
+                byStatus: countBy(preferences, item => item.status),
+                accepted: preferences.filter(item => item.status === 'accepted').length,
+                candidates: preferences.filter(item => item.status === 'candidate').length,
+            },
             summary: safeClone(summary),
             lorebook: lorebooks?.getAssociatedName?.() ?? null,
             helpers: {
@@ -93,6 +103,7 @@ export function createObservabilityService({
             `Chat: ${data.chatId ?? '(none)'}`,
             `Context: ${context ? `${context.usedTokens}/${context.maxTokens} tokens, ${context.selectedCount} selected, ${context.omittedCount} omitted` : 'not yet built'}`,
             `Memory: ${data.memory.total} total, ${data.memory.active} active`,
+            `Preferences: ${data.preferences.accepted} accepted, ${data.preferences.candidates} awaiting review, ${data.preferences.evidence} evidence items`,
             `Semantic index: ${data.semanticMemory ? `${data.semanticMemory.indexedCount} indexed (${data.semanticMemory.available ? 'available' : 'unavailable'})` : 'not configured'}`,
             `Summary: ${data.summary?.text ? 'available' : 'none'}`,
             `Lorebook: ${data.lorebook ?? 'none'}`,

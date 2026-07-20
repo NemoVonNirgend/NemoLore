@@ -48,6 +48,8 @@ const FIELDS = Object.freeze({
     preferenceInferenceThreshold: { type: 'number', label: 'Repeated evidence needed for a candidate', min: 2, max: 20 },
     preferenceContextBudget: { type: 'number', label: 'Preference context token budget', min: 40, max: 4000 },
     preferenceContextLimit: { type: 'number', label: 'Maximum accepted preferences', min: 1, max: 100 },
+    preferenceRecordLimit: { type: 'number', label: 'Stored preference record limit', min: 20, max: 2000 },
+    preferenceEvidenceLimit: { type: 'number', label: 'Stored preference evidence limit', min: 50, max: 5000 },
 });
 
 function createControl(key, definition, settings, onChange) {

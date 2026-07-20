@@ -12,5 +12,8 @@ export function createPreferenceManagementService({ store, now = () => new Date(
         disable: id => review(id, PREFERENCE_STATUS.DISABLED),
         restore: id => review(id, PREFERENCE_STATUS.ACCEPTED),
         edit: (id, patch) => store.update(id, patch),
+        remove: id => store.remove(id),
+        removeEvidence: id => store.removeEvidence(id),
+        exportData: () => store.exportData(),
     });
 }

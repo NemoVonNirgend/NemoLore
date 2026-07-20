@@ -28,6 +28,7 @@ export function createObservabilityPanel({ observability, logger } = {}) {
         addDefinition(overview, 'Chat', data.chatId ?? '(none)');
         addDefinition(overview, 'Context', data.context ? `${data.context.usedTokens}/${data.context.maxTokens} tokens` : 'Not yet built');
         addDefinition(overview, 'Memories', `${data.memory.active} active / ${data.memory.total} total`);
+        addDefinition(overview, 'Preferences', `${data.preferences.accepted} accepted, ${data.preferences.candidates} awaiting review, ${data.preferences.evidence} evidence items`);
         if (data.semanticMemory) {
             const semantic = data.semanticMemory;
             const status = !semantic.enabled ? 'Disabled by profile'

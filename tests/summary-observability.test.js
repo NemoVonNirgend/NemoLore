@@ -67,6 +67,10 @@ test('observability snapshot exposes context, memory, summary, lore, and helper 
         summaryStore: { get: () => ({ text: 'Summary text' }) },
         lorebooks: { getAssociatedName: () => 'NemoLore_chat' },
         semanticMemory: { inspect: () => ({ available: true, indexedCount: 2, activeMemoryCount: 2 }) },
+        preferenceStore: {
+            list: () => [{ status: 'accepted' }, { status: 'candidate' }],
+            listEvidence: () => [{ id: 'e1' }],
+        },
         getChatId: () => 'chat',
     });
 
@@ -82,10 +86,14 @@ test('observability snapshot exposes context, memory, summary, lore, and helper 
     assert.equal(snapshot.summary.text, 'Summary text');
     assert.equal(snapshot.lorebook, 'NemoLore_chat');
     assert.equal(snapshot.semanticMemory.indexedCount, 2);
+    assert.equal(snapshot.preferences.accepted, 1);
+    assert.equal(snapshot.preferences.candidates, 1);
+    assert.equal(snapshot.preferences.evidence, 1);
     assert.equal(snapshot.helpers.byStatus.running, 1);
     assert.equal(snapshot.recentEvents.length, 2);
     assert.match(service.renderText(), /120\/500 tokens/);
     assert.match(service.renderText(), /2 indexed/);
+    assert.match(service.renderText(), /1 accepted, 1 awaiting review/);
 });
 
 test('observability rebuilds semantic memory and records the recovery event', async () => {

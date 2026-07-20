@@ -337,6 +337,7 @@ const observability = createObservabilityService({
     summaryStore,
     lorebooks,
     semanticMemory: semanticMemoryIndex,
+    preferenceStore,
     getChatId: getCurrentChatId,
     logger,
     historyLimit: settings.observabilityHistoryLimit,

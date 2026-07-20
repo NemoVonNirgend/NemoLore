@@ -94,3 +94,38 @@ test('manual inference requires repeated evidence and creates inactive candidate
     assert.deepEqual(await contributor.contribute(), []);
     assert.deepEqual(inference.generate(), []);
 });
+
+test('preferences and evidence can be exported and explicitly removed', () => {
+    const context = setup();
+    const evidence = context.store.addEvidence({ source: 'edit', summary: 'User removed filler.' });
+    const record = context.store.save({ content: 'Avoid filler.', evidenceIds: [evidence.id] });
+    const exported = context.management.exportData();
+    assert.equal(exported.version, 1);
+    assert.equal(exported.records[0].id, record.id);
+    assert.equal(exported.evidence[0].id, evidence.id);
+
+    assert.equal(context.management.removeEvidence(evidence.id), true);
+    assert.deepEqual(context.store.get(record.id).evidenceIds, []);
+    assert.equal(context.management.remove(record.id), true);
+    assert.equal(context.store.get(record.id), null);
+});
+
+test('storage limits prune oldest inactive and unlinked data without deleting accepted history', () => {
+    const context = setup();
+    context.settings.preferenceRecordLimit = 20;
+    context.settings.preferenceEvidenceLimit = 50;
+    context.store.save({ id: 'accepted', content: 'Keep this.', status: 'accepted', updatedAt: '2020-01-01T00:00:00Z' });
+    for (let index = 0; index < 25; index += 1) {
+        context.store.save({ id: `candidate-${index}`, content: `Candidate ${index}`, updatedAt: `2021-01-${String(index + 1).padStart(2, '0')}T00:00:00Z` });
+    }
+    const linked = context.store.addEvidence({ id: 'linked', source: 'edit', summary: 'Linked evidence.', createdAt: '2020-01-01T00:00:00Z' });
+    context.store.save({ id: 'linked-record', content: 'Linked candidate.', evidenceIds: [linked.id] });
+    for (let index = 0; index < 55; index += 1) {
+        context.store.addEvidence({ id: `evidence-${index}`, source: 'edit', summary: `Evidence ${index}`, createdAt: `2021-01-${String((index % 28) + 1).padStart(2, '0')}T00:00:00Z` });
+    }
+
+    assert.ok(context.store.list().length <= 20);
+    assert.ok(context.store.get('accepted'));
+    assert.ok(context.store.listEvidence().length <= 50);
+    assert.ok(context.store.getEvidence('linked'));
+});

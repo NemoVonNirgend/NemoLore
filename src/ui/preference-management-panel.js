@@ -14,6 +14,15 @@ function button(label, action) {
     return value;
 }
 
+function downloadJson(filename, value) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
 export function createPreferenceManagementPanel({ store, management, inference, logger } = {}) {
     if (!store?.list || !management?.accept) throw new TypeError('Preference panel requires preference store and management services.');
     let shell = null;
@@ -35,6 +44,9 @@ export function createPreferenceManagementPanel({ store, management, inference, 
             inference?.generate?.();
             render();
         });
+        const exportButton = button('Export JSON', () => {
+            downloadJson(`nemolore-preferences-${new Date().toISOString().slice(0, 10)}.json`, management.exportData());
+        });
         const list = element('div', 'nemolore-memory-list');
         const records = store.list().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
         for (const record of records) {
@@ -44,7 +56,7 @@ export function createPreferenceManagementPanel({ store, management, inference, 
             list.append(row);
         }
         if (!records.length) list.append(element('p', '', 'No preference candidates yet.'));
-        shell.sidebar.append(introduction, add, infer, list);
+        shell.sidebar.append(introduction, add, infer, exportButton, list);
     }
 
     function renderDetails() {
@@ -69,6 +81,12 @@ export function createPreferenceManagementPanel({ store, management, inference, 
                 record.status === 'disabled' ? management.restore(record.id) : management.disable(record.id);
                 render();
             }),
+            button('Delete', () => {
+                if (globalThis.confirm?.('Permanently delete this preference?') === false) return;
+                management.remove(record.id);
+                selectedId = null;
+                render();
+            }),
         );
         const evidence = element('section', 'nemolore-inspector-section');
         evidence.append(element('h3', '', 'Evidence'));
@@ -79,6 +97,11 @@ export function createPreferenceManagementPanel({ store, management, inference, 
             card.append(element('strong', '', `${item.source}: ${item.summary}`));
             if (item.acceptedText) card.append(element('p', '', `Accepted: ${item.acceptedText}`));
             if (item.rejectedText) card.append(element('p', '', `Rejected/removed: ${item.rejectedText}`));
+            card.append(button('Remove evidence', () => {
+                if (globalThis.confirm?.('Remove this evidence item?') === false) return;
+                management.removeEvidence(item.id);
+                render();
+            }));
             evidence.append(card);
         }
         if (!record.evidenceIds.length) evidence.append(element('p', '', 'This candidate has no inferred evidence.'));

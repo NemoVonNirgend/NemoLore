@@ -119,6 +119,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     preferenceContextBudget: 400,
     preferenceContextLimit: 12,
     preferenceContextPriority: 90,
+    preferenceRecordLimit: 200,
+    preferenceEvidenceLimit: 500,
     preferenceRecords: [],
     preferenceEvidence: [],
 });
