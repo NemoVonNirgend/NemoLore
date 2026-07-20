@@ -1,6 +1,7 @@
 import {
     chat_metadata,
     saveMetadata,
+    saveSettingsDebounced,
     getCurrentChatId,
     eventSource,
     event_types,
@@ -8,7 +9,7 @@ import {
     extension_prompt_roles,
     MAX_INJECTION_DEPTH,
 } from '../../../../script.js';
-import { getContext } from '../../../extensions.js';
+import { extension_settings, getContext } from '../../../extensions.js';
 import {
     createNewWorldInfo,
     deleteWorldInfo,
@@ -23,6 +24,7 @@ import { createApiHelperAgent } from './src/agents/api-helper-agent.js';
 import { createMemoryHelperAgent, createCallbackHelperAgent } from './src/agents/builtin-helper-agents.js';
 import { createHelperAgentRegistry } from './src/agents/helper-agent-registry.js';
 import { createHelperAgentRuntime } from './src/agents/helper-agent-runtime.js';
+import { createHelperSchedulingPolicy } from './src/agents/helper-scheduling-policy.js';
 import { createHelperTaskRegistry } from './src/agents/helper-task-registry.js';
 import { createPostReplyDispatcher } from './src/agents/post-reply-dispatcher.js';
 import { CONTEXT_POSITIONS } from './src/context/context-contribution.js';
@@ -66,17 +68,25 @@ import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createObservabilityService } from './src/observability/observability-service.js';
 import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
+import { createResilientGenerationRouter } from './src/providers/resilient-generation-router.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
 import { createSummaryContextContributor } from './src/summary/summary-context-contributor.js';
 import { createSummaryHelperWorkflow } from './src/summary/summary-helper-workflow.js';
 import { createSummaryService } from './src/summary/summary-service.js';
 import { createSummaryStore } from './src/summary/summary-store.js';
 import { createHighlighter } from './src/ui/highlighting.js';
+import { createModularSettingsController } from './src/ui/modular-settings-controller.js';
 import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
 
 const logger = createLogger({ moduleName: MODULE_NAME });
-const settings = createSettings();
+extension_settings.nemolore ??= {};
+const settings = createSettings(extension_settings.nemolore);
+Object.assign(extension_settings.nemolore, settings);
+const persistSettings = updated => {
+    Object.assign(extension_settings.nemolore, updated);
+    saveSettingsDebounced();
+};
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
@@ -107,6 +117,7 @@ if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
         model: settings.asyncApiModel,
     }));
 }
+const generationRouter = createResilientGenerationRouter({ registry: providers, settings, logger });
 
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
@@ -135,9 +146,9 @@ const memoryLifecycle = createSillyTavernMemoryLifecycle({
 });
 
 const memoryExtractors = Object.freeze({
-    episode: createEpisodeExtractor({ generation: providers, logger }),
-    atomicFact: createAtomicFactExtractor({ generation: providers, logger }),
-    stateChange: createStateChangeExtractor({ generation: providers, logger }),
+    episode: createEpisodeExtractor({ generation: generationRouter, logger }),
+    atomicFact: createAtomicFactExtractor({ generation: generationRouter, logger }),
+    stateChange: createStateChangeExtractor({ generation: generationRouter, logger }),
 });
 memoryPipeline.registerExtractor('episode', memoryExtractors.episode);
 memoryPipeline.registerExtractor('atomic-fact', memoryExtractors.atomicFact);
@@ -162,8 +173,8 @@ const memoryRetrieval = Object.freeze({
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
 
 const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
-const summaryService = createSummaryService({ generation: providers, store: summaryStore, settings, logger });
-const loreGeneration = createLoreGenerationService({ generation: providers, lorebooks, lock: writeLock, logger });
+const summaryService = createSummaryService({ generation: generationRouter, store: summaryStore, settings, logger });
+const loreGeneration = createLoreGenerationService({ generation: generationRouter, lorebooks, lock: writeLock, logger });
 
 const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
@@ -194,7 +205,7 @@ const contextBridge = createSillyTavernContextBridge({
 
 const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
-helperAgents.register('api', createApiHelperAgent({ generation: providers, tasks: helperTasks, logger }));
+helperAgents.register('api', createApiHelperAgent({ generation: generationRouter, tasks: helperTasks, logger }));
 helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
@@ -218,9 +229,17 @@ const helperRuntime = createHelperAgentRuntime({
         memoryPersistence,
         retrieval: memoryRetriever,
         context: contextInjector,
+        generation: generationRouter,
     }),
 });
-const postReplyDispatcher = createPostReplyDispatcher({ runtime: helperRuntime, settings, logger });
+const helperScheduling = createHelperSchedulingPolicy({ settings });
+const postReplyDispatcher = createPostReplyDispatcher({
+    runtime: helperRuntime,
+    settings,
+    policy: helperScheduling,
+    providerRouter: generationRouter,
+    logger,
+});
 
 function registerHelperWorkflow(name, handler) {
     return helperAgents.register(name, createCallbackHelperAgent({ name, handler }));
@@ -259,6 +278,13 @@ const observability = createObservabilityService({
     logger,
     historyLimit: settings.observabilityHistoryLimit,
 });
+const settingsController = createModularSettingsController({
+    settings,
+    save: persistSettings,
+    observability,
+    providerRouter: generationRouter,
+    logger,
+});
 
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
@@ -270,11 +296,17 @@ const publicApi = Object.freeze({
     settings,
     state,
     lifecycle,
-    providers: Object.freeze({ registry: providers, createSillyTavernProvider, createOpenAICompatibleProvider }),
+    providers: Object.freeze({
+        registry: providers,
+        router: generationRouter,
+        createSillyTavernProvider,
+        createOpenAICompatibleProvider,
+    }),
     agents: Object.freeze({
         registry: helperAgents,
         tasks: helperTasks,
         runtime: helperRuntime,
+        scheduling: helperScheduling,
         postReply: postReplyDispatcher,
         postReplyListener,
         registerWorkflow: registerHelperWorkflow,
@@ -289,6 +321,7 @@ const publicApi = Object.freeze({
         wrapGenerationInterceptor,
     }),
     observability,
+    settingsController,
     summary: Object.freeze({
         store: summaryStore,
         service: summaryService,
@@ -312,8 +345,10 @@ const publicApi = Object.freeze({
         loreGeneration,
         summary: summaryService,
         summaryStore,
-        generation: providers,
+        generation: generationRouter,
+        providerRegistry: providers,
         agents: helperRuntime,
+        scheduling: helperScheduling,
         postReply: postReplyDispatcher,
         memory: memoryPipeline,
         memoryPersistence,
@@ -321,6 +356,7 @@ const publicApi = Object.freeze({
         context: contextInjector,
         contextBridge,
         observability,
+        settings: settingsController,
         nounDetector,
         highlighter,
         notifications,
@@ -343,6 +379,7 @@ try {
 
     memoryLifecycle.install();
     postReplyListener.install();
+    settingsController.install();
     lifecycle.markLegacyLoaded();
     lifecycle.markReady();
     logger.info('Legacy compatibility module loaded through modular bootstrap.');
