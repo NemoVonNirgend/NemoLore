@@ -15,9 +15,15 @@ function normalizeEntries(value) {
     })).filter(entry => entry.key && (entry.action === 'noop' || entry.content));
 }
 
-export function createLoreGenerationService({ generation, lorebooks, lock, logger } = {}) {
+function mergeKeywords(entry, existing) {
+    const current = Array.isArray(existing?.key) ? existing.key : [existing?.key].filter(Boolean);
+    return [...new Set([...current, entry.key, entry.title, ...entry.keywords].map(String).map(value => value.trim()).filter(Boolean))];
+}
+
+export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex, logger } = {}) {
     if (!generation?.generate) throw new TypeError('Lore generation service requires generation.');
     if (!lorebooks?.ensureForChat) throw new TypeError('Lore generation service requires lorebooks.');
+    if (!entityIndex?.resolve) throw new TypeError('Lore generation service requires an entity index.');
 
     async function generate(payload = {}) {
         if (!payload.chatId) throw new TypeError('Lore generation requires chatId.');
@@ -29,18 +35,26 @@ export function createLoreGenerationService({ generation, lorebooks, lock, logge
             maxTokens: payload.maxTokens ?? 1000,
             temperature: payload.temperature ?? 0.2,
             metadata: { task: 'lore-generation', chatId: payload.chatId },
-        }, { provider: payload.provider });
+        }, { provider: payload.provider, workflow: 'lore' });
 
         const entries = normalizeEntries(result.text ?? result);
         const applied = [];
-        await Promise.all(entries.map(entry => lock.run(`lore:${payload.chatId}:${entry.key}`, async () => {
-            if (entry.action === 'noop') return applied.push({ ...entry, skipped: true });
-            if (entry.action === 'update' && entry.uid != null) {
-                const value = await lorebooks.updateEntry(entry.uid, { content: entry.content, key: entry.keywords, comment: entry.title });
-                return applied.push({ ...entry, value });
+        await Promise.all(entries.map(entry => lock.run(`lore:${payload.chatId}:${entityIndex.normalizeIdentity(entry.key)}`, async () => {
+            const latest = await lorebooks.load();
+            const match = entityIndex.resolve(latest, entry);
+            const resolvedUid = entry.uid ?? match?.uid ?? null;
+            if (entry.action === 'noop') return applied.push({ ...entry, resolvedUid, skipped: true, reason: 'model-noop' });
+            if (resolvedUid != null) {
+                const existing = match?.entry ?? null;
+                const value = await lorebooks.updateEntry(resolvedUid, {
+                    content: entry.content,
+                    key: mergeKeywords(entry, existing),
+                    comment: entry.title || existing?.comment || entry.key,
+                });
+                return applied.push({ ...entry, action: 'update', resolvedUid, matchedIdentity: match?.identity ?? null, value });
             }
-            const value = await lorebooks.createEntry({ content: entry.content, key: entry.keywords, comment: entry.title });
-            applied.push({ ...entry, value });
+            const value = await lorebooks.createEntry({ content: entry.content, key: mergeKeywords(entry), comment: entry.title || entry.key });
+            applied.push({ ...entry, action: 'create', value });
         })));
         logger?.debug('Applied generated lore changes.', { chatId: payload.chatId, count: applied.length });
         return { entries, applied, generation: result };
