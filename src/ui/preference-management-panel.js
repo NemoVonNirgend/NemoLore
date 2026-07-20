@@ -14,7 +14,7 @@ function button(label, action) {
     return value;
 }
 
-export function createPreferenceManagementPanel({ store, management, logger } = {}) {
+export function createPreferenceManagementPanel({ store, management, inference, logger } = {}) {
     if (!store?.list || !management?.accept) throw new TypeError('Preference panel requires preference store and management services.');
     let shell = null;
     let unsubscribe = null;
@@ -31,6 +31,10 @@ export function createPreferenceManagementPanel({ store, management, logger } = 
             selectedId = record.id;
             render();
         });
+        const infer = button('Find repeated candidates', () => {
+            inference?.generate?.();
+            render();
+        });
         const list = element('div', 'nemolore-memory-list');
         const records = store.list().sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
         for (const record of records) {
@@ -40,7 +44,7 @@ export function createPreferenceManagementPanel({ store, management, logger } = 
             list.append(row);
         }
         if (!records.length) list.append(element('p', '', 'No preference candidates yet.'));
-        shell.sidebar.append(introduction, add, list);
+        shell.sidebar.append(introduction, add, infer, list);
     }
 
     function renderDetails() {

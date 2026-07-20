@@ -46,6 +46,7 @@ import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sill
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
 import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
+import { createSillyTavernPreferenceListener } from './src/integrations/sillytavern-preference-listener.js';
 import { createSillyTavernVectorAdapter } from './src/integrations/sillytavern-vector-adapter.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
@@ -77,6 +78,7 @@ import { createSemanticMemoryIndex } from './src/memory/retrieval/semantic-memor
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createObservabilityService } from './src/observability/observability-service.js';
 import { createPreferenceContextContributor } from './src/preferences/preference-context-contributor.js';
+import { createPreferenceCandidateInference } from './src/preferences/preference-candidate-inference.js';
 import { createPreferenceEvidenceCollector } from './src/preferences/preference-evidence-collector.js';
 import { createPreferenceManagementService } from './src/preferences/preference-management-service.js';
 import { createPreferenceStore } from './src/preferences/preference-store.js';
@@ -110,6 +112,21 @@ const writeLock = createKeyedLock();
 const preferenceStore = createPreferenceStore({ settings, persist: persistSettings, logger });
 const preferenceManagement = createPreferenceManagementService({ store: preferenceStore });
 const preferenceEvidence = createPreferenceEvidenceCollector({ store: preferenceStore, settings, logger });
+const preferenceInference = createPreferenceCandidateInference({ store: preferenceStore, settings, logger });
+const preferenceListener = createSillyTavernPreferenceListener({
+    eventSource,
+    events: {
+        chatChanged: event_types.CHAT_CHANGED,
+        chatLoaded: event_types.CHAT_LOADED,
+        messageSwiped: event_types.MESSAGE_SWIPED,
+        messageEdited: event_types.MESSAGE_EDITED,
+        userMessageRendered: event_types.USER_MESSAGE_RENDERED,
+    },
+    getContext,
+    getChatId: getCurrentChatId,
+    collector: preferenceEvidence,
+    logger,
+});
 const summaryInputBuilder = createSummaryInputBuilder({ settings, logger });
 const contextExclusion = createContextExclusionPolicy({ settings, logger });
 
@@ -391,7 +408,14 @@ const publicApi = Object.freeze({
         inputBuilder: summaryInputBuilder,
     }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
-    preferences: Object.freeze({ store: preferenceStore, management: preferenceManagement, evidence: preferenceEvidence, contributor: contextContributors.preferences }),
+    preferences: Object.freeze({
+        store: preferenceStore,
+        management: preferenceManagement,
+        evidence: preferenceEvidence,
+        inference: preferenceInference,
+        listener: preferenceListener,
+        contributor: contextContributors.preferences,
+    }),
     memory: Object.freeze({
         sourceLedger,
         store: memoryStore,
@@ -452,6 +476,7 @@ try {
     logger.info('Replaced the retired legacy interceptor with modular context orchestration.');
 
     semanticMemoryIndex.start();
+    preferenceListener.install();
     memoryLifecycle.install();
     postReplyListener.install();
     chatHighlighting.install();

@@ -115,6 +115,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
     enablePreferenceMemory: false,
     enablePreferenceInference: false,
+    preferenceInferenceThreshold: 3,
     preferenceContextBudget: 400,
     preferenceContextLimit: 12,
     preferenceContextPriority: 90,

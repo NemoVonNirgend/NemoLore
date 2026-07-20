@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPreferenceContextContributor } from '../src/preferences/preference-context-contributor.js';
+import { createPreferenceCandidateInference } from '../src/preferences/preference-candidate-inference.js';
 import { createPreferenceEvidenceCollector } from '../src/preferences/preference-evidence-collector.js';
 import { createPreferenceManagementService } from '../src/preferences/preference-management-service.js';
 import { PREFERENCE_STATUS } from '../src/preferences/preference-record.js';
@@ -72,4 +73,24 @@ test('collector ignores unchanged or empty comparisons', () => {
     assert.equal(collector.recordSwipeChoice({ acceptedText: 'same', rejectedText: 'same' }), null);
     assert.equal(collector.recordProblemLine({}), null);
     assert.equal(context.store.listEvidence().length, 0);
+});
+
+test('manual inference requires repeated evidence and creates inactive candidates only', async () => {
+    const context = setup();
+    for (let index = 0; index < 3; index += 1) {
+        context.store.addEvidence({
+            source: 'swipe-choice',
+            summary: 'Repeated rejected prose pattern.',
+            acceptedText: `Mara answered directly ${index}.`,
+            rejectedText: `Mara tilted her head softly before answering ${index}.`,
+        });
+    }
+    const inference = createPreferenceCandidateInference({ store: context.store, settings: { preferenceInferenceThreshold: 3 } });
+    const candidates = inference.generate();
+    assert.ok(candidates.length > 0);
+    assert.ok(candidates.every(candidate => candidate.status === PREFERENCE_STATUS.CANDIDATE));
+    assert.ok(candidates.every(candidate => candidate.evidenceIds.length === 3));
+    const contributor = createPreferenceContextContributor({ store: context.store, settings: context.settings });
+    assert.deepEqual(await contributor.contribute(), []);
+    assert.deepEqual(inference.generate(), []);
 });

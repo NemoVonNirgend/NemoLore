@@ -45,6 +45,7 @@ const FIELDS = Object.freeze({
     enableObservability: { type: 'checkbox', label: 'Enable observability history' },
     enablePreferenceMemory: { type: 'checkbox', label: 'Inject reviewed cross-chat preferences' },
     enablePreferenceInference: { type: 'checkbox', label: 'Collect preference evidence from user choices' },
+    preferenceInferenceThreshold: { type: 'number', label: 'Repeated evidence needed for a candidate', min: 2, max: 20 },
     preferenceContextBudget: { type: 'number', label: 'Preference context token budget', min: 40, max: 4000 },
     preferenceContextLimit: { type: 'number', label: 'Maximum accepted preferences', min: 1, max: 100 },
 });
@@ -219,6 +220,7 @@ export function createModularSettingsController({ settings, save, observability,
             preferencePanel = createPreferenceManagementPanel({
                 store: globalThis.NemoLore.preferences.store,
                 management: globalThis.NemoLore.preferences.management,
+                inference: globalThis.NemoLore.preferences.inference,
                 logger,
             });
         }
