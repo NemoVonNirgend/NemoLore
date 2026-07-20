@@ -771,3 +771,97 @@ body:not(.dark) .nemolore-summary-textarea {
         font-size: 0.8em;
     }
 }
+
+/* Story-scale preset selection */
+.nemolore-preset-section > p {
+    margin: 0 0 10px;
+}
+
+.nemolore-preset-status {
+    font-weight: 700;
+    color: var(--SmartThemeQuoteColor, var(--customThemeColor));
+}
+
+.nemolore-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.nemolore-preset-card {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-height: 150px;
+    padding: 13px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 75%, transparent);
+    color: var(--SmartThemeBodyColor, inherit);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.nemolore-preset-card:hover {
+    transform: translateY(-1px);
+    border-color: var(--SmartThemeQuoteColor, var(--customThemeColor));
+}
+
+.nemolore-preset-card-selected {
+    border: 2px solid var(--SmartThemeQuoteColor, var(--customThemeColor));
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, var(--customThemeColor)) 14%, transparent);
+}
+
+.nemolore-preset-card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 1.05em;
+    font-weight: 700;
+}
+
+.nemolore-preset-card-title small {
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--SmartThemeQuoteColor, var(--customThemeColor));
+    color: var(--SmartThemeBodyColor, #fff);
+    font-size: 0.65em;
+}
+
+.nemolore-preset-card-description {
+    line-height: 1.35;
+}
+
+.nemolore-preset-card-features {
+    margin-top: auto;
+    opacity: 0.72;
+    font-size: 0.82em;
+    line-height: 1.35;
+}
+
+.nemolore-preset-migration {
+    padding: 9px 11px;
+    border-left: 3px solid var(--SmartThemeQuoteColor, var(--customThemeColor));
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, var(--customThemeColor)) 10%, transparent);
+}
+
+.nemolore-preset-advanced {
+    margin: 14px 0;
+    padding: 10px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+}
+
+.nemolore-preset-advanced > summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+@media (max-width: 600px) {
+    .nemolore-preset-grid {
+        grid-template-columns: 1fr;
+    }
+}
