@@ -23,7 +23,7 @@ export function createSillyTavernMemoryLifecycle({
         currentChatId = nextChatId;
         const loaded = persistence.start(nextChatId);
         const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
-        if (migration.migrated) await persistence.flush();
+        if (migration.migrated || migration.upgraded || migration.summaryImported) await persistence.flush();
         logger?.debug('Activated chat memory persistence.', { chatId: nextChatId, loaded: loaded.length, migrated: migration.migrated });
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };
     }

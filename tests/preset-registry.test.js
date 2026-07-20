@@ -51,12 +51,15 @@ test('classifies representative legacy configurations', () => {
     assert.equal(classifyLegacySettings({ runningMemorySize: 50 }).preset, 'long-form');
 });
 
-test('records legacy classification while preserving existing values during staged migration', () => {
+test('classifies legacy settings and completes a modular preset cutover', () => {
     const settings = createSettings({ summaryEngineMode: 'legacy', loreEngineMode: 'legacy', runningMemorySize: 75, hideMessagesWhenThreshold: true });
     assert.equal(settings.preset, 'long-form');
-    assert.equal(settings.summaryEngineMode, 'legacy');
-    assert.equal(settings.runningMemorySize, 75);
-    assert.equal(settings.presetMigration.legacyValuesPreserved, true);
+    assert.equal(settings.summaryEngineMode, 'modular');
+    assert.equal(settings.loreEngineMode, 'modular');
+    assert.equal(settings.runningMemorySize, 50);
+    assert.equal(settings.presetMigration.legacyValuesPreserved, false);
+    assert.equal(settings.presetMigration.cutoverCompleted, true);
+    assert.equal(settings.presetMigration.legacyPolicySnapshot.runningMemorySize, 75);
 });
 
 test('reopens modern preset settings from their base policy plus explicit overrides', () => {

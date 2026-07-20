@@ -6,34 +6,31 @@ import { createSillyTavernContextExclusionInterceptor } from '../src/integration
 import { createSummaryCompatibilityCoordinator } from '../src/summary/summary-compatibility-coordinator.js';
 import { createSummaryInputBuilder } from '../src/summary/summary-input-builder.js';
 
-test('modular mode suppresses legacy summary initialization and restores persisted settings later', () => {
+test('modular cutover permanently suppresses legacy automatic execution', () => {
     const extensionSettings = { nemolore: { enableSummarization: true, autoSummarize: true, marker: 'keep' } };
-    let scheduled = null;
     const coordinator = createSummaryCompatibilityCoordinator({
         settings: { summaryEngineMode: 'modular', enableHelperAgents: true, helperSummaryAfterReply: true },
         extensionSettings,
-        schedule(callback) { scheduled = callback; return 1; },
-        cancel() {},
     });
 
     assert.equal(coordinator.prepareLegacyImport(), true);
     assert.equal(extensionSettings.nemolore.enableSummarization, false);
     assert.equal(extensionSettings.nemolore.autoSummarize, false);
     assert.equal(coordinator.shouldRunModularSummary(), true);
-    assert.equal(coordinator.restorePersistedSettings(), true);
+    assert.equal(coordinator.restorePersistedSettings(), false);
     assert.equal(extensionSettings.nemolore.enableSummarization, false);
-    assert.equal(coordinator.restorePending, true);
-    scheduled();
-    assert.equal(extensionSettings.nemolore.enableSummarization, true);
+    assert.equal(coordinator.restorePending, false);
+    assert.equal(coordinator.restoreNow(), false);
+    assert.equal(extensionSettings.nemolore.enableSummarization, false);
     assert.equal(extensionSettings.nemolore.marker, 'keep');
 });
 
-test('legacy mode leaves legacy settings untouched', () => {
+test('legacy engine flags are treated as migrated modular settings', () => {
     const extensionSettings = { nemolore: { enableSummarization: true } };
     const coordinator = createSummaryCompatibilityCoordinator({ settings: { summaryEngineMode: 'legacy' }, extensionSettings });
-    assert.equal(coordinator.prepareLegacyImport(), false);
-    assert.equal(extensionSettings.nemolore.enableSummarization, true);
-    assert.equal(coordinator.shouldRunModularSummary(), false);
+    assert.equal(coordinator.prepareLegacyImport(), true);
+    assert.equal(extensionSettings.nemolore.enableSummarization, false);
+    assert.equal(coordinator.mode(), 'modular');
 });
 
 test('summary input builder selects a bounded trailing message window', () => {
@@ -53,7 +50,7 @@ test('context exclusion retains only the running window when a summary exists', 
     assert.equal(result.hiddenCount, 2);
 });
 
-test('context exclusion interceptor filters modular mode but preserves legacy mode', async () => {
+test('context exclusion interceptor always uses the modular policy', async () => {
     const seen = [];
     const next = async chat => { seen.push(chat); return 'ok'; };
     const policy = createContextExclusionPolicy({ settings: { hideMessagesWhenThreshold: true, runningMemorySize: 2 } });
@@ -63,10 +60,27 @@ test('context exclusion interceptor filters modular mode but preserves legacy mo
     await modular([1, 2, 3, 4]);
     await legacy([1, 2, 3, 4]);
     assert.deepEqual(seen[0], [3, 4]);
-    assert.deepEqual(seen[1], [1, 2, 3, 4]);
+    assert.deepEqual(seen[1], [3, 4]);
 });
 
-test('legacy summary mode never queues the modular summary agent', () => {
+test('modular interceptor marks hidden host messages without calling legacy code', async () => {
+    let called = false;
+    const chat = [{ extra: {} }, { extra: {} }, { extra: {} }];
+    const intercept = createSillyTavernContextExclusionInterceptor({
+        policy: createContextExclusionPolicy({ settings: { hideMessagesWhenThreshold: true, runningMemorySize: 1 } }),
+        summaryStore: { get: () => ({ text: 'summary' }) },
+        getChatId: () => 'chat',
+        getContext: () => ({ symbols: { ignore: 'IGNORE' } }),
+        next: () => { called = true; },
+    });
+    await intercept(chat);
+    assert.equal(chat[0].extra.IGNORE, true);
+    assert.equal(chat[1].extra.IGNORE, true);
+    assert.equal(chat[2].extra.IGNORE, undefined);
+    assert.equal(called, true);
+});
+
+test('retired legacy summary flags cannot prevent modular summary work', () => {
     let requests = null;
     const dispatcher = createPostReplyDispatcher({
         runtime: { enqueueMany(value) { requests = value; return value; } },
@@ -75,5 +89,5 @@ test('legacy summary mode never queues the modular summary agent', () => {
         providerRouter: { routeFor: () => 'async' },
     });
     dispatcher.dispatch({ chatId: 'chat', messageId: '1', input: 'text', sources: [], context: {} });
-    assert.deepEqual(requests.map(request => request.agent), ['memory']);
+    assert.deepEqual(requests.map(request => request.agent), ['memory', 'summary']);
 });

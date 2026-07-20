@@ -136,6 +136,7 @@ const generationRouter = createResilientGenerationRouter({ registry: providers, 
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
+const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
     sourceLedger,
@@ -145,6 +146,8 @@ const memoryPersistence = createMemoryPersistence({
 });
 const legacyMemoryMigrator = createLegacyMemoryMigrator({
     store: memoryStore,
+    sourceLedger,
+    summaryStore,
     settings,
     metadata: chat_metadata,
     saveMetadata,
@@ -193,7 +196,6 @@ const memoryRetrieval = Object.freeze({
 });
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
 
-const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
 const summaryService = createSummaryService({ generation: generationRouter, store: summaryStore, settings, logger });
 const loreGeneration = createLoreGenerationService({ generation: generationRouter, lorebooks, lock: writeLock, logger });
 
@@ -201,7 +203,6 @@ const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
     summary: createSummaryContextContributor({
         summaryStore,
-        legacySummaries: settings.chatSummaries,
         settings,
         logger,
     }),
@@ -233,7 +234,6 @@ helperAgents.register('summary', createCallbackHelperAgent({
     handler: createSummaryHelperWorkflow({
         summary: summaryService,
         inputBuilder: summaryInputBuilder,
-        compatibility: summaryCompatibility,
     }),
 }));
 helperAgents.register('lore', createCallbackHelperAgent({
@@ -404,32 +404,24 @@ lifecycle.start();
 try {
     summaryCompatibility.prepareLegacyImport();
     await import('./index.js');
-    summaryCompatibility.restorePersistedSettings();
 
-    const legacyInterceptor = globalThis.nemolore_intercept_messages;
-    if (typeof legacyInterceptor === 'function') {
-        const filteredLegacyInterceptor = createSillyTavernContextExclusionInterceptor({
-            policy: contextExclusion,
-            summaryStore,
-            getChatId: getCurrentChatId,
-            compatibility: summaryCompatibility,
-            next: legacyInterceptor,
-            logger,
-        });
-        globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(filteredLegacyInterceptor);
-        logger.info('Installed modular NemoLore generation interceptor.');
-    } else {
-        logger.warn('Legacy NemoLore interceptor was not found; context bridge remains available manually.');
-    }
+    const modularExclusionInterceptor = createSillyTavernContextExclusionInterceptor({
+        policy: contextExclusion,
+        summaryStore,
+        getChatId: getCurrentChatId,
+        getContext,
+        logger,
+    });
+    globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(modularExclusionInterceptor);
+    logger.info('Replaced the retired legacy interceptor with modular context orchestration.');
 
     memoryLifecycle.install();
     postReplyListener.install();
     settingsController.install();
     lifecycle.markLegacyLoaded();
     lifecycle.markReady();
-    logger.info('Legacy compatibility module loaded through modular bootstrap.');
+    logger.info('NemoLore modular runtime ready; legacy data import remains available without legacy execution.');
 } catch (error) {
-    summaryCompatibility.restorePersistedSettings();
     lifecycle.fail(error);
     throw error;
 }

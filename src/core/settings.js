@@ -18,7 +18,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     excludeCommonWords: true,
 
     enableSummarization: true,
-    summaryEngineMode: 'legacy',
+    summaryEngineMode: 'modular',
     summaryInputMaxMessages: 50,
     connectionProfile: '',
     completionPreset: '',
@@ -39,10 +39,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
     enablePairedSummarization: true,
     linkSummariesToAI: true,
     enableSummaryContext: true,
-    summaryContextPrecedence: 'new-first',
+    summaryContextPrecedence: 'new-only',
     summaryContextPriority: 80,
 
-    loreEngineMode: 'legacy',
+    loreEngineMode: 'modular',
     autoCreateLorebook: true,
     chatSummaries: {},
 
@@ -113,8 +113,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 export function createSettings(overrides = {}) {
     const hasStoredSettings = Object.keys(overrides ?? {}).length > 0;
-    const isPresetSettings = Number(overrides.settingsSchemaVersion) >= 2 && overrides.preset;
-    const classification = isPresetSettings
+    const hasPresetSchema = Number(overrides.settingsSchemaVersion) >= 2 && overrides.preset;
+    const requiresCutover = hasStoredSettings && (!hasPresetSchema
+        || overrides.summaryEngineMode === 'legacy'
+        || overrides.loreEngineMode === 'legacy'
+        || overrides.presetMigration?.legacyValuesPreserved === true);
+    const isPresetSettings = hasPresetSchema && !requiresCutover;
+    const classification = hasPresetSchema
         ? { preset: overrides.preset, confidence: 1, reasons: [] }
         : hasStoredSettings ? classifyLegacySettings(overrides) : { preset: DEFAULT_PRESET_ID, confidence: 1, reasons: [] };
     const resolved = resolvePreset(classification.preset, isPresetSettings ? overrides.presetOverrides : {});
@@ -123,18 +128,27 @@ export function createSettings(overrides = {}) {
         selectedPreset: classification.preset,
         confidence: classification.confidence,
         reasons: [...classification.reasons],
-        legacyValuesPreserved: true,
+        legacyValuesPreserved: false,
+        cutoverCompleted: true,
+        legacyPolicySnapshot: Object.fromEntries(PRESET_SETTING_KEYS
+            .filter(key => Object.hasOwn(overrides, key))
+            .map(key => [key, overrides[key]])),
     } : null;
+    const presetKeys = new Set(PRESET_SETTING_KEYS);
+    const preserved = Object.fromEntries(Object.entries(overrides).filter(([key]) => !presetKeys.has(key)));
 
     return {
         ...DEFAULT_SETTINGS,
         ...resolved.settings,
-        ...overrides,
+        ...preserved,
         settingsSchemaVersion: 2,
         preset: resolved.id,
         presetPolicyVersion: resolved.policyVersion,
         presetOverrides: { ...resolved.overrides },
         presetMigration: migration,
+        summaryEngineMode: 'modular',
+        loreEngineMode: 'modular',
+        summaryContextPrecedence: 'new-only',
         chatSummaries: {
             ...DEFAULT_SETTINGS.chatSummaries,
             ...(overrides.chatSummaries ?? {}),

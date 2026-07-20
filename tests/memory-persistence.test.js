@@ -4,6 +4,7 @@ import { createMemoryStore } from '../src/memory/memory-store.js';
 import { createSourceLedger } from '../src/memory/source-ledger.js';
 import { createMemoryPersistence } from '../src/memory/memory-persistence.js';
 import { createLegacyMemoryMigrator } from '../src/memory/legacy-memory-migrator.js';
+import { createSummaryStore } from '../src/summary/summary-store.js';
 import { createSillyTavernMemoryLifecycle } from '../src/integrations/sillytavern-memory-lifecycle.js';
 import { MEMORY_TYPES } from '../src/memory/memory-types.js';
 
@@ -104,6 +105,47 @@ test('migrates legacy summaries once and preserves the source data', async () =>
     assert.equal(store.query({ type: MEMORY_TYPES.CONSOLIDATED }).length, 2);
     assert.deepEqual(settings.chatSummaries['chat-a'][0], 'First arc summary');
     assert.equal(metadata.nemolore.migrations.legacyChatSummaries.sourcePreserved, true);
+});
+
+test('imports legacy summaries into modular summary context with durable sources', async () => {
+    const metadata = {};
+    const sourceLedger = createSourceLedger();
+    const store = createMemoryStore({ sourceLedger });
+    const summaryStore = createSummaryStore({ metadata, saveMetadata: async () => {} });
+    const migrator = createLegacyMemoryMigrator({
+        store,
+        sourceLedger,
+        summaryStore,
+        settings: { chatSummaries: { chat: { 4: { summary: 'Arrival.', pairedIndices: [3, 4] }, 8: 'The bargain was struck.' } } },
+        metadata,
+        saveMetadata: async () => {},
+        clock: { now: () => 789 },
+    });
+
+    const result = await migrator.migrate('chat');
+    assert.equal(result.summaryImported, true);
+    assert.match(summaryStore.get('chat').text, /Arrival[\s\S]*bargain/);
+    assert.deepEqual(summaryStore.get('chat').sourceMessageIds.sort(), ['3', '4', '8']);
+    assert.equal(sourceLedger.list().length, 3);
+    assert.ok(store.query({ type: MEMORY_TYPES.CONSOLIDATED }).every(record => record.sourceIds.length > 0));
+});
+
+test('upgrades the earlier memory-only migration marker to the modular cutover', async () => {
+    const metadata = { nemolore: { migrations: { legacyChatSummaries: { chatId: 'chat', completedAt: 123, migrated: 1 } } } };
+    const store = makeStore();
+    const summaryStore = createSummaryStore({ metadata, saveMetadata: async () => {} });
+    const migrator = createLegacyMemoryMigrator({
+        store,
+        summaryStore,
+        settings: { chatSummaries: { chat: 'Recovered summary.' } },
+        metadata,
+        saveMetadata: async () => {},
+        clock: { now: () => 999 },
+    });
+    const result = await migrator.migrate('chat');
+    assert.equal(result.skipped, false);
+    assert.equal(summaryStore.get('chat').text, 'Recovered summary.');
+    assert.equal(metadata.nemolore.migrations.legacyChatSummaries.version, 2);
 });
 
 test('flushes old chat memory before activating the next chat', async () => {

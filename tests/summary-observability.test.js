@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createSummaryContextContributor } from '../src/summary/summary-context-contributor.js';
 import { createObservabilityService } from '../src/observability/observability-service.js';
 
-test('summary contributor prefers new summary and records source metadata', async () => {
+test('summary contributor injects modular summary and records source metadata', async () => {
     const contributor = createSummaryContextContributor({
         summaryStore: {
             get: () => ({ text: 'New continuity summary.', updatedAt: 20, sourceMessageIds: ['2'] }),
@@ -14,11 +14,11 @@ test('summary contributor prefers new summary and records source metadata', asyn
 
     const contribution = await contributor.contribute({ chatId: 'chat' });
     assert.match(contribution.content, /New continuity summary/);
-    assert.equal(contribution.metadata.summarySource, 'new');
-    assert.equal(contribution.metadata.precedence, 'new-first');
+    assert.equal(contribution.metadata.summarySource, 'modular');
+    assert.equal(contribution.metadata.precedence, 'modular-only');
 });
 
-test('summary contributor can prefer or exclusively select legacy summaries', async () => {
+test('summary contributor ignores retired legacy summary storage', async () => {
     const contributor = createSummaryContextContributor({
         summaryStore: { get: () => ({ text: 'New summary.' }) },
         legacySummaries: { chat: { summary: 'Legacy summary.' } },
@@ -26,8 +26,9 @@ test('summary contributor can prefer or exclusively select legacy summaries', as
     });
 
     const contribution = await contributor.contribute({ chatId: 'chat' });
-    assert.match(contribution.content, /Legacy summary/);
-    assert.equal(contribution.metadata.summarySource, 'legacy');
+    assert.match(contribution.content, /New summary/);
+    assert.doesNotMatch(contribution.content, /Legacy summary/);
+    assert.equal(contribution.metadata.summarySource, 'modular');
 });
 
 test('observability snapshot exposes context, memory, summary, lore, and helper state', () => {

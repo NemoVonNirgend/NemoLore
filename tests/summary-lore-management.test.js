@@ -46,23 +46,16 @@ function loreRepository(entries = {}) {
     };
 }
 
-test('summary manager edits records and persists precedence', async () => {
+test('summary manager edits modular records and preserves lineage', async () => {
     const store = summaryStore();
     await store.save('chat', { text: 'Old', sourceMessageIds: ['1'], sourceRange: { start: 0, end: 1 }, metadata: {} });
-    const settings = { summaryContextPrecedence: 'new-first' };
-    let persisted = null;
     const manager = createSummaryManagementService({
         store,
-        settings,
-        saveSettings: value => { persisted = { ...value }; },
         getChatId: () => 'chat',
     });
     const edited = await manager.edit('New text');
     assert.equal(edited.text, 'New text');
     assert.equal(edited.metadata.manuallyEdited, true);
-    manager.setPrecedence('legacy-first');
-    assert.equal(settings.summaryContextPrecedence, 'legacy-first');
-    assert.equal(persisted.summaryContextPrecedence, 'legacy-first');
     assert.deepEqual(manager.lineage().sourceRange, { start: 0, end: 1 });
 });
 

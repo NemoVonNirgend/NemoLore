@@ -4,15 +4,8 @@ import {
     createContextContribution,
 } from '../context/context-contribution.js';
 
-function extractLegacySummary(value) {
-    if (typeof value === 'string') return value.trim();
-    if (!value || typeof value !== 'object') return '';
-    return String(value.summary ?? value.text ?? value.content ?? '').trim();
-}
-
 export function createSummaryContextContributor({
     summaryStore,
-    legacySummaries = {},
     settings = {},
     logger,
 } = {}) {
@@ -20,21 +13,7 @@ export function createSummaryContextContributor({
 
     function resolve(chatId) {
         const current = summaryStore.get(chatId);
-        const legacyValue = legacySummaries?.[chatId];
-        const legacyText = extractLegacySummary(legacyValue);
-        const precedence = settings.summaryContextPrecedence ?? 'new-first';
-
-        if (precedence === 'legacy-only') {
-            return legacyText ? { text: legacyText, source: 'legacy', record: legacyValue } : null;
-        }
-        if (precedence === 'new-only') {
-            return current?.text ? { text: current.text, source: 'new', record: current } : null;
-        }
-        if (precedence === 'legacy-first' && legacyText) {
-            return { text: legacyText, source: 'legacy', record: legacyValue };
-        }
-        if (current?.text) return { text: current.text, source: 'new', record: current };
-        return legacyText ? { text: legacyText, source: 'legacy', record: legacyValue } : null;
+        return current?.text ? { text: current.text, source: 'modular', record: current } : null;
     }
 
     return Object.freeze({
@@ -66,7 +45,7 @@ export function createSummaryContextContributor({
                     summarySource: resolved.source,
                     summaryUpdatedAt: resolved.record?.updatedAt ?? null,
                     sourceMessageIds: resolved.record?.sourceMessageIds ?? [],
-                    precedence: settings.summaryContextPrecedence ?? 'new-first',
+                    precedence: 'modular-only',
                 },
             });
         },

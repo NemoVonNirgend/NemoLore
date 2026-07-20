@@ -24,12 +24,6 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
         };
     }
 
-    function engineAllows(workflow) {
-        if (workflow === 'summary') return settings.summaryEngineMode === 'modular';
-        if (workflow === 'lore') return settings.loreEngineMode === 'modular';
-        return true;
-    }
-
     function dispatch(payload = {}) {
         if (!settings.enableHelperAgents) return [];
         const dedupeBase = payload.chatId && payload.messageId ? `${payload.chatId}:${payload.messageId}` : null;
@@ -39,13 +33,11 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
                 .map(workflow => ({ workflow })),
             decisions: [],
         };
-        const selected = scheduling.selected.filter(item => engineAllows(item.workflow));
+        const selected = scheduling.selected;
         const requests = selected.map(item => requestFor(item.workflow, payload, dedupeBase));
         if (!requests.length) {
             logger?.debug('No post-reply helper jobs passed scheduling policy.', {
                 decisions: scheduling.decisions,
-                summaryEngineMode: settings.summaryEngineMode,
-                loreEngineMode: settings.loreEngineMode,
             });
             return [];
         }
