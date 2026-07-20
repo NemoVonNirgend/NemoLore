@@ -20,6 +20,11 @@ const FIELDS = Object.freeze({
         label: 'Summary engine (reload required)',
         options: ['legacy', 'modular'],
     },
+    loreEngineMode: {
+        type: 'select',
+        label: 'Automatic lore engine (reload required)',
+        options: ['legacy', 'modular'],
+    },
     summaryInputMaxMessages: { type: 'number', label: 'Summary input window', min: 2, max: 500 },
     enableSummaryContext: { type: 'checkbox', label: 'Inject conversation summary' },
     summaryContextPrecedence: {
