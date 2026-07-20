@@ -1,126 +1,119 @@
-# NemoLore - Advanced Memory Management & Lore Expansion
+# NemoLore
 
-NemoLore is a comprehensive SillyTavern extension that enhances roleplay through intelligent **memory management**, **narrative consistency**, and **automated lore expansion**. It provides advanced noun detection, interactive highlighting, AI-powered summarization, core memory tracking, and semantic search capabilities.
+NemoLore is a modular SillyTavern extension for long-running roleplay continuity. It maintains per-chat memories and summaries, retrieves relevant context, manages generated lore safely, and can run memory, summary, and lore helpers after replies.
 
-## What NemoLore Does
+This release-candidate branch uses the modular runtime exclusively. Legacy settings and data are migrated, but the retired legacy runtime is not loaded.
 
-### 🧠 Smart Memory Management
-- **Message Summarization**: Automatically compresses chat history to preserve context while staying under token limits
-- **Core Memory Detection**: Identifies and preserves pivotal story moments marked with `<CORE_MEMORY>` tags
-- **Running Memory System**: Maintains a configurable sliding window of recent conversation context
-- **Semantic Memory Retrieval**: Blends SillyTavern vector similarity with deterministic entity, importance, recency, and memory-type scoring
-- **Reviewed Preferences (opt-in)**: Stores global or persona-scoped preference candidates with evidence and injects only preferences the user explicitly accepts
+## Requirements
 
-### 🎯 Interactive Story Enhancement  
-- **Real-time Noun Highlighting**: Detects and highlights important story elements (characters, locations, objects) as you chat
-- **Automated Lorebook Creation**: Generates comprehensive world information and character details from your conversations
-- **Dynamic Entry Updates**: Progressively enhances existing lore based on story development
-- **World Expansion**: AI-powered generation of backstory and world details when prompted
+- A current SillyTavern stable or staging checkout.
+- Node.js 20 or newer to run the test suite.
+- A working SillyTavern text-generation connection, or an OpenAI-compatible chat-completions endpoint for helper jobs.
+- A compatible source configured in SillyTavern Vector Storage if semantic retrieval is enabled. Lexical retrieval remains available without it.
 
-### 📚 Intelligent Lore Management
-- **Context-Aware Generation**: Creates relevant backstory and world details that fit your narrative
-- **Relationship Tracking**: Monitors character interactions and developments
-- **Timeline Management**: Organizes events and memories chronologically
-- **Multi-API Support**: Works with OpenAI, Gemini, Claude, OpenRouter, and local models
+## Installation
 
-## How It Works
+Clone the branch into SillyTavern's third-party extensions directory. The installed directory must be named `NemoLore` because SillyTavern resolves extension assets from that path.
 
-1. **Real-time Analysis**: As you chat, NemoLore analyzes messages for important nouns and story elements
-2. **Smart Highlighting**: Important elements are highlighted in the chat for easy identification
-3. **Memory Management**: Long conversations are automatically summarized to preserve context while managing token usage
-4. **Lore Generation**: When prompted, the extension generates detailed lorebook entries based on your chat history
-5. **Continuous Enhancement**: Existing lore entries are updated and expanded as your story develops
+```powershell
+Set-Location <SillyTavern>\public\scripts\extensions\third-party
+git clone --branch dev/preset-architecture https://github.com/NemoVonNirgend/NemoLore.git NemoLore
+```
 
-## Setup Guide
+Start SillyTavern, enable NemoLore under Extensions, and reload the page. Open the NemoLore drawer and confirm that a story profile and the management buttons are visible.
 
-### Prerequisites
-- SillyTavern installation
-- API access to at least one supported provider (OpenAI, Gemini, Claude, etc.)
-- SillyTavern's Vector Storage extension configured with a supported embedding source when semantic retrieval is enabled
+For an existing installation:
 
-### Installation
+```powershell
+Set-Location <SillyTavern>\public\scripts\extensions\third-party\NemoLore
+git fetch origin
+git switch dev/preset-architecture
+git pull --ff-only
+```
 
-1. **Download the Extension**
-   - Clone or download this repository
-   - Place the entire `Nemo-Lore` folder in your SillyTavern's `public/scripts/extensions/third-party/` directory
+Back up SillyTavern user data before changing branches. Do not install two copies of NemoLore under different folder names.
 
-2. **Enable the Extension**
-   - Start SillyTavern
-   - Go to Extensions → Third-party Extensions
-   - Find "NemoLore" and enable it
-   - Refresh the page if needed
+## Story profiles and engine modes
 
-3. **Initial Configuration**
-   - Click the NemoLore panel in your extensions area
-   - Configure your API settings:
-     - **API Provider**: Choose your preferred AI service (OpenAI, Gemini, Claude, etc.)
-     - **API Key**: Enter your API key for the selected provider
-     - **Model**: Select the model you want to use
-     - **Endpoint**: Set the API endpoint (usually auto-filled)
+NemoLore exposes four profiles:
 
-### Basic Settings Configuration
+- **Short RP** uses a large recent window with sparse helper activity.
+- **Long Form** is the recommended balanced profile for stories lasting hundreds of messages.
+- **Episodic** promotes scenes and consequences sooner.
+- **Epic** favors precise provenance, hierarchical continuity, and aggressive extraction for very long chats.
 
-#### Memory Management Settings
-- **Enable Summarization**: Turn on/off automatic message summarization
-- **Running Memory Size**: Number of recent messages to keep visible (default: 50)
-- **Summary Threshold**: Token count at which summarization begins (default: 1500)
-- **Max Context Size**: Target maximum context size (default: 100000)
-- **Prefill**: Default prefill for summarization requests (default: `<think>\n\n</think>`)
+Advanced changes become explicit overrides on the selected profile. Profile changes persist through SillyTavern's extension settings.
 
-#### Lore Generation Settings
-- **Auto-create Lorebooks**: Automatically create lorebooks for new chats
-- **Noun Detection**: Configure minimum word length and filtering
-- **Highlighting**: Enable/disable real-time noun highlighting
+`summaryEngineMode` and `loreEngineMode` are always normalized to `modular` in this architecture. `summaryContextPrecedence` is always `new-only`. Old `legacy` values trigger migration; they do not reactivate the retired automatic workflows. When NemoTavern is present, live ownership checks prevent its Nemo memory, summary, or lore workers from running at the same time as NemoLore's modular owner.
 
-#### API Configuration
-- **Connection Profile**: Optional preset for specific API configurations
-- **Completion Preset**: Preset for text generation settings
-- **Test Connection**: Use the built-in test to verify your API setup
+## Provider and helper-agent setup
 
-### Usage Tips
+The provider registry always includes:
 
-1. **First Time Setup**: Run the connection test to ensure your API is working properly
-2. **World Building**: When prompted about "fleshing out the world," say yes to generate initial lorebook entries
-3. **Core Memories**: Use `<CORE_MEMORY>` tags around important story moments to preserve them
-4. **Summarization**: The extension will automatically ask about summarizing long conversations
-5. **Manual Controls**: Use the extension panel to manually trigger lore generation or adjust settings
+- `sillytavern`: uses SillyTavern's active text-generation connection through `generateRaw`.
+- `async`: available when **Enable OpenAI-compatible provider** is enabled and a complete endpoint is configured.
 
-### Supported API Providers
+For an OpenAI-compatible provider, enter the full chat-completions URL, API key, and model, for example a URL ending in `/v1/chat/completions`. Credentials stay in SillyTavern extension settings; avoid sharing exported settings files containing keys.
 
-- **OpenAI**: GPT-3.5, GPT-4, and compatible models
-- **Google Gemini**: Gemini Pro, Gemini Flash models  
-- **Anthropic Claude**: Claude 3 family models
-- **OpenRouter**: Access to multiple model providers
-- **Local Models**: Compatible with local inference servers
+Helper routing fields accept the provider names `sillytavern` and `async`:
 
-### Troubleshooting
+1. Enable helper agents.
+2. Choose a shared helper provider, or set memory, summary, and lore overrides.
+3. Optionally choose a fallback provider.
+4. Enable the desired post-reply workflows and adjust cadence in Advanced settings.
 
-- **API Errors**: Check your API key and endpoint configuration
-- **No Semantic Matches**: Configure an embedding source in SillyTavern's Vector Storage settings. NemoLore inherits that source, model, credentials, and alternate endpoint instead of bundling another embedding client. The in-process `webllm` and `koboldcpp` sources are not currently exposed to third-party extensions, so NemoLore falls back to deterministic lexical retrieval when either is selected.
-- **Semantic Index Recovery**: Open the NemoLore Inspector to see the active embedding source, indexed and pending memory counts, the most recent semantic error, and a guarded rebuild action for the current chat.
-- **No Highlighting**: Ensure noun detection is enabled and minimum word length is appropriate
-- **Summarization Issues**: Verify your completion preset and prefill settings
-- **Extension Not Loading**: Check browser console for errors and ensure proper file placement
+Jobs have bounded concurrency, timeouts, retries, circuit breaking, and replay deduplication. A helper failure is isolated from foreground chat generation. Failed jobs release their dedupe key so a later reply can retry them.
 
-## Features Overview
+## Context injection
 
-### Current Capabilities
-- ✅ Real-time noun detection and highlighting
-- ✅ Automated message summarization with multiple API support
-- ✅ Core memory detection and preservation
-- ✅ Vectorized search through chat history
-- ✅ Dynamic lorebook generation and updates
-- ✅ Mobile-friendly interface with haptic feedback
-- ✅ Accessibility support with keyboard navigation
-- ✅ Universal browser compatibility
+Before foreground generation, NemoLore composes accepted preferences, the active modular summary, and relevant memory into the configured extension-prompt position. The inspector shows selected and omitted contributions and token use.
 
-### Key Benefits
-- **Maintains Context**: Keeps important story details accessible even in long conversations
-- **Enhances Immersion**: Real-time highlighting and lore generation create richer roleplay experiences
-- **Saves Time**: Automates tedious lore creation and memory management tasks
-- **Flexible Configuration**: Extensive settings to customize the experience to your preferences
-- **Privacy Focused**: All processing respects your API choice and data handling preferences
+When a modular summary exists and the active profile enables message hiding, only messages outside the profile's recent window are excluded. This exclusion belongs to the modular summary policy; no legacy interceptor is invoked.
 
----
+## Managers
 
-**NemoLore** - Transforming roleplay through intelligent memory management and dynamic lore expansion.
+Use the buttons at the bottom of the NemoLore drawer:
+
+- **Manage Memories** searches and filters the active chat's records, edits fields, reviews contradictions, archives/restores entries, and promotes important records to core memory.
+- **Manage Summary & Lore** edits or regenerates the current summary, exposes lineage/source ranges, protects manual lore entries, previews generated operations, selectively approves changes, and merges duplicates.
+- **Open NemoLore Inspector** shows context contributions, active memory/summary/lore state, helper jobs, provider routes, NemoTavern ownership, semantic-index status, and a guarded semantic rebuild action.
+
+Memory, summaries, lorebook associations, and migration state are scoped to the active chat and survive chat switches and reloads.
+
+## Reviewed preference memory
+
+Preference memory is opt-in and cross-chat. Candidate preferences never enter model context until accepted. Accepted records can be global or scoped to the current SillyTavern user persona. Rejected, disabled, candidate, and wrong-persona records are excluded.
+
+See [Preference memory](docs/PREFERENCE_MEMORY.md) for the data model.
+
+## Semantic retrieval
+
+NemoLore reuses SillyTavern Vector Storage's selected source, model, credentials, and alternate endpoint. Configure Vector Storage first, then enable semantic retrieval in the NemoLore profile or Advanced settings. The inspector reports the inherited source, indexed/pending counts, and any error.
+
+If Vector Storage has no compatible source, NemoLore reports semantic retrieval as unavailable and continues with deterministic lexical, entity, importance, recency, and type scoring. The in-process `webllm` and `koboldcpp` sources are not currently exposed to third-party extensions.
+
+## Migration
+
+On first load, pre-profile settings are classified into the closest story profile. NemoLore records the prior policy in `presetMigration`, imports legacy summaries into modular stores, and links the historical `NemoLore` settings namespace to the canonical `nemolore` object. Migration is idempotent and source-preserving.
+
+See [Migration notes](docs/MIGRATION.md) before upgrading or downgrading.
+
+## Development and verification
+
+```powershell
+npm test
+npm run test:smoke
+```
+
+Release candidate 1.4.0-rc.1 was exercised against SillyTavern staging 1.18.0 at commit `380e31e8c58d196969b6a0da74f431ba999c7e0a`. See the [changelog](CHANGELOG.md) for verification scope.
+
+## Troubleshooting
+
+- **Drawer does not appear:** confirm the folder is exactly `NemoLore`, the extension is enabled, and `manifest.json` loads `bootstrap.js`; then inspect the browser console.
+- **Helpers do not run:** confirm helper agents and the individual workflow are enabled, the minimum-message/lore-signal rule is met, and the provider name is `sillytavern` or `async`.
+- **OpenAI-compatible requests fail:** use the full chat-completions URL and confirm the endpoint accepts Bearer authentication and the configured model.
+- **No semantic matches:** configure a compatible SillyTavern Vector Storage source or rely on the automatic lexical fallback.
+- **Wrong chat data appears:** stop testing and capture the inspector snapshot and console. Chat switches are guarded; stale async work should be discarded rather than committed.
+- **Two automatic systems appear active:** disable duplicate extension copies. NemoLore coordinates with supported NemoTavern host APIs, but cannot arbitrate unrelated forks that do not expose ownership state.
+
+More detail is available in [Troubleshooting](docs/TROUBLESHOOTING.md), [Configuration](docs/CONFIGURATION.md), [Management](docs/MANAGEMENT.md), and [Architecture](docs/ARCHITECTURE.md).
