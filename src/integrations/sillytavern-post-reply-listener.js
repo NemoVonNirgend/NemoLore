@@ -65,6 +65,7 @@ export function createSillyTavernPostReplyListener({
                 messages,
                 sources,
                 context: {
+                    chat: chat.slice(0, assistantIndex + 1),
                     messages,
                     assistantIndex,
                     userIndex: previousUser?.index ?? null,
