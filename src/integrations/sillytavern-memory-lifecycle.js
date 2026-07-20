@@ -5,6 +5,7 @@ export function createSillyTavernMemoryLifecycle({
     getChatId,
     persistence,
     migrator,
+    onActivated,
     logger,
 } = {}) {
     if (!eventSource?.on) throw new TypeError('Memory lifecycle requires an event source.');
@@ -24,6 +25,7 @@ export function createSillyTavernMemoryLifecycle({
         const loaded = persistence.start(nextChatId);
         const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
         if (migration.migrated || migration.upgraded || migration.summaryImported) await persistence.flush();
+        await onActivated?.(nextChatId, { loaded, migration });
         logger?.debug('Activated chat memory persistence.', { chatId: nextChatId, loaded: loaded.length, migrated: migration.migrated });
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };
     }

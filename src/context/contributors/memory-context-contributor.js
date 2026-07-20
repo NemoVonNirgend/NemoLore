@@ -18,11 +18,13 @@ export function createMemoryContextContributor({ retrieval, settings, logger } =
                 types: request.memoryTypes,
             };
 
-            const result = retrieval.retrieve(query, {
+            const result = await retrieval.retrieve(query, {
                 maxTokens: options.memoryMaxTokens ?? request.memoryMaxTokens ?? settings?.memoryContextBudget ?? 1200,
                 candidateLimit: options.memoryCandidateLimit ?? request.memoryCandidateLimit ?? settings?.memoryCandidateLimit ?? 16,
                 minScore: options.memoryMinScore ?? request.memoryMinScore ?? 0.1,
                 includeMetadata: options.includeMemoryMetadata ?? false,
+                vectorSearchLimit: settings?.vectorSearchLimit,
+                vectorSimilarityThreshold: settings?.vectorSimilarityThreshold,
             });
 
             if (!result.text?.trim()) return [];

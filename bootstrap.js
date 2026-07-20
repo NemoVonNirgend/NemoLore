@@ -8,6 +8,7 @@ import {
     extension_prompt_types,
     extension_prompt_roles,
     MAX_INJECTION_DEPTH,
+    getRequestHeaders,
 } from '../../../../script.js';
 import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../extensions.js';
 import {
@@ -45,6 +46,7 @@ import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sill
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
 import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
+import { createSillyTavernVectorAdapter } from './src/integrations/sillytavern-vector-adapter.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
 import { createLoreHelperWorkflow } from './src/lore/lore-helper-workflow.js';
@@ -71,6 +73,7 @@ import { createMemoryRetriever } from './src/memory/retrieval/memory-retriever.j
 import { createRedundancyFilter } from './src/memory/retrieval/redundancy-filter.js';
 import { createRelevanceScorer } from './src/memory/retrieval/relevance-scorer.js';
 import { createTokenBudget } from './src/memory/retrieval/token-budget.js';
+import { createSemanticMemoryIndex } from './src/memory/retrieval/semantic-memory-index.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createObservabilityService } from './src/observability/observability-service.js';
 import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
@@ -134,6 +137,12 @@ const generationRouter = createResilientGenerationRouter({ registry: providers, 
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
+const vectorAdapter = createSillyTavernVectorAdapter({
+    getRequestHeaders,
+    getVectorSettings: () => extension_settings.vectors,
+    logger,
+});
+const semanticMemoryIndex = createSemanticMemoryIndex({ store: memoryStore, adapter: vectorAdapter, settings, logger });
 const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
@@ -158,6 +167,7 @@ const memoryLifecycle = createSillyTavernMemoryLifecycle({
     getChatId: getCurrentChatId,
     persistence: memoryPersistence,
     migrator: legacyMemoryMigrator,
+    onActivated: chatId => semanticMemoryIndex.activate(chatId),
     logger,
 });
 
@@ -194,7 +204,7 @@ const memoryRetrieval = Object.freeze({
     budget: createTokenBudget(),
     composer: createContextComposer(),
 });
-const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
+const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, semantic: semanticMemoryIndex, settings, logger });
 
 const summaryService = createSummaryService({ generation: generationRouter, store: summaryStore, settings, logger });
 const loreGeneration = createLoreGenerationService({ generation: generationRouter, lorebooks, lock: writeLock, logger });
@@ -382,6 +392,7 @@ const publicApi = Object.freeze({
         processors: memoryProcessors,
         maintenance: Object.freeze({ ...memoryMaintenance, service: memoryMaintenanceService }),
         retrieval: Object.freeze({ ...memoryRetrieval, retriever: memoryRetriever }),
+        semantic: Object.freeze({ adapter: vectorAdapter, index: semanticMemoryIndex }),
     }),
     services: Object.freeze({
         worldInfo,
@@ -399,6 +410,7 @@ const publicApi = Object.freeze({
         memoryMaintenance: memoryMaintenanceService,
         memoryPersistence,
         retrieval: memoryRetriever,
+        semanticMemory: semanticMemoryIndex,
         context: contextInjector,
         contextBridge,
         contextExclusion,
@@ -428,6 +440,7 @@ try {
     globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(modularExclusionInterceptor);
     logger.info('Replaced the retired legacy interceptor with modular context orchestration.');
 
+    semanticMemoryIndex.start();
     memoryLifecycle.install();
     postReplyListener.install();
     chatHighlighting.install();

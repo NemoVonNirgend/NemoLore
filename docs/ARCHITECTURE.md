@@ -78,7 +78,7 @@ src/
 4. Summary storage, queueing, and context injection.
 5. Core and hierarchical memory.
 6. Lorebook generation and updates.
-7. Vector retrieval and embedding providers.
+7. Semantic memory indexing and retrieval through SillyTavern's built-in Vector Storage configuration.
 8. UI composition and final lifecycle extraction.
 9. Replace the legacy runtime and settings shell with `bootstrap.js` and the standalone modular UI.
 
