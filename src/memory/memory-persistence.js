@@ -14,6 +14,8 @@ export function createMemoryPersistence({
 
     let timer = null;
     let pending = null;
+    let resolvePending = null;
+    let rejectPending = null;
     let unsubscribe = null;
     let activeChatId = null;
 
@@ -35,14 +37,33 @@ export function createMemoryPersistence({
         return structuredClone(target);
     }
 
+    async function runScheduled(chatId = activeChatId) {
+        clearTimeout(timer);
+        timer = null;
+        try {
+            const result = await persist(chatId);
+            resolvePending?.(result);
+            return result;
+        } catch (error) {
+            rejectPending?.(error);
+            throw error;
+        } finally {
+            pending = null;
+            resolvePending = null;
+            rejectPending = null;
+        }
+    }
+
     function schedule(chatId = activeChatId) {
         if (!chatId) return Promise.resolve(null);
+        if (!pending) {
+            pending = new Promise((resolve, reject) => {
+                resolvePending = resolve;
+                rejectPending = reject;
+            });
+        }
         clearTimeout(timer);
-        pending ??= new Promise((resolve, reject) => {
-            timer = setTimeout(async () => {
-                try { resolve(await persist(chatId)); } catch (error) { reject(error); } finally { pending = null; }
-            }, debounceMs);
-        });
+        timer = setTimeout(() => { void runScheduled(chatId); }, debounceMs);
         return pending;
     }
 
@@ -57,9 +78,7 @@ export function createMemoryPersistence({
     }
 
     async function flush() {
-        clearTimeout(timer);
-        timer = null;
-        if (pending) return pending;
+        if (pending) return runScheduled();
         return persist();
     }
 
@@ -74,7 +93,10 @@ export function createMemoryPersistence({
         unsubscribe = null;
         clearTimeout(timer);
         timer = null;
+        resolvePending?.(null);
         pending = null;
+        resolvePending = null;
+        rejectPending = null;
     }
 
     return Object.freeze({
