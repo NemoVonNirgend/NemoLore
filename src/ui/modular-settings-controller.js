@@ -17,7 +17,7 @@ const FIELDS = Object.freeze({
     helperRetryCount: { type: 'number', label: 'Retry count', min: 0, max: 5 },
     summaryEngineMode: {
         type: 'select',
-        label: 'Summary engine',
+        label: 'Summary engine (reload required)',
         options: ['legacy', 'modular'],
     },
     summaryInputMaxMessages: { type: 'number', label: 'Summary input window', min: 2, max: 500 },
@@ -78,6 +78,19 @@ function createControl(key, definition, settings, onChange) {
 
 export function createModularSettingsController({ settings, save, observability, providerRouter, logger } = {}) {
     let root = null;
+    let summaryDisplay = null;
+
+    async function installSummaryDisplay() {
+        if (summaryDisplay || !globalThis.NemoLore?.summary?.store) return false;
+        const { createSummaryDisplayController } = await import('./summary-display-controller.js');
+        summaryDisplay = createSummaryDisplayController({
+            summaryStore: globalThis.NemoLore.summary.store,
+            settings,
+            getChatId: () => globalThis.NemoLore?.memory?.persistence?.activeChatId ?? null,
+            logger,
+        });
+        return summaryDisplay.install();
+    }
 
     function install(container = document.querySelector('#nemo-ext-nemolore .inline-drawer-content')) {
         if (!container || root?.isConnected) return false;
@@ -96,6 +109,7 @@ export function createModularSettingsController({ settings, save, observability,
             settings[key] = value;
             save?.(settings);
             if (key.includes('Provider')) providerRouter?.resetCircuit?.();
+            if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
         };
         for (const [key, definition] of Object.entries(FIELDS)) {
             body.append(createControl(key, definition, settings, onChange));
@@ -118,14 +132,23 @@ export function createModularSettingsController({ settings, save, observability,
 
         root.append(header, body);
         container.prepend(root);
+        void installSummaryDisplay();
         logger?.debug('Installed modular NemoLore settings controls.');
         return true;
     }
 
     function uninstall() {
+        summaryDisplay?.uninstall?.();
+        summaryDisplay = null;
         root?.remove();
         root = null;
     }
 
-    return Object.freeze({ install, uninstall, get element() { return root; } });
+    return Object.freeze({
+        install,
+        uninstall,
+        installSummaryDisplay,
+        get element() { return root; },
+        get summaryDisplay() { return summaryDisplay; },
+    });
 }
