@@ -48,6 +48,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
     enableCoreMemories: true,
     coreMemoryStartCount: 20,
+    coreMemoryImportanceThreshold: 0.9,
+    coreMemoryMaxPromotionsPerRun: 1,
     coreMemoryPromptLorebook: true,
     coreMemoryReplaceMessage: true,
     coreMemoryAnimationDuration: 2_000,
@@ -98,6 +100,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
     summaryChunkSize: 8,
     episodePromotionThreshold: 4,
+    episodePromotionSourceMode: 'archive',
     memoryAgingEnabled: true,
     memoryAgingGraceMessages: 80,
     memoryAgingRate: 0.08,

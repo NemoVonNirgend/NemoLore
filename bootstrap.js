@@ -59,6 +59,8 @@ import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
 import { createMemoryAgingService } from './src/memory/maintenance/memory-aging-service.js';
 import { createMemoryConsolidationService } from './src/memory/maintenance/memory-consolidation-service.js';
 import { createMemoryMaintenanceService } from './src/memory/maintenance/memory-maintenance-service.js';
+import { createEpisodePromotionService } from './src/memory/maintenance/episode-promotion-service.js';
+import { createCorePromotionService } from './src/memory/maintenance/core-promotion-service.js';
 import { createMemoryStore } from './src/memory/memory-store.js';
 import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
 import { createDeduplicator } from './src/memory/processors/deduplicator.js';
@@ -180,6 +182,8 @@ memoryPipeline.registerProcessor(memoryProcessors.importanceScorer);
 const memoryMaintenance = Object.freeze({
     aging: createMemoryAgingService({ store: memoryStore, sourceLedger, settings, logger }),
     consolidation: createMemoryConsolidationService({ store: memoryStore, settings, logger }),
+    episodePromotion: createEpisodePromotionService({ store: memoryStore, settings, logger }),
+    corePromotion: createCorePromotionService({ store: memoryStore, settings, logger }),
 });
 const memoryMaintenanceService = createMemoryMaintenanceService({ ...memoryMaintenance, logger });
 

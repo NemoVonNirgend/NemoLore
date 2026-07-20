@@ -28,6 +28,8 @@ The runtime reads profile values dynamically for:
 - summary and lore message cadence;
 - helper workflow enablement, limits, and concurrency;
 - message exclusion windows;
+- reversible atomic-to-episode and high-importance core-memory promotion;
+- profile-specific retention of promoted source records;
 - provider routing and circuit behavior.
 
 Switching profiles resets scheduling history so the newly selected cadence takes effect without retaining stale per-chat counters. Running helper jobs are allowed to finish; a lower concurrency limit applies to subsequent work rather than cancelling active operations.

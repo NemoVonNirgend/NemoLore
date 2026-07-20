@@ -29,7 +29,7 @@ export function createMemoryConsolidationService({ store, settings, logger } = {
         const groups = new Map();
 
         for (const record of store.query({ status: MEMORY_STATUS.ACTIVE })) {
-            if (!ELIGIBLE_TYPES.has(record.type) || record.metadata?.consolidatedInto) continue;
+            if (!ELIGIBLE_TYPES.has(record.type) || record.metadata?.consolidatedInto || record.metadata?.promotedToEpisode) continue;
             const key = groupKey(record);
             const group = groups.get(key) ?? [];
             group.push(record);

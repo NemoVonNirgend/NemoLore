@@ -42,6 +42,10 @@ test('profiles scale maintenance without sacrificing Epic source precision', () 
     assert.equal(episodic.memoryConsolidationSourceMode, 'archive');
     assert.equal(epic.memoryConsolidationSourceMode, 'retain');
     assert.ok(epic.memoryAgingFloor > long.memoryAgingFloor);
+    assert.equal(short.episodePromotionThreshold, 0);
+    assert.ok(episodic.coreMemoryImportanceThreshold < long.coreMemoryImportanceThreshold);
+    assert.equal(episodic.episodePromotionSourceMode, 'archive');
+    assert.equal(epic.episodePromotionSourceMode, 'retain');
 });
 
 test('classifies representative legacy configurations', () => {
