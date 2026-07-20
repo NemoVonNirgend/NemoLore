@@ -23,6 +23,7 @@ export function createObservabilityService({
 } = {}) {
     const history = [];
     const listeners = new Set();
+    let panel = null;
 
     function emit(event) {
         history.push(Object.freeze({
@@ -97,6 +98,23 @@ export function createObservabilityService({
         return lines.join('\n');
     }
 
+    async function getPanel() {
+        if (panel) return panel;
+        const { createObservabilityPanel } = await import('../ui/observability-panel.js');
+        panel = createObservabilityPanel({ observability: api, logger });
+        return panel;
+    }
+
+    async function openPanel() {
+        return (await getPanel()).open();
+    }
+
+    async function closePanel() {
+        if (!panel) return false;
+        panel.close();
+        return true;
+    }
+
     function subscribe(listener) {
         if (typeof listener !== 'function') throw new TypeError('Observability listener must be a function.');
         listeners.add(listener);
@@ -106,15 +124,20 @@ export function createObservabilityService({
     function dispose() {
         unsubscribeHelper?.();
         unsubscribeMemory?.();
+        panel?.close();
+        panel = null;
         listeners.clear();
     }
 
-    return Object.freeze({
+    const api = Object.freeze({
         snapshot,
         renderText,
+        openPanel,
+        closePanel,
         subscribe,
         dispose,
         history: () => safeClone(history),
         record: emit,
     });
+    return api;
 }
