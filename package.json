@@ -1,0 +1,13 @@
+{
+  "name": "nemolore",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-reporter=spec tests/*.test.js",
+    "test:smoke": "node --test --test-reporter=spec tests/import-smoke.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
