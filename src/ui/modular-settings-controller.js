@@ -63,6 +63,14 @@ export function createModularSettingsController({ settings, save, observability,
     let memoryPanel = null;
     let summaryLorePanel = null;
 
+    function setSetting(key, value) {
+        settings[key] = value;
+        save?.(settings);
+        if (key.includes('Provider')) providerRouter?.resetCircuit?.();
+        if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
+        return value;
+    }
+
     async function installSummaryDisplay() {
         if (summaryDisplay || !globalThis.NemoLore?.summary?.store) return false;
         const { createSummaryDisplayController } = await import('./summary-display-controller.js');
@@ -112,13 +120,7 @@ export function createModularSettingsController({ settings, save, observability,
         header.append(title);
         const body = document.createElement('div');
         body.className = 'inline-drawer-content';
-        const onChange = (key, value) => {
-            settings[key] = value;
-            save?.(settings);
-            if (key.includes('Provider')) providerRouter?.resetCircuit?.();
-            if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
-        };
-        for (const [key, definition] of Object.entries(FIELDS)) body.append(createControl(key, definition, settings, onChange));
+        for (const [key, definition] of Object.entries(FIELDS)) body.append(createControl(key, definition, settings, setSetting));
 
         const actions = document.createElement('div');
         actions.className = 'flex-container';
@@ -165,6 +167,7 @@ export function createModularSettingsController({ settings, save, observability,
     return Object.freeze({
         install,
         uninstall,
+        set: setSetting,
         installSummaryDisplay,
         openMemoryManager,
         openSummaryLoreManager,
