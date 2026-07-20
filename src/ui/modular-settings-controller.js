@@ -84,6 +84,7 @@ function createControl(key, definition, settings, onChange) {
 export function createModularSettingsController({ settings, save, observability, providerRouter, logger } = {}) {
     let root = null;
     let summaryDisplay = null;
+    let memoryPanel = null;
 
     async function installSummaryDisplay() {
         if (summaryDisplay || !globalThis.NemoLore?.summary?.store) return false;
@@ -95,6 +96,23 @@ export function createModularSettingsController({ settings, save, observability,
             logger,
         });
         return summaryDisplay.install();
+    }
+
+    async function openMemoryManager() {
+        if (!globalThis.NemoLore?.memory?.store) return false;
+        if (!memoryPanel) {
+            const [{ createMemoryManagementService }, { createMemoryManagementPanel }] = await Promise.all([
+                import('../memory/memory-management-service.js'),
+                import('./memory-management-panel.js'),
+            ]);
+            const management = createMemoryManagementService({
+                store: globalThis.NemoLore.memory.store,
+                logger,
+            });
+            memoryPanel = createMemoryManagementPanel({ management, logger });
+        }
+        memoryPanel.open();
+        return true;
     }
 
     function install(container = document.querySelector('#nemo-ext-nemolore .inline-drawer-content')) {
@@ -122,6 +140,11 @@ export function createModularSettingsController({ settings, save, observability,
 
         const actions = document.createElement('div');
         actions.className = 'flex-container';
+        const manage = document.createElement('button');
+        manage.type = 'button';
+        manage.className = 'menu_button';
+        manage.textContent = 'Manage Memories';
+        manage.addEventListener('click', () => void openMemoryManager());
         const inspect = document.createElement('button');
         inspect.type = 'button';
         inspect.className = 'menu_button';
@@ -132,7 +155,7 @@ export function createModularSettingsController({ settings, save, observability,
         reset.className = 'menu_button';
         reset.textContent = 'Reset Provider Circuits';
         reset.addEventListener('click', () => providerRouter?.resetCircuit?.());
-        actions.append(inspect, reset);
+        actions.append(manage, inspect, reset);
         body.append(actions);
 
         root.append(header, body);
@@ -143,6 +166,8 @@ export function createModularSettingsController({ settings, save, observability,
     }
 
     function uninstall() {
+        memoryPanel?.close?.();
+        memoryPanel = null;
         summaryDisplay?.uninstall?.();
         summaryDisplay = null;
         root?.remove();
@@ -153,7 +178,9 @@ export function createModularSettingsController({ settings, save, observability,
         install,
         uninstall,
         installSummaryDisplay,
+        openMemoryManager,
         get element() { return root; },
         get summaryDisplay() { return summaryDisplay; },
+        get memoryPanel() { return memoryPanel; },
     });
 }
