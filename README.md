@@ -96,6 +96,7 @@ NemoLore is a comprehensive SillyTavern extension that enhances roleplay through
 
 - **API Errors**: Check your API key and endpoint configuration
 - **No Semantic Matches**: Configure an embedding source in SillyTavern's Vector Storage settings. NemoLore inherits that source, model, credentials, and alternate endpoint instead of bundling another embedding client. The in-process `webllm` and `koboldcpp` sources are not currently exposed to third-party extensions, so NemoLore falls back to deterministic lexical retrieval when either is selected.
+- **Semantic Index Recovery**: Open the NemoLore Inspector to see the active embedding source, indexed and pending memory counts, the most recent semantic error, and a guarded rebuild action for the current chat.
 - **No Highlighting**: Ensure noun detection is enabled and minimum word length is appropriate
 - **Summarization Issues**: Verify your completion preset and prefill settings
 - **Extension Not Loading**: Check browser console for errors and ensure proper file placement

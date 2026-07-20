@@ -17,6 +17,7 @@ export function createObservabilityService({
     memoryStore,
     summaryStore,
     lorebooks,
+    semanticMemory,
     getChatId,
     logger,
     historyLimit = 100,
@@ -71,6 +72,7 @@ export function createObservabilityService({
                 byStatus: countBy(memories, item => item.status),
                 active: memories.filter(item => item.status === 'active').length,
             },
+            semanticMemory: safeClone(semanticMemory?.inspect?.() ?? null),
             summary: safeClone(summary),
             lorebook: lorebooks?.getAssociatedName?.() ?? null,
             helpers: {
@@ -91,6 +93,7 @@ export function createObservabilityService({
             `Chat: ${data.chatId ?? '(none)'}`,
             `Context: ${context ? `${context.usedTokens}/${context.maxTokens} tokens, ${context.selectedCount} selected, ${context.omittedCount} omitted` : 'not yet built'}`,
             `Memory: ${data.memory.total} total, ${data.memory.active} active`,
+            `Semantic index: ${data.semanticMemory ? `${data.semanticMemory.indexedCount} indexed (${data.semanticMemory.available ? 'available' : 'unavailable'})` : 'not configured'}`,
             `Summary: ${data.summary?.text ? 'available' : 'none'}`,
             `Lorebook: ${data.lorebook ?? 'none'}`,
             `Helpers: ${data.helpers.runtime?.running ?? 0} running, ${data.helpers.runtime?.queued ?? 0} queued`,
@@ -115,6 +118,13 @@ export function createObservabilityService({
         return true;
     }
 
+    async function rebuildSemanticIndex() {
+        if (!semanticMemory?.rebuild) return { enabled: false, reason: 'not-configured' };
+        const result = await semanticMemory.rebuild();
+        emit({ type: 'semantic-memory', event: 'rebuild', result: { ...result, error: result.error?.message } });
+        return result;
+    }
+
     function subscribe(listener) {
         if (typeof listener !== 'function') throw new TypeError('Observability listener must be a function.');
         listeners.add(listener);
@@ -134,6 +144,7 @@ export function createObservabilityService({
         renderText,
         openPanel,
         closePanel,
+        rebuildSemanticIndex,
         subscribe,
         dispose,
         history: () => safeClone(history),

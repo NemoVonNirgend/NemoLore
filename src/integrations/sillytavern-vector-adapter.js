@@ -64,11 +64,21 @@ export function createSillyTavernVectorAdapter({
         return result ?? { hashes: [], metadata: [] };
     }
 
+    function inspect() {
+        try {
+            const value = configuration();
+            return Object.freeze({ available: true, source: value.source, model: value.model ?? null });
+        } catch (error) {
+            return Object.freeze({ available: false, source: null, model: null, reason: error.message });
+        }
+    }
+
     return Object.freeze({
         list,
         insert,
         remove,
         query,
+        inspect,
         available() {
             try { configuration(); return true; } catch (error) { logger?.debug('Vector adapter unavailable.', { error }); return false; }
         },

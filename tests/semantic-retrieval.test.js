@@ -67,4 +67,31 @@ test('semantic index degrades to no matches when vector queries fail', async () 
     const index = createSemanticMemoryIndex({ store, adapter, settings: { enableVectorization: true } });
     await index.activate('chat');
     assert.deepEqual(await index.query('scene'), new Map());
+    assert.match(index.inspect().lastError, /backend unavailable/);
+});
+
+test('semantic index reports status and can rebuild its complete collection', async () => {
+    const store = createMemoryStore({ recordOptions: { idFactory: () => 'memory-rebuild' } });
+    store.save({ type: MEMORY_TYPES.ATOMIC, content: 'The observatory key is beneath the fountain.' });
+    const calls = { removed: [], inserted: [] };
+    const adapter = {
+        available: () => true,
+        inspect: () => ({ available: true, source: 'openai', model: 'embedding-model' }),
+        async list() { return [12345]; },
+        async insert(_collection, items) { calls.inserted.push(...items); },
+        async remove(_collection, hashes) { calls.removed.push(...hashes); },
+        async query() { return { hashes: [] }; },
+    };
+    const index = createSemanticMemoryIndex({ store, adapter, settings: { enableVectorization: true } });
+    await index.activate('chat');
+    const result = await index.rebuild();
+    const status = index.inspect();
+
+    assert.equal(result.rebuild, true);
+    assert.deepEqual(calls.removed, [12345, 12345]);
+    assert.equal(calls.inserted.at(-1).text.includes('observatory key'), true);
+    assert.equal(status.source, 'openai');
+    assert.equal(status.model, 'embedding-model');
+    assert.equal(status.indexedCount, 1);
+    assert.equal(status.lastError, null);
 });
