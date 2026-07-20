@@ -29,6 +29,10 @@ function patchFor(entry, existing = null) {
     };
 }
 
+function isProtected(entry) {
+    return Boolean(entry?.extensions?.nemolore?.protected);
+}
+
 export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex = createLoreEntityIndex(), logger } = {}) {
     if (!generation?.generate) throw new TypeError('Lore generation service requires generation.');
     if (!lorebooks?.ensureForChat) throw new TypeError('Lore generation service requires lorebooks.');
@@ -54,6 +58,7 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
                 identity: entityIndex.normalizeIdentity(entry.key),
                 resolvedUid,
                 matchedIdentity: match?.identity ?? null,
+                protected: isProtected(match?.entry),
                 existing: match?.entry ? structuredClone(match.entry) : null,
             });
         });
@@ -86,9 +91,13 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
                 }
                 const latest = await lorebooks.load();
                 const match = entityIndex.resolve(latest, operation);
+                const existing = match?.entry ?? operation.existing ?? null;
+                if (isProtected(existing)) {
+                    applied.push({ ...operation, skipped: true, reason: 'protected-entry', resolvedUid: existing.uid });
+                    return;
+                }
                 const resolvedUid = operation.resolvedUid ?? match?.uid ?? null;
                 if (resolvedUid != null) {
-                    const existing = match?.entry ?? operation.existing ?? null;
                     const value = await lorebooks.updateEntry(resolvedUid, patchFor(operation, existing));
                     applied.push({ ...operation, action: 'update', resolvedUid, matchedIdentity: match?.identity ?? operation.matchedIdentity, value });
                     return;
