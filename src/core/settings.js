@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     blockChatDuringSummary: false,
     enablePairedSummarization: true,
     linkSummariesToAI: true,
+    enableSummaryContext: true,
+    summaryContextPrecedence: 'new-first',
+    summaryContextPriority: 80,
 
     autoCreateLorebook: true,
     chatSummaries: {},
@@ -62,6 +65,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
     helperMemoryAfterReply: true,
     helperLoreAfterReply: false,
     helperSummaryAfterReply: false,
+
+    enableObservability: true,
+    observabilityHistoryLimit: 100,
 });
 
 export function createSettings(overrides = {}) {
