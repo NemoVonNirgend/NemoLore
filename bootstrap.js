@@ -28,6 +28,7 @@ import { createHelperSchedulingPolicy } from './src/agents/helper-scheduling-pol
 import { createHelperTaskRegistry } from './src/agents/helper-task-registry.js';
 import { createPostReplyDispatcher } from './src/agents/post-reply-dispatcher.js';
 import { CONTEXT_POSITIONS } from './src/context/context-contribution.js';
+import { createContextExclusionPolicy } from './src/context/context-exclusion-policy.js';
 import { createContextInjector } from './src/context/context-injector.js';
 import { createContextRegistry } from './src/context/context-registry.js';
 import { createMemoryContextContributor } from './src/context/contributors/memory-context-contributor.js';
@@ -38,6 +39,7 @@ import { createLogger } from './src/core/logger.js';
 import { createSettings } from './src/core/settings.js';
 import { createNemoLoreState } from './src/core/state.js';
 import { createSillyTavernContextBridge } from './src/integrations/sillytavern-context-bridge.js';
+import { createSillyTavernContextExclusionInterceptor } from './src/integrations/sillytavern-context-exclusion-interceptor.js';
 import { createSillyTavernContextRequestFactory } from './src/integrations/sillytavern-context-request-factory.js';
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
@@ -70,8 +72,10 @@ import { createOpenAICompatibleProvider } from './src/providers/openai-compatibl
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createResilientGenerationRouter } from './src/providers/resilient-generation-router.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
+import { createSummaryCompatibilityCoordinator } from './src/summary/summary-compatibility-coordinator.js';
 import { createSummaryContextContributor } from './src/summary/summary-context-contributor.js';
 import { createSummaryHelperWorkflow } from './src/summary/summary-helper-workflow.js';
+import { createSummaryInputBuilder } from './src/summary/summary-input-builder.js';
 import { createSummaryService } from './src/summary/summary-service.js';
 import { createSummaryStore } from './src/summary/summary-store.js';
 import { createHighlighter } from './src/ui/highlighting.js';
@@ -90,6 +94,13 @@ const persistSettings = updated => {
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
+const summaryCompatibility = createSummaryCompatibilityCoordinator({
+    settings,
+    extensionSettings: extension_settings,
+    logger,
+});
+const summaryInputBuilder = createSummaryInputBuilder({ settings, logger });
+const contextExclusion = createContextExclusionPolicy({ settings, logger });
 
 const worldInfo = createWorldInfoAdapter({
     createWorld: createNewWorldInfo,
@@ -209,7 +220,11 @@ helperAgents.register('api', createApiHelperAgent({ generation: generationRouter
 helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
-    handler: createSummaryHelperWorkflow({ summary: summaryService }),
+    handler: createSummaryHelperWorkflow({
+        summary: summaryService,
+        inputBuilder: summaryInputBuilder,
+        compatibility: summaryCompatibility,
+    }),
 }));
 helperAgents.register('lore', createCallbackHelperAgent({
     name: 'lore',
@@ -316,6 +331,7 @@ const publicApi = Object.freeze({
         injector: contextInjector,
         bridge: contextBridge,
         adapter: extensionPromptAdapter,
+        exclusion: contextExclusion,
         contributors: contextContributors,
         requestFactory: contextRequestFactory,
         wrapGenerationInterceptor,
@@ -326,6 +342,8 @@ const publicApi = Object.freeze({
         store: summaryStore,
         service: summaryService,
         contributor: contextContributors.summary,
+        compatibility: summaryCompatibility,
+        inputBuilder: summaryInputBuilder,
     }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
     memory: Object.freeze({
@@ -345,6 +363,8 @@ const publicApi = Object.freeze({
         loreGeneration,
         summary: summaryService,
         summaryStore,
+        summaryCompatibility,
+        summaryInputBuilder,
         generation: generationRouter,
         providerRegistry: providers,
         agents: helperRuntime,
@@ -355,6 +375,7 @@ const publicApi = Object.freeze({
         retrieval: memoryRetriever,
         context: contextInjector,
         contextBridge,
+        contextExclusion,
         observability,
         settings: settingsController,
         nounDetector,
@@ -367,11 +388,21 @@ globalThis.NemoLore = publicApi;
 
 lifecycle.start();
 try {
+    summaryCompatibility.prepareLegacyImport();
     await import('./index.js');
+    summaryCompatibility.restorePersistedSettings();
 
     const legacyInterceptor = globalThis.nemolore_intercept_messages;
     if (typeof legacyInterceptor === 'function') {
-        globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(legacyInterceptor);
+        const filteredLegacyInterceptor = createSillyTavernContextExclusionInterceptor({
+            policy: contextExclusion,
+            summaryStore,
+            getChatId: getCurrentChatId,
+            compatibility: summaryCompatibility,
+            next: legacyInterceptor,
+            logger,
+        });
+        globalThis.nemolore_intercept_messages = wrapGenerationInterceptor(filteredLegacyInterceptor);
         logger.info('Installed modular NemoLore generation interceptor.');
     } else {
         logger.warn('Legacy NemoLore interceptor was not found; context bridge remains available manually.');
@@ -384,6 +415,7 @@ try {
     lifecycle.markReady();
     logger.info('Legacy compatibility module loaded through modular bootstrap.');
 } catch (error) {
+    summaryCompatibility.restorePersistedSettings();
     lifecycle.fail(error);
     throw error;
 }
