@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createKeyedLock } from '../src/core/keyed-lock.js';
 import { createLoreEntityIndex } from '../src/lore/lore-entity-index.js';
 import { createLoreGenerationService } from '../src/lore/lore-generation-service.js';
-import { createLoreCompatibilityCoordinator } from '../src/lore/lore-compatibility-coordinator.js';
+import { createSummaryCompatibilityCoordinator } from '../src/summary/summary-compatibility-coordinator.js';
 import { createPostReplyDispatcher } from '../src/agents/post-reply-dispatcher.js';
 
 function createRepository(initialEntries = {}) {
@@ -31,8 +31,8 @@ function createRepository(initialEntries = {}) {
 
 test('modular lore mode suppresses legacy automatic mode but preserves manual settings', () => {
     const extensionSettings = { nemolore: { autoMode: true, autoCreateLorebook: true, createLorebookOnChat: true } };
-    const coordinator = createLoreCompatibilityCoordinator({
-        settings: { loreEngineMode: 'modular', enableHelperAgents: true, helperLoreAfterReply: true },
+    const coordinator = createSummaryCompatibilityCoordinator({
+        settings: { summaryEngineMode: 'legacy', loreEngineMode: 'modular', enableHelperAgents: true, helperLoreAfterReply: true },
         extensionSettings,
     });
     assert.equal(coordinator.prepareLegacyImport(), true);
