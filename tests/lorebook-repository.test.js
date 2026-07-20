@@ -98,3 +98,65 @@ test('entry operations delegate to the adapter', async () => {
         ['remove', 'Book', 7],
     ]);
 });
+
+test('lorebook association follows replaced SillyTavern chat metadata', async () => {
+    const chatA = { world_info: 'Book A' };
+    const chatB = { world_info: 'Book B' };
+    let activeMetadata = chatA;
+    const repository = createLorebookRepository({
+        adapter: {},
+        getMetadata: () => activeMetadata,
+        saveMetadata: async () => {},
+        metadataKey: 'world_info',
+        state: createState(),
+    });
+
+    assert.equal(repository.getAssociatedName(), 'Book A');
+    activeMetadata = chatB;
+    assert.equal(repository.getAssociatedName(), 'Book B');
+    await repository.associate('Book B Updated');
+
+    assert.equal(chatA.world_info, 'Book A');
+    assert.equal(chatB.world_info, 'Book B Updated');
+});
+
+test('concurrent first-time ensureForChat creates only one lorebook', async () => {
+    let releaseCreate;
+    let markCreateStarted;
+    const createStarted = new Promise(resolve => { markCreateStarted = resolve; });
+    const heldCreate = new Promise(resolve => { releaseCreate = resolve; });
+    const metadata = {};
+    const created = [];
+    let saves = 0;
+    const repository = createLorebookRepository({
+        adapter: {
+            async create(name) {
+                created.push(name);
+                markCreateStarted();
+                await heldCreate;
+            },
+        },
+        metadata,
+        saveMetadata: async () => { saves += 1; },
+        metadataKey: 'world_info',
+        state: createState(),
+        clock: { now: () => 800 },
+    });
+
+    const first = repository.ensureForChat('chat-1');
+    await createStarted;
+    const second = repository.ensureForChat('chat-1');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(created, ['_NemoLore_chat-1_800']);
+
+    releaseCreate();
+    const names = await Promise.all([first, second]);
+
+    assert.deepEqual(names, [
+        '_NemoLore_chat-1_800',
+        '_NemoLore_chat-1_800',
+    ]);
+    assert.deepEqual(created, ['_NemoLore_chat-1_800']);
+    assert.equal(saves, 1);
+    assert.equal(metadata.world_info, '_NemoLore_chat-1_800');
+});

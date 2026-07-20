@@ -1,10 +1,13 @@
-export function createSummaryStore({ metadata, saveMetadata, clock = Date } = {}) {
-    if (!metadata || typeof metadata !== 'object') throw new TypeError('Summary store requires chat metadata.');
+import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
+
+export function createSummaryStore({ metadata, getMetadata, saveMetadata, clock = Date } = {}) {
+    const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Summary store');
     if (typeof saveMetadata !== 'function') throw new TypeError('Summary store requires saveMetadata().');
 
     const listeners = new Set();
 
     function bucket() {
+        const metadata = currentMetadata();
         metadata.nemolore ??= {};
         metadata.nemolore.summaries ??= {};
         return metadata.nemolore.summaries;

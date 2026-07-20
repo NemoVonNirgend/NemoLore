@@ -1,5 +1,6 @@
 import {
     chat_metadata,
+    generateRaw,
     saveMetadata,
     saveSettingsDebounced,
     getCurrentChatId,
@@ -36,7 +37,7 @@ import { MODULE_NAME } from './src/core/constants.js';
 import { createKeyedLock } from './src/core/keyed-lock.js';
 import { createLifecycle } from './src/core/lifecycle.js';
 import { createLogger } from './src/core/logger.js';
-import { createSettings } from './src/core/settings.js';
+import { applySettingsDefaults, linkExtensionSettingsNamespaces } from './src/core/settings.js';
 import { createNemoLoreState } from './src/core/state.js';
 import { createSillyTavernContextBridge } from './src/integrations/sillytavern-context-bridge.js';
 import { createSillyTavernContextExclusionInterceptor } from './src/integrations/sillytavern-context-exclusion-interceptor.js';
@@ -84,11 +85,10 @@ import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
 
 const logger = createLogger({ moduleName: MODULE_NAME });
-extension_settings.nemolore ??= {};
-const settings = createSettings(extension_settings.nemolore);
-Object.assign(extension_settings.nemolore, settings);
+const settingsBacking = linkExtensionSettingsNamespaces(extension_settings);
+const settings = applySettingsDefaults(settingsBacking);
 const persistSettings = updated => {
-    Object.assign(extension_settings.nemolore, updated);
+    Object.assign(settingsBacking, updated);
     saveSettingsDebounced();
 };
 const state = createNemoLoreState({ logger });
@@ -113,14 +113,23 @@ const worldInfo = createWorldInfoAdapter({
 });
 const lorebooks = createLorebookRepository({
     adapter: worldInfo,
-    metadata: chat_metadata,
+    getMetadata: () => chat_metadata,
     saveMetadata,
     metadataKey: METADATA_KEY,
     state,
     logger,
+    getActiveChatId: getCurrentChatId,
 });
 
 const providers = createProviderRegistry({ logger });
+providers.register('sillytavern', createSillyTavernProvider({
+    generate: ({ prompt, maxTokens, prefill }) => generateRaw({
+        prompt,
+        responseLength: maxTokens,
+        prefill,
+    }),
+    logger,
+}));
 if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
     providers.register('async', createOpenAICompatibleProvider({
         endpoint: settings.asyncApiEndpoint,
@@ -135,14 +144,15 @@ const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
-    metadata: chat_metadata,
+    sourceLedger,
+    getMetadata: () => chat_metadata,
     saveMetadata,
     logger,
 });
 const legacyMemoryMigrator = createLegacyMemoryMigrator({
     store: memoryStore,
     settings,
-    metadata: chat_metadata,
+    getMetadata: () => chat_metadata,
     saveMetadata,
     logger,
 });
@@ -183,9 +193,21 @@ const memoryRetrieval = Object.freeze({
 });
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, logger });
 
-const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
-const summaryService = createSummaryService({ generation: generationRouter, store: summaryStore, settings, logger });
-const loreGeneration = createLoreGenerationService({ generation: generationRouter, lorebooks, lock: writeLock, logger });
+const summaryStore = createSummaryStore({ getMetadata: () => chat_metadata, saveMetadata });
+const summaryService = createSummaryService({
+    generation: generationRouter,
+    store: summaryStore,
+    settings,
+    logger,
+    getActiveChatId: getCurrentChatId,
+});
+const loreGeneration = createLoreGenerationService({
+    generation: generationRouter,
+    lorebooks,
+    lock: writeLock,
+    logger,
+    getActiveChatId: getCurrentChatId,
+});
 
 const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
@@ -195,7 +217,11 @@ const contextContributors = Object.freeze({
         settings,
         logger,
     }),
-    memory: createMemoryContextContributor({ retrieval: memoryRetriever, logger }),
+    memory: createMemoryContextContributor({
+        retrieval: memoryRetriever,
+        persistence: memoryPersistence,
+        logger,
+    }),
 });
 contextRegistry.register('summary', contextContributors.summary);
 contextRegistry.register('memory', contextContributors.memory);
@@ -217,7 +243,7 @@ const contextBridge = createSillyTavernContextBridge({
 const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: generationRouter, tasks: helperTasks, logger }));
-helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
+helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline, getActiveChatId: getCurrentChatId }));
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
     handler: createSummaryHelperWorkflow({
@@ -298,6 +324,10 @@ const settingsController = createModularSettingsController({
     save: persistSettings,
     observability,
     providerRouter: generationRouter,
+    getChatId: getCurrentChatId,
+    eventSource,
+    chatChangedEvent: event_types.CHAT_CHANGED,
+    chatLoadedEvent: event_types.CHAT_LOADED,
     logger,
 });
 
@@ -386,6 +416,20 @@ const publicApi = Object.freeze({
 });
 globalThis.NemoLore = publicApi;
 
+async function installSettingsControllerWhenReady({ attempts = 20, delayMs = 250 } = {}) {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        if (settingsController.install()) return true;
+        if (attempt < attempts) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+    logger.warn('Legacy settings loaded without a compatible container for modular controls.', {
+        attempts,
+        selector: '#nemo-ext-nemolore .inline-drawer-content',
+    });
+    return false;
+}
+
 lifecycle.start();
 try {
     summaryCompatibility.prepareLegacyImport();
@@ -410,7 +454,7 @@ try {
 
     memoryLifecycle.install();
     postReplyListener.install();
-    settingsController.install();
+    await installSettingsControllerWhenReady();
     lifecycle.markLegacyLoaded();
     lifecycle.markReady();
     logger.info('Legacy compatibility module loaded through modular bootstrap.');

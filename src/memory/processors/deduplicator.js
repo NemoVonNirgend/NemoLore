@@ -34,7 +34,7 @@ function mergeUnique(...collections) {
 }
 
 export function createDeduplicator({ similarityThreshold = 0.9, logger } = {}) {
-    return async function deduplicate(candidate, { store }) {
+    return async function deduplicate(candidate, { store, shouldCommit }) {
         const candidateEntities = candidate.entityIds ?? candidate.entities ?? [];
         const existing = store.query({
             type: candidate.type,
@@ -56,6 +56,7 @@ export function createDeduplicator({ similarityThreshold = 0.9, logger } = {}) {
             };
         }
 
+        if (shouldCommit && !shouldCommit()) return candidate;
         store.update(existing.id, {
             sourceIds: mergeUnique(existing.sourceIds, candidate.sourceIds),
             entityIds: mergeUnique(existing.entityIds, candidateEntities),

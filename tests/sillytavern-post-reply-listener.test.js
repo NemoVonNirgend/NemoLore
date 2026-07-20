@@ -23,7 +23,7 @@ test('dispatches helper work from a completed assistant message', () => {
     });
 
     assert.equal(listener.install(), true);
-    const jobs = handlers.get('message_received')(1);
+    const jobs = handlers.get('message_received')(1, 'normal');
 
     assert.deepEqual(jobs, ['job']);
     assert.equal(dispatched.length, 1);
@@ -32,6 +32,25 @@ test('dispatches helper work from a completed assistant message', () => {
     assert.match(dispatched[0].input, /Where is the key/);
     assert.match(dispatched[0].input, /under the altar/);
     assert.deepEqual(dispatched[0].sources.map(source => source.role), ['user', 'assistant']);
+    assert.equal(dispatched[0].messageCount, 2);
+    assert.equal(dispatched[0].context.chatLength, 2);
+    assert.equal(dispatched[0].context.generationType, 'normal');
+});
+
+test('ignores SillyTavern message events that are not generated replies', () => {
+    const dispatched = [];
+    const chat = [{ is_user: false, mes: 'Synthetic message' }];
+    const listener = createSillyTavernPostReplyListener({
+        eventSource: { on() {} },
+        messageReceivedEvent: 'message_received',
+        getContext: () => ({ chat }),
+        dispatcher: { dispatch(payload) { dispatched.push(payload); } },
+    });
+
+    for (const type of ['first_message', 'command', 'extension']) {
+        assert.deepEqual(listener.onMessageReceived(0, type), []);
+    }
+    assert.equal(dispatched.length, 0);
 });
 
 test('ignores user-message events', () => {

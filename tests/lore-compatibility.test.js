@@ -29,14 +29,16 @@ function createRepository(initialEntries = {}) {
     };
 }
 
-test('modular lore mode suppresses legacy automatic mode but preserves manual settings', () => {
-    const extensionSettings = { nemolore: { autoMode: true, autoCreateLorebook: true, createLorebookOnChat: true } };
+test('modular lore mode selects modular work without mutating manual legacy settings', () => {
+    const canonical = { autoMode: true, autoCreateLorebook: true, createLorebookOnChat: true };
+    const extensionSettings = { nemolore: canonical };
     const coordinator = createSummaryCompatibilityCoordinator({
         settings: { summaryEngineMode: 'legacy', loreEngineMode: 'modular', enableHelperAgents: true, helperLoreAfterReply: true },
         extensionSettings,
     });
     assert.equal(coordinator.prepareLegacyImport(), true);
-    assert.equal(extensionSettings.nemolore.autoMode, false);
+    assert.equal(extensionSettings.NemoLore, canonical);
+    assert.equal(extensionSettings.nemolore.autoMode, true);
     assert.equal(extensionSettings.nemolore.autoCreateLorebook, true);
     assert.equal(extensionSettings.nemolore.createLorebookOnChat, true);
     assert.equal(coordinator.shouldRunModularLore(), true);

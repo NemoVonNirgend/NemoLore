@@ -12,23 +12,37 @@ export function createSillyTavernMemoryLifecycle({
 
     let installed = false;
     let currentChatId = null;
+    let activationQueue = Promise.resolve();
 
-    async function activate(chatId = getChatId?.()) {
+    async function activateNow(chatId) {
         const nextChatId = chatId ? String(chatId) : null;
         if (!nextChatId) return { loaded: 0, migrated: 0, skipped: true };
+        if (currentChatId === nextChatId) {
+            return { loaded: 0, migrated: 0, skipped: true, reason: 'already-active' };
+        }
         if (currentChatId && currentChatId !== nextChatId) {
             try { await persistence.flush(); } catch (error) { logger?.error('Unable to flush previous chat memory.', error); }
         }
 
-        currentChatId = nextChatId;
         const loaded = persistence.start(nextChatId);
         const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
         if (migration.migrated) await persistence.flush();
+        currentChatId = nextChatId;
         logger?.debug('Activated chat memory persistence.', { chatId: nextChatId, loaded: loaded.length, migrated: migration.migrated });
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };
     }
 
-    function onChatChanged(chatId) {
+    function activate(chatId = getChatId?.()) {
+        const requestedChatId = chatId;
+        const activation = activationQueue.then(() => activateNow(requestedChatId));
+        activationQueue = activation.catch(() => {});
+        return activation;
+    }
+
+    function onChatChanged(eventChatId) {
+        const chatId = typeof eventChatId === 'string' || typeof eventChatId === 'number'
+            ? eventChatId
+            : getChatId?.();
         void activate(chatId).catch(error => logger?.error('Chat memory activation failed.', error));
     }
 
@@ -37,7 +51,7 @@ export function createSillyTavernMemoryLifecycle({
         if (chatChangedEvent) eventSource.on(chatChangedEvent, onChatChanged);
         if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) eventSource.on(chatLoadedEvent, onChatChanged);
         installed = true;
-        void activate();
+        void activate().catch(error => logger?.error('Initial chat memory activation failed.', error));
         return true;
     }
 

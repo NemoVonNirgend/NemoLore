@@ -1,3 +1,5 @@
+const NON_REPLY_MESSAGE_TYPES = new Set(['first_message', 'command', 'extension']);
+
 function resolveMessageIndex(eventArgs, chat) {
     for (const value of eventArgs) {
         if (Number.isInteger(value) && value >= 0 && value < chat.length) return value;
@@ -5,6 +7,16 @@ function resolveMessageIndex(eventArgs, chat) {
         if (Number.isInteger(value?.index) && value.index >= 0 && value.index < chat.length) return value.index;
     }
     return chat.length - 1;
+}
+
+function resolveMessageType(eventArgs) {
+    for (const value of eventArgs) {
+        const type = typeof value === 'string'
+            ? value
+            : value?.generationType ?? value?.type;
+        if (typeof type === 'string' && type.trim()) return type.trim().toLowerCase();
+    }
+    return null;
 }
 
 function findPreviousUserMessage(chat, assistantIndex) {
@@ -31,6 +43,9 @@ export function createSillyTavernPostReplyListener({
 
     function onMessageReceived(...eventArgs) {
         try {
+            const messageType = resolveMessageType(eventArgs);
+            if (NON_REPLY_MESSAGE_TYPES.has(messageType)) return [];
+
             const context = getContext();
             const chat = context?.chat ?? [];
             if (!chat.length) return [];
@@ -64,9 +79,12 @@ export function createSillyTavernPostReplyListener({
                 input: sources.map(source => `${source.role}: ${source.text}`).join('\n\n'),
                 messages,
                 sources,
+                messageCount: chat.length,
                 context: {
                     chat: chat.slice(0, assistantIndex + 1),
+                    chatLength: chat.length,
                     messages,
+                    generationType: messageType,
                     assistantIndex,
                     userIndex: previousUser?.index ?? null,
                     assistantMessage,

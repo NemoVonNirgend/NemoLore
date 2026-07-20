@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createContextInjector } from '../src/context/context-injector.js';
 import { createContextRegistry } from '../src/context/context-registry.js';
 import { createMemoryContextContributor } from '../src/context/contributors/memory-context-contributor.js';
+import { createSillyTavernMemoryLifecycle } from '../src/integrations/sillytavern-memory-lifecycle.js';
 
 function contributor(output) {
     return { async contribute() { return output; } };
@@ -67,4 +68,58 @@ test('memory contributor converts retrieval output into a context contribution',
     assert.equal(output.estimatedTokens, 20);
     assert.deepEqual(output.metadata.selectedIds, ['memory-1']);
     assert.match(output.content, /Marcus made a promise/);
+});
+
+test('memory contributor waits for persistence activation before retrieving the next chat', async () => {
+    let releaseFlush;
+    let markFlushStarted;
+    const flushStarted = new Promise(resolve => { markFlushStarted = resolve; });
+    const heldFlush = new Promise(resolve => { releaseFlush = resolve; });
+    const persistence = {
+        activeChatId: null,
+        start(chatId) {
+            this.activeChatId = chatId;
+            return [];
+        },
+        async flush() {
+            markFlushStarted();
+            await heldFlush;
+        },
+    };
+    const lifecycle = createSillyTavernMemoryLifecycle({
+        eventSource: { on() {} },
+        persistence,
+        migrator: { async migrate() { return { migrated: 0 }; } },
+    });
+    await lifecycle.activate('chat-a');
+
+    let retrievals = 0;
+    const memory = createMemoryContextContributor({
+        persistence,
+        retrieval: {
+            retrieve() {
+                retrievals += 1;
+                return {
+                    text: 'Memory for the active chat.',
+                    selected: [],
+                    omitted: [],
+                    memoryIds: [],
+                    groups: {},
+                    usedTokens: 6,
+                };
+            },
+        },
+    });
+
+    const activatingB = lifecycle.activate('chat-b');
+    await flushStarted;
+    assert.equal(persistence.activeChatId, 'chat-a');
+    assert.deepEqual(await memory.contribute({ chatId: 'chat-b' }), []);
+    assert.equal(retrievals, 0);
+
+    releaseFlush();
+    await activatingB;
+    const contribution = await memory.contribute({ chatId: 'chat-b' });
+    assert.equal(contribution.content, 'Memory for the active chat.');
+    assert.equal(retrievals, 1);
 });

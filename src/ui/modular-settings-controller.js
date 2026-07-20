@@ -57,7 +57,17 @@ function createControl(key, definition, settings, onChange) {
     return row;
 }
 
-export function createModularSettingsController({ settings, save, observability, providerRouter, logger } = {}) {
+export function createModularSettingsController({
+    settings,
+    save,
+    observability,
+    providerRouter,
+    getChatId,
+    eventSource,
+    chatChangedEvent,
+    chatLoadedEvent,
+    logger,
+} = {}) {
     let root = null;
     let summaryDisplay = null;
     let memoryPanel = null;
@@ -77,7 +87,10 @@ export function createModularSettingsController({ settings, save, observability,
         summaryDisplay = createSummaryDisplayController({
             summaryStore: globalThis.NemoLore.summary.store,
             settings,
-            getChatId: () => globalThis.NemoLore?.memory?.persistence?.activeChatId ?? null,
+            getChatId: getChatId ?? (() => globalThis.NemoLore?.memory?.persistence?.activeChatId ?? null),
+            eventSource,
+            chatChangedEvent,
+            chatLoadedEvent,
             logger,
         });
         return summaryDisplay.install();

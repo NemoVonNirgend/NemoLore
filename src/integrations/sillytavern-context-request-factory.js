@@ -9,13 +9,16 @@ function messageText(message) {
 export function createSillyTavernContextRequestFactory({ getChatId, getContext, recentMessageCount = 8 } = {}) {
     return async function build({ chat, contextSize, type } = {}) {
         const context = getContext?.() ?? {};
-        const messages = Array.isArray(chat) ? chat : (context.chat ?? []);
+        const contextChat = Array.isArray(context.chat) ? context.chat : null;
+        const messages = Array.isArray(chat) ? chat : (contextChat ?? []);
+        const messageCount = contextChat?.length ?? messages.length;
         const recent = messages.slice(-recentMessageCount);
         const chatId = getChatId?.() ?? context.chatId ?? null;
+        const normalizedChatId = String(chatId ?? 'unknown-chat');
         const latest = recent.at(-1);
         const input = recent.map(messageText).filter(Boolean).join('\n\n');
         const sources = recent.map((message, offset) => ({
-            chatId: String(chatId ?? 'unknown-chat'),
+            chatId: normalizedChatId,
             messageId: messageId(message, messages.length - recent.length + offset),
             content: messageText(message),
             role: message?.is_user ? 'user' : 'assistant',
@@ -27,6 +30,7 @@ export function createSillyTavernContextRequestFactory({ getChatId, getContext, 
 
         return {
             contextRequest: {
+                chatId: normalizedChatId,
                 text: messageText(latest),
                 prompt: messageText(latest),
                 entityIds,
@@ -37,11 +41,12 @@ export function createSillyTavernContextRequestFactory({ getChatId, getContext, 
                 maxTokens: Math.max(500, Math.min(2400, Math.floor(Number(contextSize ?? 8000) * 0.12))),
             },
             postReply: {
-                chatId: String(chatId ?? 'unknown-chat'),
+                chatId: normalizedChatId,
                 messageId: messageId(latest, messages.length - 1),
+                messageCount,
                 input,
                 sources,
-                context: { generationType: type, entityIds },
+                context: { generationType: type, entityIds, chatLength: messageCount },
             },
         };
     };

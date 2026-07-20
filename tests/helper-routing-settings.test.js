@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHelperSchedulingPolicy } from '../src/agents/helper-scheduling-policy.js';
+import { createPostReplyDispatcher } from '../src/agents/post-reply-dispatcher.js';
 import { createResilientGenerationRouter } from '../src/providers/resilient-generation-router.js';
 
 function createRegistry(handlers) {
@@ -75,4 +76,38 @@ test('scheduling policy enforces limits, minimums, and lore signals', () => {
 
     now += 1001;
     assert.equal(policy.evaluate('memory', { chatId: 'chat', messageCount: 5 }).allowed, true);
+});
+
+test('engine-disabled workflows do not consume scheduling capacity or cooldowns', () => {
+    let now = 100_000;
+    const settings = {
+        enableHelperAgents: true,
+        summaryEngineMode: 'legacy',
+        loreEngineMode: 'modular',
+        helperMemoryAfterReply: false,
+        helperSummaryAfterReply: true,
+        helperLoreAfterReply: true,
+        helperSummaryMinMessages: 0,
+        helperLoreMinMessages: 0,
+        helperSummaryCooldownMs: 60_000,
+        helperLoreCooldownMs: 60_000,
+        helperLoreRequireSignal: false,
+        helperMaxCallsPerReply: 1,
+    };
+    const policy = createHelperSchedulingPolicy({ settings, clock: { now: () => now } });
+    let requests = [];
+    const dispatcher = createPostReplyDispatcher({
+        runtime: { enqueueMany(value) { requests = value; return value; } },
+        settings,
+        policy,
+    });
+
+    dispatcher.dispatch({ chatId: 'chat', messageId: '1', messageCount: 1, input: 'quiet reply' });
+
+    assert.deepEqual(requests.map(request => request.agent), ['lore']);
+    assert.equal(policy.evaluate('summary', { chatId: 'chat', messageCount: 1 }).allowed, true);
+    assert.equal(policy.evaluate('lore', { chatId: 'chat', messageCount: 1 }).reason, 'cooldown');
+
+    now += 60_001;
+    assert.equal(policy.evaluate('lore', { chatId: 'chat', messageCount: 1 }).allowed, true);
 });

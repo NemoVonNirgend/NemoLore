@@ -1,0 +1,24 @@
+{
+  "extensionSettings": {
+    "nemolore": {
+      "summaryEngineMode": "modular",
+      "loreEngineMode": "modular",
+      "enableHelperAgents": true,
+      "helperMemoryProvider": "async"
+    },
+    "NemoLore": {
+      "summaryEngineMode": "legacy",
+      "loreEngineMode": "legacy",
+      "autoMode": true,
+      "enableSummarization": false
+    }
+  },
+  "expected": {
+    "summaryEngineMode": "legacy",
+    "loreEngineMode": "legacy",
+    "autoMode": true,
+    "enableSummarization": false,
+    "enableHelperAgents": true,
+    "helperMemoryProvider": "async"
+  }
+}

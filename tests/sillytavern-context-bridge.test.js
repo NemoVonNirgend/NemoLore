@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createSillyTavernExtensionPromptAdapter } from '../src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernContextBridge } from '../src/integrations/sillytavern-context-bridge.js';
 import { createSillyTavernContextInterceptor } from '../src/integrations/sillytavern-context-interceptor.js';
+import { createSillyTavernContextRequestFactory } from '../src/integrations/sillytavern-context-request-factory.js';
 
 const packageFixture = Object.freeze({
     byPosition: {
@@ -83,4 +84,26 @@ test('context interceptor isolates bridge failures by default', async () => {
 
     await interceptor('message');
     assert.equal(nextCalled, true);
+});
+
+test('context request includes the active chat id for summary contribution', async () => {
+    const fullChat = [
+        { is_user: true, mes: 'Question' },
+        { is_user: false, mes: 'Latest reply' },
+    ];
+    const factory = createSillyTavernContextRequestFactory({
+        getChatId: () => 'chat-42',
+        getContext: () => ({ chat: fullChat }),
+    });
+
+    const request = await factory({
+        chat: [fullChat[1]],
+        contextSize: 8000,
+        type: 'normal',
+    });
+
+    assert.equal(request.contextRequest.chatId, 'chat-42');
+    assert.equal(request.postReply.chatId, 'chat-42');
+    assert.equal(request.postReply.messageCount, 2);
+    assert.equal(request.postReply.context.chatLength, 2);
 });

@@ -1,3 +1,5 @@
+import { linkExtensionSettingsNamespaces } from '../core/settings.js';
+
 export const SUMMARY_ENGINE_MODES = Object.freeze({
     LEGACY: 'legacy',
     MODULAR: 'modular',
@@ -7,19 +9,11 @@ export function createSummaryCompatibilityCoordinator({
     settings,
     extensionSettings,
     logger,
-    restoreDelayMs = 1_500,
-    schedule = setTimeout,
-    cancel = clearTimeout,
 } = {}) {
     if (!settings) throw new TypeError('Summary compatibility coordinator requires settings.');
     if (!extensionSettings || typeof extensionSettings !== 'object') {
         throw new TypeError('Summary compatibility coordinator requires extension settings.');
     }
-
-    const originalLegacySettings = extensionSettings.nemolore
-        ? structuredClone(extensionSettings.nemolore)
-        : null;
-    let restoreTimer = null;
 
     function mode() {
         return settings.summaryEngineMode === SUMMARY_ENGINE_MODES.MODULAR
@@ -36,19 +30,9 @@ export function createSummaryCompatibilityCoordinator({
     }
 
     function prepareLegacyImport() {
+        linkExtensionSettingsNamespaces(extensionSettings);
         if (!needsSuppression()) return false;
-        extensionSettings.nemolore ??= {};
-        if (mode() === SUMMARY_ENGINE_MODES.MODULAR) {
-            Object.assign(extensionSettings.nemolore, {
-                enableSummarization: false,
-                autoSummarize: false,
-                enablePairedSummarization: false,
-            });
-        }
-        if (loreMode() === 'modular') {
-            extensionSettings.nemolore.autoMode = false;
-        }
-        logger?.info('Suppressed legacy automatic generation for selected modular engines.', {
+        logger?.info('Selected modular engines will gate legacy automatic generation.', {
             summaryMode: mode(),
             loreMode: loreMode(),
         });
@@ -56,19 +40,11 @@ export function createSummaryCompatibilityCoordinator({
     }
 
     function restoreNow() {
-        if (!originalLegacySettings || !needsSuppression()) return false;
-        if (restoreTimer) cancel(restoreTimer);
-        restoreTimer = null;
-        Object.assign(extensionSettings.nemolore, originalLegacySettings);
-        logger?.debug('Restored persisted legacy preferences after modular suppression.');
-        return true;
+        return false;
     }
 
     function restorePersistedSettings() {
-        if (!originalLegacySettings || !needsSuppression()) return false;
-        if (restoreTimer) cancel(restoreTimer);
-        restoreTimer = schedule(() => restoreNow(), restoreDelayMs);
-        return true;
+        return false;
     }
 
     function shouldRunModularSummary() {
@@ -83,10 +59,7 @@ export function createSummaryCompatibilityCoordinator({
             && Boolean(settings.helperLoreAfterReply);
     }
 
-    function dispose() {
-        if (restoreTimer) cancel(restoreTimer);
-        restoreTimer = null;
-    }
+    function dispose() {}
 
     return Object.freeze({
         mode,
@@ -97,6 +70,6 @@ export function createSummaryCompatibilityCoordinator({
         shouldRunModularSummary,
         shouldRunModularLore,
         dispose,
-        get restorePending() { return Boolean(restoreTimer); },
+        get restorePending() { return false; },
     });
 }

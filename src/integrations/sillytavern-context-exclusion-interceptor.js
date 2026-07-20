@@ -25,6 +25,11 @@ export function createSillyTavernContextExclusionInterceptor({
             hiddenCount: result.hiddenCount,
             visibleCount: result.visibleCount,
         });
-        return next(result.visible, contextSize, abort, type);
+
+        if (result.hiddenCount > 0 && Array.isArray(chat)) {
+            chat.splice(0, result.hiddenCount);
+        }
+
+        return next(chat, contextSize, abort, type);
     };
 }

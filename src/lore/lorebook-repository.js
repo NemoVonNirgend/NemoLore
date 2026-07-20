@@ -1,3 +1,6 @@
+import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
+import { createActiveChatGuard } from '../core/active-chat-guard.js';
+import { createKeyedLock } from '../core/keyed-lock.js';
 import { MODULE_NAME, NEMOLORE_LOREBOOK_PREFIX } from '../core/constants.js';
 
 function buildLorebookName(chatId, now = Date.now()) {
@@ -14,25 +17,29 @@ function buildLorebookName(chatId, now = Date.now()) {
 export function createLorebookRepository({
     adapter,
     metadata,
+    getMetadata,
     saveMetadata,
     metadataKey,
     state,
     logger,
+    getActiveChatId,
     clock = Date,
 }) {
     if (!adapter) throw new TypeError('Lorebook repository requires an adapter.');
-    if (!metadata || typeof metadata !== 'object') {
-        throw new TypeError('Lorebook repository requires mutable chat metadata.');
-    }
+    const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Lorebook repository');
     if (typeof saveMetadata !== 'function') {
         throw new TypeError('Lorebook repository requires saveMetadata().');
     }
+    const ensureLock = createKeyedLock();
 
     function getAssociatedName() {
+        const metadata = currentMetadata();
         return metadata.nemolore?.lorebook ?? metadata[metadataKey] ?? null;
     }
 
-    async function associate(name) {
+    async function associate(name, { shouldCommit } = {}) {
+        if (shouldCommit && !shouldCommit()) return null;
+        const metadata = currentMetadata();
         metadata[metadataKey] = name;
         metadata.nemolore ??= {};
         Object.assign(metadata.nemolore, {
@@ -46,21 +53,33 @@ export function createLorebookRepository({
         return name;
     }
 
-    async function ensureForChat(chatId) {
-        const existing = getAssociatedName();
-        if (existing) {
-            state.raw.lifecycle.currentChatLorebook = existing;
-            return existing;
-        }
+    async function ensureForChat(chatId, { shouldCommit } = {}) {
+        const canCommit = shouldCommit ?? createActiveChatGuard(getActiveChatId, chatId);
+        return ensureLock.run(`lorebook:${chatId}`, async () => {
+            if (!canCommit()) return null;
 
-        const name = buildLorebookName(chatId, clock.now());
-        await adapter.create(name);
+            // Recheck inside the per-chat lock because another concurrent
+            // ensure may have created and associated the book while waiting.
+            const existing = getAssociatedName();
+            if (existing) {
+                state.raw.lifecycle.currentChatLorebook = existing;
+                return existing;
+            }
 
-        metadata.nemolore ??= {};
-        metadata.nemolore.created_at = clock.now();
-        await associate(name);
-        logger?.info('Created chat lorebook.', { chatId, name });
-        return name;
+            const name = buildLorebookName(chatId, clock.now());
+            await adapter.create(name);
+            if (!canCommit()) {
+                await adapter.remove?.(name);
+                return null;
+            }
+
+            const metadata = currentMetadata();
+            metadata.nemolore ??= {};
+            metadata.nemolore.created_at = clock.now();
+            await associate(name, { shouldCommit: canCommit });
+            logger?.info('Created chat lorebook.', { chatId, name });
+            return name;
+        });
     }
 
     async function load(name = getAssociatedName()) {
@@ -68,23 +87,33 @@ export function createLorebookRepository({
         return adapter.load(name);
     }
 
-    async function createEntry(initializer, name = getAssociatedName()) {
+    async function createEntry(initializer, name = getAssociatedName(), options = {}) {
         if (!name) throw new Error('Cannot create an entry without an associated lorebook.');
-        return adapter.addEntry(name, initializer);
+        if (options.shouldCommit && !options.shouldCommit()) return null;
+        return options.shouldCommit
+            ? adapter.addEntry(name, initializer, options)
+            : adapter.addEntry(name, initializer);
     }
 
-    async function updateEntry(uid, patch, name = getAssociatedName()) {
+    async function updateEntry(uid, patch, name = getAssociatedName(), options = {}) {
         if (!name) throw new Error('Cannot update an entry without an associated lorebook.');
-        return adapter.updateEntry(name, uid, patch);
+        if (options.shouldCommit && !options.shouldCommit()) return null;
+        return options.shouldCommit
+            ? adapter.updateEntry(name, uid, patch, options)
+            : adapter.updateEntry(name, uid, patch);
     }
 
-    async function removeEntry(uid, name = getAssociatedName()) {
+    async function removeEntry(uid, name = getAssociatedName(), options = {}) {
         if (!name) throw new Error('Cannot remove an entry without an associated lorebook.');
-        return adapter.removeEntry(name, uid);
+        if (options.shouldCommit && !options.shouldCommit()) return false;
+        return options.shouldCommit
+            ? adapter.removeEntry(name, uid, options)
+            : adapter.removeEntry(name, uid);
     }
 
     async function detach() {
         const previous = getAssociatedName();
+        const metadata = currentMetadata();
         delete metadata[metadataKey];
         if (metadata.nemolore) delete metadata.nemolore.lorebook;
         state.raw.lifecycle.currentChatLorebook = null;

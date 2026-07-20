@@ -89,6 +89,50 @@ export const DEFAULT_SETTINGS = Object.freeze({
     observabilityHistoryLimit: 100,
 });
 
+export const SETTINGS_NAMESPACE = 'nemolore';
+export const LEGACY_SETTINGS_NAMESPACE = 'NemoLore';
+
+function isSettingsObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function linkExtensionSettingsNamespaces(extensionSettings) {
+    if (!extensionSettings || typeof extensionSettings !== 'object') {
+        throw new TypeError('Extension settings must be an object.');
+    }
+
+    const canonical = isSettingsObject(extensionSettings[SETTINGS_NAMESPACE])
+        ? extensionSettings[SETTINGS_NAMESPACE]
+        : null;
+    const legacy = isSettingsObject(extensionSettings[LEGACY_SETTINGS_NAMESPACE])
+        ? extensionSettings[LEGACY_SETTINGS_NAMESPACE]
+        : null;
+    // The original extension has historically written to the uppercase
+    // namespace. Keep that object authoritative during an upgrade so a stale
+    // lowercase snapshot cannot silently replace user-selected legacy modes.
+    // Lowercase-only modular settings are copied across before both names are
+    // linked to the same live object.
+    const shared = legacy ?? canonical ?? {};
+
+    if (canonical && legacy && canonical !== legacy) {
+        for (const [key, value] of Object.entries(canonical)) {
+            if (!(key in legacy)) legacy[key] = value;
+        }
+    }
+
+    extensionSettings[SETTINGS_NAMESPACE] = shared;
+    extensionSettings[LEGACY_SETTINGS_NAMESPACE] = shared;
+    return shared;
+}
+
+export function isLegacySummaryEngine(settings = {}) {
+    return settings.summaryEngineMode !== 'modular';
+}
+
+export function isLegacyLoreEngine(settings = {}) {
+    return settings.loreEngineMode !== 'modular';
+}
+
 export function createSettings(overrides = {}) {
     return {
         ...DEFAULT_SETTINGS,
@@ -98,6 +142,15 @@ export function createSettings(overrides = {}) {
             ...(overrides.chatSummaries ?? {}),
         },
     };
+}
+
+export function applySettingsDefaults(settings) {
+    if (!isSettingsObject(settings)) {
+        throw new TypeError('Settings must be an object.');
+    }
+
+    Object.assign(settings, createSettings(settings));
+    return settings;
 }
 
 export function mergeSettings(storedSettings = {}) {

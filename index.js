@@ -36,8 +36,15 @@ import {
     DEFAULT_DEPTH, 
     DEFAULT_WEIGHT, 
     world_info_logic, 
-    world_info_position 
+    world_info_position
 } from '../../../world-info.js';
+import {
+    isLegacyLoreEngine,
+    isLegacySummaryEngine,
+    linkExtensionSettingsNamespaces,
+} from './src/core/settings.js';
+import { writeLegacyCoreMemory } from './src/integrations/legacy-core-memory-world-info.js';
+import { highlightTextSegments } from './src/ui/highlighting.js';
 
 const MODULE_NAME = 'NemoLore';
 const EXTENSION_NAME = 'nemolore';
@@ -233,6 +240,7 @@ let nemoLoreSettings = {
     
     // Message summarization settings
     enableSummarization: true,
+    summaryEngineMode: 'legacy',
     connectionProfile: '',  // Connection profile for summarization (like qvink)
     completionPreset: '',   // Completion preset for summarization
     prefill: '', // Default prefill for summarization
@@ -255,6 +263,7 @@ let nemoLoreSettings = {
     linkSummariesToAI: true,        // Only link summaries to AI messages, not user messages
     
     // Automatic lorebook creation (independent of Lorebook Manager)
+    loreEngineMode: 'legacy',
     autoCreateLorebook: true,       // Automatically create lorebook for new chats
     
     // Persistent storage for summaries (per chat)
@@ -290,6 +299,14 @@ let nemoLoreSettings = {
     asyncApiModel: '',
     asyncApiEndpoint: ''
 };
+
+function legacySummaryAutomationEnabled() {
+    return isLegacySummaryEngine(nemoLoreSettings);
+}
+
+function legacyLoreAutomationEnabled() {
+    return isLegacyLoreEngine(nemoLoreSettings);
+}
 
 let isInitialized = false;
 let currentChatLorebook = null;
@@ -562,106 +579,31 @@ class NounDetector {
     static highlightNouns(element, nouns) {
         if (!nemoLoreSettings.highlightNouns) return;
 
-        // Check if already highlighted to prevent duplicates
         if (element.hasAttribute('data-nemolore-processed')) {
             return;
         }
 
-        let html = element.innerHTML;
-        const originalHtml = html;
-        let hasHighlights = false;
-        
         console.log(`[${MODULE_NAME}] Attempting to highlight nouns:`, nouns);
-        console.log(`[${MODULE_NAME}] Original HTML:`, html.substring(0, 200) + '...');
-        
-        // Sort nouns by length (longest first) to process compound nouns before individual words
-        const sortedNouns = [...nouns].sort((a, b) => b.length - a.length);
-        
-        sortedNouns.forEach(noun => {
-            // Simple check - skip if this exact noun is already highlighted
-            if (html.includes(`data-noun="${noun}"`)) {
-                console.log(`[${MODULE_NAME}] Skipping already highlighted noun: ${noun}`);
-                return;
-            }
-            
-            // Create a simple word boundary regex
-            const escapedNoun = noun.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const regex = new RegExp(`\\b(${escapedNoun})\\b`, 'gi');
-            
-            let matchCount = 0;
-            const newHtml = html.replace(regex, (match) => {
-                matchCount++;
-                console.log(`[${MODULE_NAME}] Highlighting "${match}" (match ${matchCount})`);
-                return `<span class="nemolore-highlighted-noun" 
-                           data-noun="${noun}" 
-                           role="button" 
-                           tabindex="0" 
-                           aria-label="Lorebook entry for ${noun}. Press Enter to view, or hold on mobile."
-                           title="Click for lorebook info, hold on mobile">${match}</span>`;
-            });
-            
-            if (matchCount > 0) {
-                hasHighlights = true;
-                html = newHtml;
-                console.log(`[${MODULE_NAME}] Successfully highlighted "${noun}" in ${matchCount} places`);
-            } else {
-                console.log(`[${MODULE_NAME}] No matches found for: "${noun}"`);
-            }
-        });
+        const result = highlightTextSegments(element, nouns);
 
-        if (hasHighlights) {
-            // Validate HTML before setting it
-            if (this.isValidHTML(html)) {
-                element.innerHTML = html;
-                element.setAttribute('data-nemolore-processed', 'true');
-                highlightedNouns = new Set([...highlightedNouns, ...nouns]);
-                console.log(`[${MODULE_NAME}] Successfully applied highlighting, HTML updated`);
-                
-                // Verify the highlighting was applied
-                setTimeout(() => {
-                    const spans = element.querySelectorAll('.nemolore-highlighted-noun');
-                    console.log(`[${MODULE_NAME}] Verification: ${spans.length} highlighted spans found in DOM`);
-                    if (spans.length === 0) {
-                        console.error(`[${MODULE_NAME}] ISSUE: Highlighting disappeared after applying!`);
-                    }
-                }, 50);
-            } else {
-                console.error(`[${MODULE_NAME}] Generated invalid HTML, reverting to original`);
-                element.innerHTML = originalHtml;
-                element.setAttribute('data-nemolore-processed', 'true');
-            }
-        } else {
+        if (!result.changed) {
             console.log(`[${MODULE_NAME}] No highlighting applied`);
+            return;
         }
+
+        element.setAttribute('data-nemolore-processed', 'true');
+        highlightedNouns = new Set([...highlightedNouns, ...nouns]);
+        console.log(`[${MODULE_NAME}] Successfully applied ${result.count} noun highlights`);
+
+        setTimeout(() => {
+            const spans = element.querySelectorAll('.nemolore-highlighted-noun');
+            console.log(`[${MODULE_NAME}] Verification: ${spans.length} highlighted spans found in DOM`);
+            if (spans.length === 0) {
+                console.error(`[${MODULE_NAME}] ISSUE: Highlighting disappeared after applying!`);
+            }
+        }, 50);
     }
 
-    static isValidHTML(html) {
-        // Basic validation to check for malformed HTML
-        try {
-            // Count opening and closing span tags
-            const openSpans = (html.match(/<span[^>]*>/g) || []).length;
-            const closeSpans = (html.match(/<\/span>/g) || []).length;
-            
-            // Check for malformed attributes (like unclosed quotes)
-            const hasUnclosedQuotes = /data-noun="[^"]*</.test(html);
-            const hasNestedSpans = /data-noun="[^"]*<span/.test(html);
-            
-            if (openSpans !== closeSpans) {
-                console.warn(`[${MODULE_NAME}] Mismatched span tags: ${openSpans} open, ${closeSpans} close`);
-                return false;
-            }
-            
-            if (hasUnclosedQuotes || hasNestedSpans) {
-                console.warn(`[${MODULE_NAME}] Malformed HTML detected`);
-                return false;
-            }
-            
-            return true;
-        } catch (error) {
-            console.error(`[${MODULE_NAME}] HTML validation error:`, error);
-            return false;
-        }
-    }
 }
 
 // Lorebook management
@@ -1039,6 +981,8 @@ function getMessageIndexFromElement(messageElement) {
 
 // Intelligent lorebook setup flow
 async function handleIntelligentLorebookSetup(chatId) {
+    if (!legacyLoreAutomationEnabled()) return;
+
     isLorebookCreationInProgress = true;
     
     try {
@@ -1249,6 +1193,8 @@ async function offerLorebookEnhancement(lorebookName) {
 
 // Helper function to offer summary setup
 async function offerSummarySetup() {
+    if (!legacySummaryAutomationEnabled()) return;
+
     if (!nemoLoreSettings.enableSummarization) {
         isPopupActive = true;
         let action;
@@ -2208,6 +2154,7 @@ SUMMARY REQUIREMENTS:
 
     // Automatic Lorebook Creation (independent of Lorebook Manager)
     static async createAutoLorebook(chatId) {
+        if (!legacyLoreAutomationEnabled()) return null;
         if (!nemoLoreSettings.autoCreateLorebook) return null;
         
         try {
@@ -2395,28 +2342,80 @@ SUMMARY REQUIREMENTS:
     }
 
     static async addToCoreMemoryEntry(summaryData, originalMessage, messageIndex) {
-        const CORE_MEMORY_ENTRY_NAME = 'Core Memories';
-        const CORE_MEMORY_KEY = 'core_memories';
-        
         try {
             // Check if lorebook creation is enabled
             if (!nemoLoreSettings.createLorebookOnChat) {
                 console.log(`[${MODULE_NAME}] Lorebook creation disabled, skipping core memory entry`);
                 return;
             }
+            if (!currentChatLorebook) {
+                console.warn(`[${MODULE_NAME}] No chat lorebook is associated; skipping core memory entry`);
+                return;
+            }
+
+            const timestamp = new Date(summaryData.timestamp).toLocaleString();
+            const speaker = originalMessage.name || (originalMessage.is_user ? 'User' : 'Assistant');
+            const memoryText = `**${timestamp}** *(Message ${messageIndex})* - ${speaker}:
+${summaryData.text}
+
+`;
+            const result = await writeLegacyCoreMemory({
+                lorebookName: currentChatLorebook,
+                loadWorldInfo,
+                createWorldInfoEntry,
+                saveWorldInfo,
+                entryTemplate: {
+                    comment: 'Core Memories',
+                    content: `## Core Memories
+*Significant moments and pivotal events from our story*
+
+---
+
+`,
+                    key: ['core_memories', 'important_moments', 'pivotal_events'],
+                    keysecondary: ['memories', 'story_moments', 'narrative'],
+                    selective: false,
+                    constant: true,
+                    vectorized: true,
+                    order: 100,
+                    position: world_info_position.before,
+                    disable: false,
+                    addMemo: true,
+                    excludeRecursion: false,
+                    delayUntilRecursion: false,
+                    displayIndex: 0,
+                    probability: 100,
+                    useProbability: false,
+                    depth: DEFAULT_DEPTH,
+                    selectiveLogic: 0,
+                    group: 'Story',
+                    groupOverride: false,
+                    groupWeight: DEFAULT_WEIGHT,
+                    scanDepth: null,
+                    caseSensitive: null,
+                    matchWholeWords: null,
+                    useGroupScoring: null,
+                    automationId: '',
+                    role: 0,
+                    sticky: null,
+                    cooldown: null,
+                    delay: null,
+                },
+                memoryText,
+            });
             
             // Look for existing Core Memory entry
-            let coreMemoryEntry = this.findCoreMemoryEntry();
+            const coreMemoryEntry = result.entry;
             
-            if (!coreMemoryEntry) {
+            if (result.created) {
                 // Create the initial Core Memory entry
-                coreMemoryEntry = await this.createInitialCoreMemoryEntry();
+                // The current SillyTavern writer already persisted the new entry.
                 console.log(`[${MODULE_NAME}] Created initial Core Memory lorebook entry`);
                 toastr.info(`📚 Created Core Memories lorebook entry`);
             }
             
             // Add this core memory to the entry
-            await this.appendToCoreMemoryEntry(coreMemoryEntry, summaryData, originalMessage, messageIndex);
+            console.log(`[${MODULE_NAME}] Appended core memory to lorebook entry ${coreMemoryEntry.uid}`);
             
             toastr.success(`🌟 Core memory added to lorebook!`);
             console.log(`[${MODULE_NAME}] Added core memory to lorebook: "${summaryData.text.substring(0, 50)}..."`);
@@ -2427,108 +2426,13 @@ SUMMARY REQUIREMENTS:
         }
     }
 
-    static findCoreMemoryEntry() {
-        // Search for existing Core Memory entry in current world info
-        const worldInfo = world_names.get(characters[this_chid]?.data?.world) || {};
-        if (!worldInfo.entries) return null;
-        
-        // Look for entry with the Core Memory comment/title
-        for (const [uid, entry] of Object.entries(worldInfo.entries)) {
-            if (entry.comment === 'Core Memories' || 
-                entry.key.includes('core_memories') ||
-                entry.content.includes('## Core Memories')) {
-                return { uid, ...entry };
-            }
-        }
-        
-        return null;
-    }
-
-    static async createInitialCoreMemoryEntry() {
-        const initialContent = `## Core Memories
-*Significant moments and pivotal events from our story*
-
----
-
-`;
-
-        const newEntry = createWorldInfoEntry({
-            comment: 'Core Memories',
-            content: initialContent,
-            key: ['core_memories', 'important_moments', 'pivotal_events'],
-            keysecondary: ['memories', 'story_moments', 'narrative'],
-            selective: false,
-            constant: true, // Always active
-            vectorized: true, // Enable for better retrieval
-            order: 100, // High priority
-            position: world_info_position.before,
-            disable: false,
-            addMemo: true,
-            excludeRecursion: false,
-            delayUntilRecursion: false,
-            displayIndex: 0,
-            probability: 100,
-            useProbability: false,
-            depth: DEFAULT_DEPTH,
-            selectiveLogic: 0,
-            group: 'Story',
-            groupOverride: false,
-            groupWeight: DEFAULT_WEIGHT,
-            scanDepth: null,
-            caseSensitive: null,
-            matchWholeWords: null,
-            useGroupScoring: null,
-            automationId: '',
-            role: 0,
-            sticky: null,
-            cooldown: null,
-            delay: null
-        });
-
-        // Save the world info
-        await saveWorldInfo();
-        
-        return newEntry;
-    }
-
-    static async appendToCoreMemoryEntry(coreMemoryEntry, summaryData, originalMessage, messageIndex) {
-        const timestamp = new Date(summaryData.timestamp).toLocaleString();
-        const speaker = originalMessage.name || (originalMessage.is_user ? 'User' : 'Assistant');
-        
-        // Create formatted core memory entry
-        const newMemoryEntry = `**${timestamp}** *(Message ${messageIndex})* - ${speaker}:
-${summaryData.text}
-
-`;
-
-        // Append to existing content (before the last ---)
-        let updatedContent = coreMemoryEntry.content;
-        
-        // If there's a trailing --- section, insert before it
-        if (updatedContent.includes('---\n')) {
-            const parts = updatedContent.split('---\n');
-            if (parts.length >= 2) {
-                // Insert before the last --- section
-                updatedContent = parts[0] + newMemoryEntry + '---\n' + parts.slice(1).join('---\n');
-            } else {
-                // Just append
-                updatedContent += newMemoryEntry;
-            }
-        } else {
-            // No --- section, just append
-            updatedContent += newMemoryEntry;
-        }
-        
-        // Update the entry content
-        coreMemoryEntry.content = updatedContent;
-        
-        // Save the updated world info
-        await saveWorldInfo();
-        
-        console.log(`[${MODULE_NAME}] Appended core memory to lorebook entry`);
-    }
-
     static async processSummaryQueue() {
+        if (!legacySummaryAutomationEnabled()) {
+            summaryProcessingQueue.length = 0;
+            this.hideProgressBar();
+            return;
+        }
+
         console.log(`[${MODULE_NAME}] processSummaryQueue called, isProcessingSummaries: ${isProcessingSummaries}, queue length: ${summaryProcessingQueue.length}`);
         
         if (isProcessingSummaries || summaryProcessingQueue.length === 0) {
@@ -2552,6 +2456,11 @@ ${summaryData.text}
             
             let processed = 0;
             while (summaryProcessingQueue.length > 0) {
+                if (!legacySummaryAutomationEnabled()) {
+                    summaryProcessingQueue.length = 0;
+                    break;
+                }
+
                 const messageIndex = summaryProcessingQueue.shift();
                 console.log(`[${MODULE_NAME}] Processing message ${messageIndex}, ${summaryProcessingQueue.length} remaining`);
                 
@@ -3035,6 +2944,9 @@ ${summaryData.text}
     }
 
     static async checkForLorebookCreation() {
+        // This legacy flow always schedules legacy summary generation.
+        if (!legacySummaryAutomationEnabled()) return;
+
         console.log(`[${MODULE_NAME}] checkForLorebookCreation called`);
         
         // Wait for any active popups to complete to prevent overlap
@@ -3062,6 +2974,7 @@ ${summaryData.text}
             console.log(`[${MODULE_NAME}] Large existing chat detected (${unsummarizedCount} unsummarized), using bulk processing`);
             await this.promptForBulkProcessing(unsummarizedCount);
         } else {
+            if (!legacyLoreAutomationEnabled()) return;
             // New or small chat - use normal lorebook creation flow
             console.log(`[${MODULE_NAME}] Small chat detected, using lorebook creation flow`);
             await this.promptForLorebookCreation();
@@ -3144,6 +3057,8 @@ ${summaryData.text}
     }
 
     static async processBulkSummarization() {
+        if (!legacySummaryAutomationEnabled()) return;
+
         console.log(`[${MODULE_NAME}] processBulkSummarization called`);
         
         const context = getContext();
@@ -3267,6 +3182,8 @@ Provide a comprehensive but concise summary that preserves the essential narrati
     }
 
     static async processLorebookCreation() {
+        if (!legacyLoreAutomationEnabled() || !legacySummaryAutomationEnabled()) return;
+
         console.log(`[${MODULE_NAME}] processLorebookCreation called`);
         
         const context = getContext();
@@ -3683,6 +3600,8 @@ Provide a brief summary that preserves the essential narrative elements and any 
     }
 
     static queueMessageForSummary(messageIndex) {
+        if (!legacySummaryAutomationEnabled()) return;
+
         if (!nemoLoreSettings.enableSummarization) {
             console.log(`[${MODULE_NAME}] Summarization disabled`);
             return;
@@ -3727,6 +3646,8 @@ Provide a brief summary that preserves the essential narrative elements and any 
 
     // Context management for AI - replacing messages with summaries in context
     static shouldExcludeFromContext(messageIndex) {
+        if (!legacySummaryAutomationEnabled()) return false;
+
         // Don't exclude if summarization is disabled
         if (!nemoLoreSettings.enableSummarization || !nemoLoreSettings.hideMessagesWhenThreshold) return false;
         
@@ -3786,7 +3707,7 @@ Provide a brief summary that preserves the essential narrative elements and any 
     static refreshMemoryInjection() {
         // Update the context injection with current summaries
         const context = getContext();
-        if (!context || !nemoLoreSettings.enableSummarization) {
+        if (!context || !legacySummaryAutomationEnabled() || !nemoLoreSettings.enableSummarization) {
             // Clear injection if disabled
             context?.setExtensionPrompt?.(`${MODULE_NAME}_summary_memory`, "");
             return;
@@ -4018,7 +3939,7 @@ Provide a brief summary that preserves the essential narrative elements and any 
     static async enhancedMemoryInjection() {
         // Ultra-enhanced version using LLM-based memory management and hierarchical summaries
         const context = getContext();
-        if (!context || !nemoLoreSettings.enableSummarization) {
+        if (!context || !legacySummaryAutomationEnabled() || !nemoLoreSettings.enableSummarization) {
             context?.setExtensionPrompt?.(`${MODULE_NAME}_summary_memory`, "");
             return;
         }
@@ -4057,6 +3978,7 @@ Provide a brief summary that preserves the essential narrative elements and any 
     static async traditionalMemoryInjection() {
         // Fallback method using original approach
         const context = getContext();
+        if (!legacySummaryAutomationEnabled()) return this.refreshMemoryInjection();
         
         // Get regular summaries
         const summaries = this.collectSummariesForInjection();
@@ -4703,6 +4625,8 @@ class AsyncAPI {
 // Global message interceptor function - called by SillyTavern before sending to AI
 // This must match the "generate_interceptor" key in manifest.json
 globalThis.nemolore_intercept_messages = function (chat, contextSize, abort, type) {
+    if (!legacySummaryAutomationEnabled()) return;
+
     if (!nemoLoreSettings.enableSummarization || !nemoLoreSettings.hideMessagesWhenThreshold) {
         return; // Do nothing if summarization disabled
     }
@@ -4838,7 +4762,9 @@ function processNewMessage(messageElement) {
     }
 
     // Automatic summarization for new messages during ongoing conversation
-    if (nemoLoreSettings.enableSummarization) {
+    if (legacySummaryAutomationEnabled()
+        && nemoLoreSettings.autoSummarize
+        && nemoLoreSettings.enableSummarization) {
         const messageIndex = getMessageIndexFromElement(messageElement);
         
         if (messageIndex >= 0) {
@@ -4961,7 +4887,13 @@ async function handleChatChanged() {
     debugLog(`[${MODULE_NAME}] Chat changed to: ${chatId}`);
     
     // Intelligent lorebook setup flow
-    await handleIntelligentLorebookSetup(chatId);
+    if (legacyLoreAutomationEnabled()) {
+        await handleIntelligentLorebookSetup(chatId);
+    } else {
+        currentChatLorebook = chat_metadata[METADATA_KEY]
+            ?? chat_metadata.nemolore?.lorebook
+            ?? null;
+    }
     
     // Load existing summaries for this chat
     if (nemoLoreSettings.enableSummarization) {
@@ -5561,6 +5493,8 @@ async function enhanceExistingLorebook(lorebookName) {
 
 let messageCount = 0;
 function checkForPeriodicUpdate() {
+    if (!legacyLoreAutomationEnabled()) return;
+
     if (!nemoLoreSettings.autoMode && !currentChatLorebook) return;
     
     messageCount++;
@@ -5589,6 +5523,8 @@ function checkForPeriodicUpdate() {
 }
 
 async function performPeriodicUpdate() {
+    if (!legacyLoreAutomationEnabled()) return;
+
     // Implementation for periodic lorebook updates
     console.log(`[${MODULE_NAME}] Performing periodic lorebook update`);
     // This would involve analyzing recent chat content and updating/creating entries
@@ -5753,12 +5689,15 @@ function updateSummaryCount() {
 
 // Settings management
 function loadSettings() {
-    if (extension_settings[MODULE_NAME]) {
-        Object.assign(nemoLoreSettings, extension_settings[MODULE_NAME]);
-    }
+    const defaults = nemoLoreSettings;
+    const shared = linkExtensionSettingsNamespaces(extension_settings);
+    const stored = { ...shared };
+    Object.assign(shared, defaults, stored);
+    nemoLoreSettings = shared;
 }
 
 function saveSettings() {
+    extension_settings[EXTENSION_NAME] = nemoLoreSettings;
     extension_settings[MODULE_NAME] = nemoLoreSettings;
     saveSettingsDebounced();
 }
@@ -7455,11 +7394,9 @@ async function runSystemCheck() {
 // Load settings HTML manually (required for third-party extensions)
 async function loadSettingsHTML() {
     try {
-        // Get the current script path dynamically to avoid hardcoded paths
-        const scriptElement = document.querySelector('script[src*="NemoLore/index.js"]');
-        const scriptPath = scriptElement ? scriptElement.src : '';
-        const extensionPath = scriptPath.replace(/\/index\.js.*$/, '');
-        const settingsUrl = `${extensionPath}/settings.html`;
+        // Resolve from this module because bootstrap.js loads index.js with a dynamic import,
+        // which does not create a script element that can be discovered in the document.
+        const settingsUrl = new URL('./settings.html', import.meta.url);
         
         const response = await fetch(settingsUrl);
         if (!response.ok) {

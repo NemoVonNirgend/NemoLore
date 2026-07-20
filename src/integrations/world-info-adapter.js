@@ -53,16 +53,23 @@ export function createWorldInfoAdapter({
         return data;
     }
 
-    async function addEntry(name, initializer = {}) {
+    async function addEntry(name, initializer = {}, { shouldCommit } = {}) {
+        if (shouldCommit && !shouldCommit()) return null;
         const data = await load(name);
-        const entry = createEntry(data);
+        if (shouldCommit && !shouldCommit()) return null;
+        const entry = createEntry.length === 1
+            ? createEntry(data)
+            : createEntry(name, data);
         Object.assign(entry, initializer);
+        if (shouldCommit && !shouldCommit()) return null;
         await save(name, data);
         return entry;
     }
 
-    async function updateEntry(name, uid, patch) {
+    async function updateEntry(name, uid, patch, { shouldCommit } = {}) {
+        if (shouldCommit && !shouldCommit()) return null;
         const data = await load(name);
+        if (shouldCommit && !shouldCommit()) return null;
         const entries = data.entries ?? {};
         const entry = entries[uid] ?? Object.values(entries).find(candidate => candidate?.uid === uid);
 
@@ -70,13 +77,16 @@ export function createWorldInfoAdapter({
             throw new Error(`Lorebook entry ${uid} was not found in ${name}.`);
         }
 
+        if (shouldCommit && !shouldCommit()) return null;
         Object.assign(entry, patch);
         await save(name, data);
         return entry;
     }
 
-    async function removeEntry(name, uid) {
+    async function removeEntry(name, uid, { shouldCommit } = {}) {
+        if (shouldCommit && !shouldCommit()) return false;
         const data = await load(name);
+        if (shouldCommit && !shouldCommit()) return false;
         const entries = data.entries ?? {};
         let key = Object.prototype.hasOwnProperty.call(entries, uid) ? uid : null;
 
@@ -85,6 +95,7 @@ export function createWorldInfoAdapter({
         }
 
         if (key === null) return false;
+        if (shouldCommit && !shouldCommit()) return false;
         delete entries[key];
         await save(name, data);
         return true;

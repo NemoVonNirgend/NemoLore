@@ -45,6 +45,25 @@ test('summary and lore generation can overlap', async () => {
     assert.equal(metadata.nemolore.summaries.chat.text, 'They escaped the station.');
 });
 
+test('summary store follows replaced SillyTavern chat metadata', async () => {
+    const chatA = {};
+    const chatB = {};
+    let activeMetadata = chatA;
+    const store = createSummaryStore({
+        getMetadata: () => activeMetadata,
+        saveMetadata: async () => {},
+        clock: { now: () => 10 },
+    });
+
+    await store.save('chat-a', { text: 'Summary A' });
+    activeMetadata = chatB;
+    assert.equal(store.get('chat-a'), null);
+    await store.save('chat-b', { text: 'Summary B' });
+
+    assert.equal(chatA.nemolore.summaries['chat-a'].text, 'Summary A');
+    assert.equal(chatB.nemolore.summaries['chat-b'].text, 'Summary B');
+});
+
 test('same-key lore writes are serialized', async () => {
     const lock = createKeyedLock();
     let active = 0;
@@ -59,4 +78,46 @@ test('same-key lore writes are serialized', async () => {
 
     assert.equal(peak, 1);
     assert.deepEqual(values, [1, 2, 3]);
+});
+
+test('same-chat summary generations commit in invocation order', async () => {
+    let releaseFirst;
+    let markFirstStarted;
+    const firstStarted = new Promise(resolve => { markFirstStarted = resolve; });
+    const heldFirst = new Promise(resolve => { releaseFirst = resolve; });
+    const requests = [];
+    const generation = {
+        async generate(request) {
+            requests.push(request);
+            if (requests.length === 1) {
+                markFirstStarted();
+                await heldFirst;
+                return { text: 'Older reply summary.' };
+            }
+            return { text: 'Newer reply summary.' };
+        },
+    };
+    const metadata = {};
+    const store = createSummaryStore({ metadata, saveMetadata: async () => {} });
+    const summary = createSummaryService({ generation, store, settings: {} });
+
+    const older = summary.summarize({
+        chatId: 'chat',
+        messages: [{ id: 'old', mes: 'Older reply.' }],
+    });
+    await firstStarted;
+    const newer = summary.summarize({
+        chatId: 'chat',
+        messages: [{ id: 'new', mes: 'Newer reply.' }],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(requests.length, 1);
+    releaseFirst();
+    await Promise.all([older, newer]);
+
+    assert.equal(requests.length, 2);
+    assert.match(requests[1].prompt, /Older reply summary\./);
+    assert.equal(store.get('chat').text, 'Newer reply summary.');
+    assert.deepEqual(store.get('chat').sourceMessageIds, ['new']);
 });

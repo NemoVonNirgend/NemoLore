@@ -33,7 +33,7 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
     function dispatch(payload = {}) {
         if (!settings.enableHelperAgents) return [];
         const dedupeBase = payload.chatId && payload.messageId ? `${payload.chatId}:${payload.messageId}` : null;
-        const scheduling = policy?.select?.(payload) ?? {
+        const scheduling = policy?.select?.(payload, { allowWorkflow: engineAllows }) ?? {
             selected: ['memory', 'summary', 'lore']
                 .filter(workflow => settings[`helper${workflow[0].toUpperCase()}${workflow.slice(1)}AfterReply`])
                 .map(workflow => ({ workflow })),
@@ -59,5 +59,8 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
         return jobs;
     }
 
-    return Object.freeze({ dispatch, inspectPolicy: payload => policy?.select?.(payload) ?? null });
+    return Object.freeze({
+        dispatch,
+        inspectPolicy: payload => policy?.select?.(payload, { allowWorkflow: engineAllows }) ?? null,
+    });
 }

@@ -72,3 +72,30 @@ test('deduplicates active jobs by key', async () => {
     const second = runtime.enqueue({ agent: 'work', dedupeKey: 'same' });
     assert.equal(first.id, second.id);
 });
+
+test('deduplicates replayed jobs after successful completion', async () => {
+    const registry = createHelperAgentRegistry();
+    let runs = 0;
+    registry.register('work', {
+        async run() {
+            runs += 1;
+            return true;
+        },
+    });
+    const runtime = createHelperAgentRuntime({ registry, concurrency: 1 });
+
+    const first = runtime.enqueue({ agent: 'work', dedupeKey: 'chat:message:work' });
+    await new Promise(resolve => {
+        const unsubscribe = runtime.subscribe((event, job) => {
+            if (event === 'succeeded' && job.id === first.id) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+    const replay = runtime.enqueue({ agent: 'work', dedupeKey: 'chat:message:work' });
+
+    assert.equal(replay.id, first.id);
+    assert.equal(replay.status, 'succeeded');
+    assert.equal(runs, 1);
+});

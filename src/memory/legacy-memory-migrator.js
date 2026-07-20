@@ -1,3 +1,4 @@
+import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
 import { MEMORY_TYPES } from './memory-types.js';
 
 function collectLegacySummaries(value) {
@@ -13,13 +14,15 @@ function collectLegacySummaries(value) {
     return Object.entries(value).flatMap(([key, nested]) => collectLegacySummaries(nested).map(item => ({ legacyKey: key, ...item })));
 }
 
-export function createLegacyMemoryMigrator({ store, settings, metadata, saveMetadata, logger, clock = Date } = {}) {
+export function createLegacyMemoryMigrator({ store, settings, metadata, getMetadata, saveMetadata, logger, clock = Date } = {}) {
     if (!store?.save) throw new TypeError('Legacy memory migrator requires a memory store.');
+    const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Legacy memory migrator');
 
     async function migrate(chatId) {
         const normalizedChatId = String(chatId ?? '');
         if (!normalizedChatId) return { migrated: 0, skipped: true, reason: 'missing-chat-id' };
 
+        const metadata = currentMetadata();
         metadata.nemolore ??= {};
         metadata.nemolore.migrations ??= {};
         const marker = metadata.nemolore.migrations.legacyChatSummaries;
