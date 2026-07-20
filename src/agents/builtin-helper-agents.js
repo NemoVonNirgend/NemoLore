@@ -6,13 +6,21 @@ export function createMemoryHelperAgent({ pipeline } = {}) {
             const payload = job.payload ?? {};
             const extractorNames = payload.extractors ?? ['episode', 'atomic-fact', 'state-change'];
             const results = [];
+            const context = {
+                ...(payload.context ?? {}),
+                generationOptions: {
+                    ...(payload.context?.generationOptions ?? {}),
+                    provider: payload.provider,
+                    workflow: 'memory',
+                },
+            };
 
             for (const extractor of extractorNames) {
                 results.push(...await pipeline.ingest({
                     extractor,
                     input: payload.input,
                     sources: payload.sources ?? [],
-                    context: payload.context ?? {},
+                    context,
                 }));
             }
 
