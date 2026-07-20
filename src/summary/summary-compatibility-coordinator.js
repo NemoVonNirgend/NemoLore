@@ -3,7 +3,14 @@ export const SUMMARY_ENGINE_MODES = Object.freeze({
     MODULAR: 'modular',
 });
 
-export function createSummaryCompatibilityCoordinator({ settings, extensionSettings, logger } = {}) {
+export function createSummaryCompatibilityCoordinator({
+    settings,
+    extensionSettings,
+    logger,
+    restoreDelayMs = 1_500,
+    schedule = setTimeout,
+    cancel = clearTimeout,
+} = {}) {
     if (!settings) throw new TypeError('Summary compatibility coordinator requires settings.');
     if (!extensionSettings || typeof extensionSettings !== 'object') {
         throw new TypeError('Summary compatibility coordinator requires extension settings.');
@@ -12,6 +19,7 @@ export function createSummaryCompatibilityCoordinator({ settings, extensionSetti
     const originalLegacySettings = extensionSettings.nemolore
         ? structuredClone(extensionSettings.nemolore)
         : null;
+    let restoreTimer = null;
 
     function mode() {
         return settings.summaryEngineMode === SUMMARY_ENGINE_MODES.MODULAR
@@ -31,9 +39,19 @@ export function createSummaryCompatibilityCoordinator({ settings, extensionSetti
         return true;
     }
 
+    function restoreNow() {
+        if (!originalLegacySettings || mode() !== SUMMARY_ENGINE_MODES.MODULAR) return false;
+        if (restoreTimer) cancel(restoreTimer);
+        restoreTimer = null;
+        Object.assign(extensionSettings.nemolore, originalLegacySettings);
+        logger?.debug('Restored persisted legacy summary preferences after modular suppression.');
+        return true;
+    }
+
     function restorePersistedSettings() {
         if (!originalLegacySettings || mode() !== SUMMARY_ENGINE_MODES.MODULAR) return false;
-        Object.assign(extensionSettings.nemolore, originalLegacySettings);
+        if (restoreTimer) cancel(restoreTimer);
+        restoreTimer = schedule(() => restoreNow(), restoreDelayMs);
         return true;
     }
 
@@ -43,10 +61,18 @@ export function createSummaryCompatibilityCoordinator({ settings, extensionSetti
             && Boolean(settings.helperSummaryAfterReply);
     }
 
+    function dispose() {
+        if (restoreTimer) cancel(restoreTimer);
+        restoreTimer = null;
+    }
+
     return Object.freeze({
         mode,
         prepareLegacyImport,
         restorePersistedSettings,
+        restoreNow,
         shouldRunModularSummary,
+        dispose,
+        get restorePending() { return Boolean(restoreTimer); },
     });
 }
