@@ -132,6 +132,12 @@ export function createMemoryManagementPanel({ management, logger } = {}) {
         invalidate.addEventListener('click', () => record.status === 'invalidated'
             ? management.restore(record.id)
             : management.invalidate(record.id));
+        const archive = document.createElement('button');
+        archive.type = 'button';
+        archive.className = 'menu_button';
+        archive.textContent = record.status === 'archived' ? 'Archived' : 'Archive';
+        archive.disabled = record.status === 'archived';
+        archive.addEventListener('click', () => management.archive(record.id));
         const promote = document.createElement('button');
         promote.type = 'button';
         promote.className = 'menu_button';
@@ -143,7 +149,7 @@ export function createMemoryManagementPanel({ management, logger } = {}) {
         reviewed.className = 'menu_button';
         reviewed.textContent = 'Mark reviewed';
         reviewed.addEventListener('click', () => management.markReviewed(record.id));
-        actions.append(save, invalidate, promote, reviewed);
+        actions.append(save, invalidate, archive, promote, reviewed);
 
         shell.detail.append(
             heading,
