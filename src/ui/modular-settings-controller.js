@@ -44,6 +44,7 @@ const FIELDS = Object.freeze({
     memoryCandidateLimit: { type: 'number', label: 'Memory retrieval candidate limit', min: 1, max: 500 },
     enableObservability: { type: 'checkbox', label: 'Enable observability history' },
     enablePreferenceMemory: { type: 'checkbox', label: 'Inject reviewed cross-chat preferences' },
+    enablePreferenceInference: { type: 'checkbox', label: 'Collect preference evidence from user choices' },
     preferenceContextBudget: { type: 'number', label: 'Preference context token budget', min: 40, max: 4000 },
     preferenceContextLimit: { type: 'number', label: 'Maximum accepted preferences', min: 1, max: 100 },
 });
@@ -87,6 +88,7 @@ export function createModularSettingsController({ settings, save, observability,
     let summaryDisplay = null;
     let memoryPanel = null;
     let summaryLorePanel = null;
+    let preferencePanel = null;
     let profileStatus = null;
     const controls = new Map();
     const presetButtons = new Map();
@@ -210,6 +212,20 @@ export function createModularSettingsController({ settings, save, observability,
         return true;
     }
 
+    async function openPreferenceManager() {
+        if (!globalThis.NemoLore?.preferences?.store) return false;
+        if (!preferencePanel) {
+            const { createPreferenceManagementPanel } = await import('./preference-management-panel.js');
+            preferencePanel = createPreferenceManagementPanel({
+                store: globalThis.NemoLore.preferences.store,
+                management: globalThis.NemoLore.preferences.management,
+                logger,
+            });
+        }
+        preferencePanel.open();
+        return true;
+    }
+
     function install(container = document.querySelector('#nemo-ext-nemolore .inline-drawer-content')) {
         if (!container || root?.isConnected) return false;
         root = document.createElement('div');
@@ -249,6 +265,11 @@ export function createModularSettingsController({ settings, save, observability,
         summaryLore.className = 'menu_button';
         summaryLore.textContent = 'Manage Summary & Lore';
         summaryLore.addEventListener('click', () => void openSummaryLoreManager());
+        const preferences = document.createElement('button');
+        preferences.type = 'button';
+        preferences.className = 'menu_button';
+        preferences.textContent = 'Review Preferences';
+        preferences.addEventListener('click', () => void openPreferenceManager());
         const inspect = document.createElement('button');
         inspect.type = 'button';
         inspect.className = 'menu_button';
@@ -259,7 +280,7 @@ export function createModularSettingsController({ settings, save, observability,
         reset.className = 'menu_button';
         reset.textContent = 'Reset Provider Circuits';
         reset.addEventListener('click', () => providerRouter?.resetCircuit?.());
-        actions.append(memories, summaryLore, inspect, reset);
+        actions.append(memories, summaryLore, preferences, inspect, reset);
         body.append(actions);
         root.append(header, body);
         container.prepend(root);
@@ -272,6 +293,8 @@ export function createModularSettingsController({ settings, save, observability,
     function uninstall() {
         summaryLorePanel?.close?.();
         summaryLorePanel = null;
+        preferencePanel?.close?.();
+        preferencePanel = null;
         memoryPanel?.close?.();
         memoryPanel = null;
         summaryDisplay?.uninstall?.();
@@ -291,6 +314,7 @@ export function createModularSettingsController({ settings, save, observability,
         installSummaryDisplay,
         openMemoryManager,
         openSummaryLoreManager,
+        openPreferenceManager,
         get element() { return root; },
         get summaryDisplay() { return summaryDisplay; },
         get memoryPanel() { return memoryPanel; },

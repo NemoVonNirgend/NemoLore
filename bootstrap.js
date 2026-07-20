@@ -77,6 +77,7 @@ import { createSemanticMemoryIndex } from './src/memory/retrieval/semantic-memor
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createObservabilityService } from './src/observability/observability-service.js';
 import { createPreferenceContextContributor } from './src/preferences/preference-context-contributor.js';
+import { createPreferenceEvidenceCollector } from './src/preferences/preference-evidence-collector.js';
 import { createPreferenceManagementService } from './src/preferences/preference-management-service.js';
 import { createPreferenceStore } from './src/preferences/preference-store.js';
 import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
@@ -108,6 +109,7 @@ const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
 const preferenceStore = createPreferenceStore({ settings, persist: persistSettings, logger });
 const preferenceManagement = createPreferenceManagementService({ store: preferenceStore });
+const preferenceEvidence = createPreferenceEvidenceCollector({ store: preferenceStore, settings, logger });
 const summaryInputBuilder = createSummaryInputBuilder({ settings, logger });
 const contextExclusion = createContextExclusionPolicy({ settings, logger });
 
@@ -389,7 +391,7 @@ const publicApi = Object.freeze({
         inputBuilder: summaryInputBuilder,
     }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
-    preferences: Object.freeze({ store: preferenceStore, management: preferenceManagement, contributor: contextContributors.preferences }),
+    preferences: Object.freeze({ store: preferenceStore, management: preferenceManagement, evidence: preferenceEvidence, contributor: contextContributors.preferences }),
     memory: Object.freeze({
         sourceLedger,
         store: memoryStore,

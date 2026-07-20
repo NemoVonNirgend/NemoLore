@@ -114,6 +114,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     loreUpdateStrategy: 'balanced',
 
     enablePreferenceMemory: false,
+    enablePreferenceInference: false,
     preferenceContextBudget: 400,
     preferenceContextLimit: 12,
     preferenceContextPriority: 90,

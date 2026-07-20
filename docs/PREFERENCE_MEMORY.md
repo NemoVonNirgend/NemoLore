@@ -12,7 +12,7 @@ Preference memory is an opt-in subsystem and is intentionally separate from per-
 ## Delivery checkpoints
 
 1. Durable records, evidence, reversible review, and accepted-only context injection.
-2. Review UI with evidence inspection, editing, acceptance, rejection, disabling, export, and deletion.
-3. Conservative swipe/edit/problem-line evidence collectors, disabled by default.
+2. Review UI with evidence inspection, editing, acceptance, rejection, and disabling.
+3. Conservative bounded swipe/edit/problem-line evidence collector API, disabled by default.
 4. Candidate inference with repetition thresholds and no automatic acceptance.
 5. Versioned import from the retired NemoPresetExt localforage store.

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPreferenceContextContributor } from '../src/preferences/preference-context-contributor.js';
+import { createPreferenceEvidenceCollector } from '../src/preferences/preference-evidence-collector.js';
 import { createPreferenceManagementService } from '../src/preferences/preference-management-service.js';
 import { PREFERENCE_STATUS } from '../src/preferences/preference-record.js';
 import { createPreferenceStore } from '../src/preferences/preference-store.js';
@@ -42,4 +43,33 @@ test('persona preferences only inject for their matching persona', async () => {
     const contributor = createPreferenceContextContributor({ store: context.store, settings: context.settings });
     assert.deepEqual(await contributor.contribute({ personaId: 'other' }), []);
     assert.match((await contributor.contribute({ personaId: 'minimalist' })).content, /terse narration/);
+});
+
+test('evidence collection is opt-in, bounded, and never creates an active preference', () => {
+    const context = setup();
+    context.settings.enablePreferenceInference = false;
+    const collector = createPreferenceEvidenceCollector({ store: context.store, settings: context.settings });
+    assert.equal(collector.recordEdit({ acceptedText: 'new', rejectedText: 'old' }), null);
+
+    context.settings.enablePreferenceInference = true;
+    const evidence = collector.recordEdit({
+        acceptedText: 'A'.repeat(3_000),
+        rejectedText: 'B'.repeat(3_000),
+        summary: 'User edited an assistant response.',
+        chatId: 'chat',
+        messageId: 9,
+    });
+    assert.equal(evidence.acceptedText.length, 2_000);
+    assert.equal(evidence.rejectedText.length, 2_000);
+    assert.equal(context.store.list().length, 0);
+    assert.equal(context.store.listEvidence().length, 1);
+});
+
+test('collector ignores unchanged or empty comparisons', () => {
+    const context = setup();
+    context.settings.enablePreferenceInference = true;
+    const collector = createPreferenceEvidenceCollector({ store: context.store, settings: context.settings });
+    assert.equal(collector.recordSwipeChoice({ acceptedText: 'same', rejectedText: 'same' }), null);
+    assert.equal(collector.recordProblemLine({}), null);
+    assert.equal(context.store.listEvidence().length, 0);
 });
