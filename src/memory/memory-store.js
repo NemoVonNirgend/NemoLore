@@ -3,12 +3,20 @@ import { createMemoryRecord, reviseMemoryRecord } from './memory-record.js';
 
 export function createMemoryStore({ sourceLedger, logger, recordOptions } = {}) {
     const records = new Map();
+    const listeners = new Set();
     const indexes = {
         type: new Map(),
         entity: new Map(),
         tag: new Map(),
         status: new Map(),
     };
+
+    function emit(event, record = null) {
+        const snapshot = record ? structuredClone(record) : null;
+        for (const listener of listeners) {
+            try { listener(event, snapshot); } catch (error) { logger?.error('Memory store listener failed.', error); }
+        }
+    }
 
     function addToIndex(index, key, id) {
         if (!key) return;
@@ -37,7 +45,7 @@ export function createMemoryStore({ sourceLedger, logger, recordOptions } = {}) 
         for (const tag of record.tags) removeFromIndex(indexes.tag, tag, record.id);
     }
 
-    function save(input) {
+    function save(input, { silent = false } = {}) {
         const record = createMemoryRecord(input, recordOptions);
         if (records.has(record.id)) throw new Error(`Memory already exists: ${record.id}`);
 
@@ -45,10 +53,11 @@ export function createMemoryStore({ sourceLedger, logger, recordOptions } = {}) 
         indexRecord(record);
         if (record.sourceIds.length) sourceLedger?.link(record.id, record.sourceIds);
         logger?.debug('Stored memory record.', { id: record.id, type: record.type });
+        if (!silent) emit('saved', record);
         return record;
     }
 
-    function update(id, patch) {
+    function update(id, patch, { silent = false } = {}) {
         const existing = records.get(id);
         if (!existing) throw new Error(`Unknown memory: ${id}`);
 
@@ -58,6 +67,7 @@ export function createMemoryStore({ sourceLedger, logger, recordOptions } = {}) 
         indexRecord(revised);
         sourceLedger?.unlink(id);
         if (revised.sourceIds.length) sourceLedger?.link(id, revised.sourceIds);
+        if (!silent) emit('updated', revised);
         return revised;
     }
 
@@ -68,12 +78,13 @@ export function createMemoryStore({ sourceLedger, logger, recordOptions } = {}) 
         });
     }
 
-    function remove(id) {
+    function remove(id, { silent = false } = {}) {
         const existing = records.get(id);
         if (!existing) return false;
         unindexRecord(existing);
         records.delete(id);
         sourceLedger?.unlink(id);
+        if (!silent) emit('removed', existing);
         return true;
     }
 
@@ -104,20 +115,48 @@ export function createMemoryStore({ sourceLedger, logger, recordOptions } = {}) 
         return predicate ? values.filter(predicate) : values;
     }
 
+    function clear({ silent = false } = {}) {
+        records.clear();
+        for (const index of Object.values(indexes)) index.clear();
+        sourceLedger?.clear();
+        if (!silent) emit('cleared');
+    }
+
+    function exportRecords() {
+        return structuredClone([...records.values()]);
+    }
+
+    function importRecords(input = [], { replace = true, silent = false } = {}) {
+        if (!Array.isArray(input)) throw new TypeError('Memory import requires an array.');
+        if (replace) clear({ silent: true });
+        const imported = [];
+        for (const record of input) {
+            if (records.has(record.id)) continue;
+            imported.push(save(record, { silent: true }));
+        }
+        if (!silent) emit('imported');
+        return imported;
+    }
+
+    function subscribe(listener) {
+        if (typeof listener !== 'function') throw new TypeError('Memory listener must be a function.');
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+    }
+
     return Object.freeze({
         save,
         update,
         invalidate,
         remove,
         query,
+        clear,
+        exportRecords,
+        importRecords,
+        subscribe,
         get: id => records.get(id) ?? null,
         has: id => records.has(id),
         list: () => [...records.values()],
-        clear() {
-            records.clear();
-            for (const index of Object.values(indexes)) index.clear();
-            sourceLedger?.clear();
-        },
         get size() { return records.size; },
     });
 }
