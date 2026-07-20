@@ -4,13 +4,14 @@ import {
     createContextContribution,
 } from '../context-contribution.js';
 
-export function createMemoryContextContributor({ retrieval, persistence, logger } = {}) {
+export function createMemoryContextContributor({ retrieval, persistence, ownership, logger } = {}) {
     if (!retrieval?.retrieve) throw new TypeError('Memory context contributor requires a retrieval service.');
 
     return Object.freeze({
         name: 'memory',
 
         async contribute(request = {}, options = {}) {
+            if (ownership?.ownerFor?.('memory') === 'nemotavern') return [];
             if (persistence) {
                 const requestChatId = request.chatId == null ? null : String(request.chatId);
                 const persistedChatId = persistence.activeChatId == null

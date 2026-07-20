@@ -18,6 +18,8 @@ export function createObservabilityService({
     summaryStore,
     lorebooks,
     getChatId,
+    hostInterop,
+    ownership,
     logger,
     historyLimit = 100,
 } = {}) {
@@ -48,6 +50,16 @@ export function createObservabilityService({
         const jobs = helperRuntime?.list?.() ?? [];
         const memories = memoryStore?.list?.() ?? [];
         const summary = chatId ? summaryStore?.get?.(chatId) ?? null : null;
+        const hostCapabilities = hostInterop?.snapshot?.() ?? null;
+        const hostState = hostInterop?.observabilitySnapshot?.() ?? null;
+        const host = hostCapabilities?.available || hostState?.contextLedger || hostState?.provenance
+            ? {
+                ...safeClone(hostCapabilities),
+                contextLedger: safeClone(hostState?.contextLedger ?? null),
+                memory: safeClone(hostState?.memory ?? null),
+                provenance: safeClone(hostState?.provenance ?? null),
+            }
+            : null;
 
         return Object.freeze({
             capturedAt: new Date().toISOString(),
@@ -79,6 +91,8 @@ export function createObservabilityService({
                 byStatus: countBy(jobs, item => item.status),
                 jobs: safeClone(jobs),
             },
+            host,
+            ownership: safeClone(ownership?.snapshot?.() ?? null),
             recentEvents: safeClone(history),
         });
     }
@@ -94,6 +108,7 @@ export function createObservabilityService({
             `Summary: ${data.summary?.text ? 'available' : 'none'}`,
             `Lorebook: ${data.lorebook ?? 'none'}`,
             `Helpers: ${data.helpers.runtime?.running ?? 0} running, ${data.helpers.runtime?.queued ?? 0} queued`,
+            `NemoTavern host: ${data.host ? 'available' : 'not detected'}`,
         ];
         return lines.join('\n');
     }

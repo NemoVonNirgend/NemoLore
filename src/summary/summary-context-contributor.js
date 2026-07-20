@@ -13,28 +13,37 @@ function extractLegacySummary(value) {
 export function createSummaryContextContributor({
     summaryStore,
     legacySummaries = {},
+    getMetadata,
     settings = {},
+    ownership,
     logger,
 } = {}) {
     if (!summaryStore?.get) throw new TypeError('Summary context contributor requires a summary store.');
 
     function resolve(chatId) {
         const current = summaryStore.get(chatId);
-        const legacyValue = legacySummaries?.[chatId];
-        const legacyText = extractLegacySummary(legacyValue);
+        const nativeValue = getMetadata?.()?.nemolore?.summary;
+        const configuredValue = legacySummaries?.[chatId];
+        const nativeText = extractLegacySummary(nativeValue);
+        const configuredText = extractLegacySummary(configuredValue);
+        const legacy = nativeText
+            ? { text: nativeText, record: nativeValue, legacySource: 'nemotavern' }
+            : configuredText
+                ? { text: configuredText, record: configuredValue, legacySource: 'chatSummaries' }
+                : null;
         const precedence = settings.summaryContextPrecedence ?? 'new-first';
 
         if (precedence === 'legacy-only') {
-            return legacyText ? { text: legacyText, source: 'legacy', record: legacyValue } : null;
+            return legacy ? { ...legacy, source: 'legacy' } : null;
         }
         if (precedence === 'new-only') {
             return current?.text ? { text: current.text, source: 'new', record: current } : null;
         }
-        if (precedence === 'legacy-first' && legacyText) {
-            return { text: legacyText, source: 'legacy', record: legacyValue };
+        if (precedence === 'legacy-first' && legacy) {
+            return { ...legacy, source: 'legacy' };
         }
         if (current?.text) return { text: current.text, source: 'new', record: current };
-        return legacyText ? { text: legacyText, source: 'legacy', record: legacyValue } : null;
+        return legacy ? { ...legacy, source: 'legacy' } : null;
     }
 
     return Object.freeze({
@@ -43,6 +52,8 @@ export function createSummaryContextContributor({
 
         async contribute(request = {}, options = {}) {
             if (settings.enableSummaryContext === false) return [];
+            const owner = ownership?.ownerFor?.('summary');
+            if (owner !== undefined && owner !== 'nemolore-modular') return [];
             const chatId = request.chatId ?? request.context?.chatId;
             if (!chatId) return [];
             const resolved = resolve(String(chatId));
@@ -67,6 +78,7 @@ export function createSummaryContextContributor({
                     summaryUpdatedAt: resolved.record?.updatedAt ?? null,
                     sourceMessageIds: resolved.record?.sourceMessageIds ?? [],
                     precedence: settings.summaryContextPrecedence ?? 'new-first',
+                    legacySummarySource: resolved.legacySource ?? null,
                 },
             });
         },

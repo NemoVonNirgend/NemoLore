@@ -140,13 +140,14 @@ test('legacy migration writes its marker to the current chat metadata', async ()
 test('flushes old chat memory before activating the next chat', async () => {
     const calls = [];
     const listeners = new Map();
+    let activeChatId = 'chat-a';
     const lifecycle = createSillyTavernMemoryLifecycle({
         eventSource: {
             on(event, handler) { listeners.set(event, handler); },
             off(event) { listeners.delete(event); },
         },
         chatChangedEvent: 'changed',
-        getChatId: () => 'chat-a',
+        getChatId: () => activeChatId,
         persistence: {
             start(chatId) { calls.push(`start:${chatId}`); return []; },
             async flush() { calls.push('flush'); },
@@ -156,6 +157,7 @@ test('flushes old chat memory before activating the next chat', async () => {
     });
 
     await lifecycle.activate('chat-a');
+    activeChatId = 'chat-b';
     await lifecycle.activate('chat-b');
     assert.deepEqual(calls, ['start:chat-a', 'flush', 'start:chat-b']);
 });
@@ -163,10 +165,11 @@ test('flushes old chat memory before activating the next chat', async () => {
 test('serializes chat activation and skips duplicate SillyTavern events', async () => {
     const calls = [];
     let releaseFirstMigration;
+    let activeChatId = 'chat-a';
     const firstMigration = new Promise(resolve => { releaseFirstMigration = resolve; });
     const lifecycle = createSillyTavernMemoryLifecycle({
         eventSource: { on() {} },
-        getChatId: () => 'chat-a',
+        getChatId: () => activeChatId,
         persistence: {
             start(chatId) { calls.push(`start:${chatId}`); return []; },
             async flush() { calls.push('flush'); },
@@ -186,13 +189,13 @@ test('serializes chat activation and skips duplicate SillyTavern events', async 
     await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(calls, ['start:chat-a', 'migrate:chat-a']);
 
+    activeChatId = 'chat-b';
     releaseFirstMigration();
     const [, duplicateResult] = await Promise.all([activateA, duplicateA, activateB]);
-    assert.equal(duplicateResult.reason, 'already-active');
+    assert.equal(duplicateResult.reason, 'stale-chat');
     assert.deepEqual(calls, [
         'start:chat-a',
         'migrate:chat-a',
-        'flush',
         'start:chat-b',
         'migrate:chat-b',
     ]);

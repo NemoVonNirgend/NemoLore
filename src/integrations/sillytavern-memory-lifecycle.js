@@ -14,9 +14,19 @@ export function createSillyTavernMemoryLifecycle({
     let currentChatId = null;
     let activationQueue = Promise.resolve();
 
+    function staleResult(nextChatId) {
+        const activeChatId = getChatId?.();
+        if (activeChatId == null || String(activeChatId) === nextChatId) return null;
+        return {
+            loaded: 0, migrated: 0, skipped: true, reason: 'stale-chat',
+            requestedChatId: nextChatId, activeChatId: String(activeChatId),
+        };
+    }
+
     async function activateNow(chatId) {
         const nextChatId = chatId ? String(chatId) : null;
         if (!nextChatId) return { loaded: 0, migrated: 0, skipped: true };
+        if (staleResult(nextChatId)) return staleResult(nextChatId);
         if (currentChatId === nextChatId) {
             return { loaded: 0, migrated: 0, skipped: true, reason: 'already-active' };
         }
@@ -24,9 +34,12 @@ export function createSillyTavernMemoryLifecycle({
             try { await persistence.flush(); } catch (error) { logger?.error('Unable to flush previous chat memory.', error); }
         }
 
+        if (staleResult(nextChatId)) return staleResult(nextChatId);
         const loaded = persistence.start(nextChatId);
         const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
+        if (staleResult(nextChatId)) return staleResult(nextChatId);
         if (migration.migrated) await persistence.flush();
+        if (staleResult(nextChatId)) return staleResult(nextChatId);
         currentChatId = nextChatId;
         logger?.debug('Activated chat memory persistence.', { chatId: nextChatId, loaded: loaded.length, migrated: migration.migrated });
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };

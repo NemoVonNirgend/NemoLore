@@ -31,6 +31,32 @@ export function createObservabilityPanel({ observability, logger } = {}) {
         addDefinition(overview, 'Summary', data.summary?.text ? 'Available' : 'None');
         addDefinition(overview, 'Lorebook', data.lorebook ?? 'None');
         addDefinition(overview, 'Helpers', `${data.helpers.runtime?.running ?? 0} running, ${data.helpers.runtime?.queued ?? 0} queued`);
+        if (data.ownership) {
+            addDefinition(overview, 'Engine owners', [
+                `summary: ${data.ownership.summaryOwner}`,
+                `lore: ${data.ownership.loreOwner}`,
+                `memory: ${data.ownership.memoryOwner}`,
+            ].join(', '));
+        }
+        if (data.host) {
+            const ledger = data.host.contextLedger;
+            const total = ledger?.total ?? ledger?.usedTokens ?? ledger?.injection?.tokens;
+            const maximum = ledger?.max ?? ledger?.maxTokens;
+            const nativeMemory = data.host.memory;
+            const counts = [
+                `${nativeMemory?.summaries?.length ?? 0} summaries`,
+                `${nativeMemory?.chunks?.length ?? 0} chunks`,
+            ].join(', ');
+            addDefinition(overview, 'NemoTavern ledger', total == null
+                ? `Available (${counts})`
+                : `${total}${maximum == null ? '' : ` / ${maximum}`} tokens (${counts})`);
+            const provenanceRecords = data.host.provenance?.records ?? [];
+            const latestProvenance = provenanceRecords[provenanceRecords.length - 1];
+            const promptHash = data.host.provenance?.promptHash
+                ?? data.host.provenance?.latest?.promptHash
+                ?? latestProvenance?.promptHash;
+            addDefinition(overview, 'NemoTavern provenance', promptHash ? `Prompt ${promptHash}` : 'Available; no prompt captured');
+        }
         root.append(overview);
 
         const contributions = makeElement('section', 'nemolore-inspector-section');

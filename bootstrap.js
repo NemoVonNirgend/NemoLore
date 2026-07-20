@@ -47,6 +47,7 @@ import { createSillyTavernGenerationOrchestrator } from './src/integrations/sill
 import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
+import { createEngineOwnership, createNemoTavernHostInterop } from './src/integrations/nemotavern-host-interop.js';
 import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
 import { createLoreHelperWorkflow } from './src/lore/lore-helper-workflow.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
@@ -91,6 +92,8 @@ const persistSettings = updated => {
     Object.assign(settingsBacking, updated);
     saveSettingsDebounced();
 };
+const hostInterop = createNemoTavernHostInterop();
+const ownership = createEngineOwnership({ settings, hostInterop });
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
@@ -151,8 +154,11 @@ const memoryPersistence = createMemoryPersistence({
 });
 const legacyMemoryMigrator = createLegacyMemoryMigrator({
     store: memoryStore,
+    sourceLedger,
     settings,
     getMetadata: () => chat_metadata,
+    getChat: () => getContext()?.chat ?? [],
+    getActiveChatId: getCurrentChatId,
     saveMetadata,
     logger,
 });
@@ -214,12 +220,15 @@ const contextContributors = Object.freeze({
     summary: createSummaryContextContributor({
         summaryStore,
         legacySummaries: settings.chatSummaries,
+        getMetadata: () => chat_metadata,
         settings,
+        ownership,
         logger,
     }),
     memory: createMemoryContextContributor({
         retrieval: memoryRetriever,
         persistence: memoryPersistence,
+        ownership,
         logger,
     }),
 });
@@ -316,6 +325,8 @@ const observability = createObservabilityService({
     summaryStore,
     lorebooks,
     getChatId: getCurrentChatId,
+    hostInterop,
+    ownership,
     logger,
     historyLimit: settings.observabilityHistoryLimit,
 });
@@ -339,6 +350,8 @@ const popups = createPopupCoordinator({ state, logger });
 const publicApi = Object.freeze({
     logger,
     settings,
+    hostInterop,
+    ownership,
     state,
     lifecycle,
     providers: Object.freeze({

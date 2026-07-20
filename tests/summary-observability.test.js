@@ -30,6 +30,54 @@ test('summary contributor can prefer or exclusively select legacy summaries', as
     assert.equal(contribution.metadata.summarySource, 'legacy');
 });
 
+test('native NemoTavern running summary participates in legacy precedence ahead of settings chatSummaries', async () => {
+    const contributor = createSummaryContextContributor({
+        summaryStore: { get: () => ({ text: 'Modular summary.' }) },
+        legacySummaries: { chat: 'Settings summary.' },
+        getMetadata: () => ({ nemolore: { summary: 'Native running summary.' } }),
+        settings: { summaryContextPrecedence: 'legacy-first' },
+        ownership: { ownerFor: () => 'nemolore-modular' },
+    });
+
+    const contribution = await contributor.contribute({ chatId: 'chat' });
+    assert.match(contribution.content, /Native running summary/);
+    assert.equal(contribution.metadata.summarySource, 'legacy');
+    assert.equal(contribution.metadata.legacySummarySource, 'nemotavern');
+});
+
+test('summary contributor leaves context placement to the legacy or native owner', async () => {
+    const contributor = createSummaryContextContributor({
+        summaryStore: { get: () => ({ text: 'Would duplicate.' }) },
+        settings: { summaryContextPrecedence: 'new-first' },
+        ownership: { ownerFor: () => 'nemotavern' },
+    });
+    assert.deepEqual(await contributor.contribute({ chatId: 'chat' }), []);
+});
+
+test('stock SillyTavern observability omits the optional host section', () => {
+    const service = createObservabilityService({
+        hostInterop: { snapshot: () => ({ available: false }), observabilitySnapshot: () => ({}) },
+    });
+    assert.equal(service.snapshot().host, null);
+});
+
+test('observability snapshot exposes native host ledger, provenance, and engine owners', () => {
+    const memory = { summaries: [{ summary: 'Native summary.' }], chunks: [{ text: 'Native chunk.' }] };
+    const ownership = { summaryOwner: 'nemolore-modular', loreOwner: 'nemotavern', memoryOwner: 'nemotavern' };
+    const service = createObservabilityService({
+        hostInterop: {
+            snapshot: () => ({ available: true, capabilities: { memory: true, provenance: true } }),
+            observabilitySnapshot: () => ({ memory, contextLedger: memory, provenance: { promptHash: 'hash-1' } }),
+        },
+        ownership: { snapshot: () => ownership },
+    });
+    const snapshot = service.snapshot();
+    assert.deepEqual(snapshot.host.memory, memory);
+    assert.equal(snapshot.host.contextLedger.chunks.length, 1);
+    assert.equal(snapshot.host.provenance.promptHash, 'hash-1');
+    assert.deepEqual(snapshot.ownership, ownership);
+});
+
 test('observability snapshot exposes context, memory, summary, lore, and helper state', () => {
     const helperListeners = [];
     const memoryListeners = [];

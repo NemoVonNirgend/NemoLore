@@ -70,6 +70,29 @@ test('memory contributor converts retrieval output into a context contribution',
     assert.match(output.content, /Marcus made a promise/);
 });
 
+test('memory contributor does not duplicate native host-owned memory context', async () => {
+    let retrievals = 0;
+    const memory = createMemoryContextContributor({
+        ownership: { ownerFor: () => 'nemotavern' },
+        retrieval: {
+            retrieve() {
+                retrievals += 1;
+                return { text: 'Duplicate native memory.', usedTokens: 5 };
+            },
+        },
+    });
+    assert.deepEqual(await memory.contribute({ chatId: 'chat' }), []);
+    assert.equal(retrievals, 0);
+});
+
+test('memory contributor remains active for persisted modular memory when no engine owns automation', async () => {
+    const memory = createMemoryContextContributor({
+        ownership: { ownerFor: () => 'none' },
+        retrieval: { retrieve: () => ({ text: 'Persisted memory.', usedTokens: 4 }) },
+    });
+    assert.equal((await memory.contribute({ chatId: 'chat' })).content, 'Persisted memory.');
+});
+
 test('memory contributor waits for persistence activation before retrieving the next chat', async () => {
     let releaseFlush;
     let markFlushStarted;
