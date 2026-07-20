@@ -1,4 +1,12 @@
+import { DEFAULT_PRESET_ID, PRESET_POLICY_VERSION, PRESET_SETTING_KEYS, resolvePreset } from '../presets/preset-registry.js';
+import { classifyLegacySettings } from '../presets/legacy-settings-classifier.js';
+
 export const DEFAULT_SETTINGS = Object.freeze({
+    settingsSchemaVersion: 2,
+    preset: DEFAULT_PRESET_ID,
+    presetPolicyVersion: PRESET_POLICY_VERSION,
+    presetOverrides: {},
+    presetMigration: null,
     enabled: true,
     autoMode: false,
     updateInterval: 50,
@@ -87,12 +95,40 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
     enableObservability: true,
     observabilityHistoryLimit: 100,
+
+    summaryChunkSize: 8,
+    episodePromotionThreshold: 4,
+    memoryAgingEnabled: true,
+    memoryConsolidationEnabled: true,
+    memoryContextBudget: 1_200,
+    memoryCandidateLimit: 16,
+    loreUpdateStrategy: 'balanced',
 });
 
 export function createSettings(overrides = {}) {
+    const hasStoredSettings = Object.keys(overrides ?? {}).length > 0;
+    const isPresetSettings = Number(overrides.settingsSchemaVersion) >= 2 && overrides.preset;
+    const classification = isPresetSettings
+        ? { preset: overrides.preset, confidence: 1, reasons: [] }
+        : hasStoredSettings ? classifyLegacySettings(overrides) : { preset: DEFAULT_PRESET_ID, confidence: 1, reasons: [] };
+    const resolved = resolvePreset(classification.preset, isPresetSettings ? overrides.presetOverrides : {});
+    const migration = isPresetSettings ? overrides.presetMigration ?? null : hasStoredSettings ? {
+        fromSchemaVersion: Number(overrides.settingsSchemaVersion ?? 1),
+        selectedPreset: classification.preset,
+        confidence: classification.confidence,
+        reasons: [...classification.reasons],
+        legacyValuesPreserved: true,
+    } : null;
+
     return {
         ...DEFAULT_SETTINGS,
+        ...resolved.settings,
         ...overrides,
+        settingsSchemaVersion: 2,
+        preset: resolved.id,
+        presetPolicyVersion: resolved.policyVersion,
+        presetOverrides: { ...resolved.overrides },
+        presetMigration: migration,
         chatSummaries: {
             ...DEFAULT_SETTINGS.chatSummaries,
             ...(overrides.chatSummaries ?? {}),
@@ -102,4 +138,26 @@ export function createSettings(overrides = {}) {
 
 export function mergeSettings(storedSettings = {}) {
     return createSettings(storedSettings);
+}
+
+export function selectPreset(currentSettings = {}, preset, presetOverrides = {}) {
+    const presetKeys = new Set(PRESET_SETTING_KEYS);
+    const preserved = Object.fromEntries(Object.entries(currentSettings).filter(([key]) => (
+        !presetKeys.has(key) && !['preset', 'presetOverrides', 'presetMigration', 'presetPolicyVersion'].includes(key)
+    )));
+    return createSettings({
+        ...preserved,
+        settingsSchemaVersion: 2,
+        preset,
+        presetOverrides,
+        presetMigration: currentSettings.presetMigration ?? null,
+    });
+}
+
+export function setPresetOverride(currentSettings = {}, key, value) {
+    if (!PRESET_SETTING_KEYS.includes(key)) throw new TypeError(`Setting is not controlled by a NemoLore preset: ${key}`);
+    return selectPreset(currentSettings, currentSettings.preset ?? DEFAULT_PRESET_ID, {
+        ...(currentSettings.presetOverrides ?? {}),
+        [key]: value,
+    });
 }
