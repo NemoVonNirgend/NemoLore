@@ -47,8 +47,10 @@ test('context injector isolates contributor failures', async () => {
 });
 
 test('memory contributor converts retrieval output into a context contribution', async () => {
+    let retrievalOptions;
     const retrieval = {
-        retrieve() {
+        retrieve(query, options) {
+            retrievalOptions = options;
             return {
                 text: '## Relevant Memory\n\n- Marcus made a promise.',
                 selected: [{ record: { id: 'memory-1' }, score: 0.8, components: { entity: 0.3 } }],
@@ -60,11 +62,13 @@ test('memory contributor converts retrieval output into a context contribution',
         },
     };
 
-    const memory = createMemoryContextContributor({ retrieval });
+    const memory = createMemoryContextContributor({ retrieval, settings: { memoryContextBudget: 2400, memoryCandidateLimit: 32 } });
     const output = await memory.contribute({ text: 'Marcus returns.' });
 
     assert.equal(output.id, 'memory:retrieved');
     assert.equal(output.estimatedTokens, 20);
     assert.deepEqual(output.metadata.selectedIds, ['memory-1']);
     assert.match(output.content, /Marcus made a promise/);
+    assert.equal(retrievalOptions.maxTokens, 2400);
+    assert.equal(retrievalOptions.candidateLimit, 32);
 });

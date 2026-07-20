@@ -72,3 +72,12 @@ test('deduplicates active jobs by key', async () => {
     const second = runtime.enqueue({ agent: 'work', dedupeKey: 'same' });
     assert.equal(first.id, second.id);
 });
+
+test('reads concurrency dynamically after a profile change', () => {
+    const registry = createHelperAgentRegistry();
+    let concurrency = 1;
+    const runtime = createHelperAgentRuntime({ registry, concurrency: () => concurrency });
+    assert.equal(runtime.inspect().concurrency, 1);
+    concurrency = 3;
+    assert.equal(runtime.inspect().concurrency, 3);
+});

@@ -9,7 +9,9 @@ export function createMemoryRetriever({ selector, scorer, redundancy, budget, co
             .map(record => scorer.score(record, query))
             .filter(candidate => candidate.score >= (options.minScore ?? 0.1))
             .sort((a, b) => b.score - a.score);
-        const deduplicated = redundancy.filter(scored);
+        const candidateLimit = Math.max(1, Number(options.candidateLimit ?? scored.length ?? 1));
+        const limited = scored.slice(0, candidateLimit);
+        const deduplicated = redundancy.filter(limited);
         const allocation = budget.allocate(deduplicated.accepted, options);
         const context = composer.compose(allocation.selected, {
             heading: options.heading,
@@ -24,13 +26,16 @@ export function createMemoryRetriever({ selector, scorer, redundancy, budget, co
                 ...allocation.omitted,
             ],
             candidateCount: candidates.length,
-            scoredCount: scored.length,
+            scoredCount: limited.length,
+            eligibleCount: scored.length,
+            candidateLimit,
             usedTokens: allocation.usedTokens,
             availableTokens: allocation.availableTokens,
         };
 
         logger?.debug('Memory retrieval completed.', {
             candidates: result.candidateCount,
+            eligible: result.eligibleCount,
             selected: result.selected.length,
             omitted: result.omitted.length,
             usedTokens: result.usedTokens,

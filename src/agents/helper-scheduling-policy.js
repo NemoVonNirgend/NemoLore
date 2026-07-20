@@ -1,5 +1,6 @@
 export function createHelperSchedulingPolicy({ settings, clock = Date } = {}) {
     const lastRun = new Map();
+    const lastMessageCount = new Map();
 
     function enabled(workflow) {
         return Boolean({
@@ -33,6 +34,17 @@ export function createHelperSchedulingPolicy({ settings, clock = Date } = {}) {
             || /\b(discovered|revealed|arrived|departed|died|injured|promised|betrayed|joined|left|owns|lost)\b/i.test(text);
     }
 
+    function cadence(workflow) {
+        if (workflow === 'summary') return Math.max(0, Number(settings?.summaryChunkSize ?? 0));
+        if (workflow === 'lore') return ({
+            sparse: 10,
+            balanced: 4,
+            extensive: 2,
+            aggressive: 1,
+        })[settings?.loreUpdateStrategy] ?? 4;
+        return 0;
+    }
+
     function evaluate(workflow, payload = {}) {
         if (!enabled(workflow)) return { allowed: false, reason: 'disabled' };
         const messageCount = Number(payload.messageCount ?? payload.context?.chatLength ?? 0);
@@ -40,13 +52,20 @@ export function createHelperSchedulingPolicy({ settings, clock = Date } = {}) {
         if (workflow === 'lore' && !hasLoreSignal(payload)) return { allowed: false, reason: 'no-lore-signal' };
 
         const key = `${workflow}:${payload.chatId ?? 'global'}`;
+        const previousCount = lastMessageCount.get(key);
+        const interval = cadence(workflow);
+        if (interval > 0 && previousCount != null && messageCount - previousCount < interval) {
+            return { allowed: false, reason: 'message-cadence' };
+        }
         const last = lastRun.get(key) ?? 0;
         if (clock.now() - last < cooldownMs(workflow)) return { allowed: false, reason: 'cooldown' };
         return { allowed: true, key };
     }
 
     function mark(workflow, payload = {}) {
-        lastRun.set(`${workflow}:${payload.chatId ?? 'global'}`, clock.now());
+        const key = `${workflow}:${payload.chatId ?? 'global'}`;
+        lastRun.set(key, clock.now());
+        lastMessageCount.set(key, Number(payload.messageCount ?? payload.context?.chatLength ?? 0));
     }
 
     function select(payload = {}) {
@@ -58,5 +77,12 @@ export function createHelperSchedulingPolicy({ settings, clock = Date } = {}) {
         return Object.freeze({ selected, decisions, maximum });
     }
 
-    return Object.freeze({ evaluate, select, reset: () => lastRun.clear() });
+    return Object.freeze({
+        evaluate,
+        select,
+        reset() {
+            lastRun.clear();
+            lastMessageCount.clear();
+        },
+    });
 }

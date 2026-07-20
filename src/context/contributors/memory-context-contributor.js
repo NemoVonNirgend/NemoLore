@@ -4,7 +4,7 @@ import {
     createContextContribution,
 } from '../context-contribution.js';
 
-export function createMemoryContextContributor({ retrieval, logger } = {}) {
+export function createMemoryContextContributor({ retrieval, settings, logger } = {}) {
     if (!retrieval?.retrieve) throw new TypeError('Memory context contributor requires a retrieval service.');
 
     return Object.freeze({
@@ -19,7 +19,8 @@ export function createMemoryContextContributor({ retrieval, logger } = {}) {
             };
 
             const result = retrieval.retrieve(query, {
-                maxTokens: options.memoryMaxTokens ?? request.memoryMaxTokens ?? 1200,
+                maxTokens: options.memoryMaxTokens ?? request.memoryMaxTokens ?? settings?.memoryContextBudget ?? 1200,
+                candidateLimit: options.memoryCandidateLimit ?? request.memoryCandidateLimit ?? settings?.memoryCandidateLimit ?? 16,
                 minScore: options.memoryMinScore ?? request.memoryMinScore ?? 0.1,
                 includeMetadata: options.includeMemoryMetadata ?? false,
             });

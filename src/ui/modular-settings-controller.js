@@ -70,7 +70,7 @@ function createControl(key, definition, settings, onChange) {
     return { row, input };
 }
 
-export function createModularSettingsController({ settings, save, observability, providerRouter, logger } = {}) {
+export function createModularSettingsController({ settings, save, observability, providerRouter, onPolicyChange, logger } = {}) {
     let root = null;
     let summaryDisplay = null;
     let memoryPanel = null;
@@ -103,6 +103,7 @@ export function createModularSettingsController({ settings, save, observability,
         save?.(settings);
         if (key.includes('Provider')) providerRouter?.resetCircuit?.();
         if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
+        if (PRESET_SETTING_KEYS.includes(key)) onPolicyChange?.(settings);
         syncUi();
         return value;
     }
@@ -111,6 +112,7 @@ export function createModularSettingsController({ settings, save, observability,
         Object.assign(settings, selectPreset(settings, id));
         save?.(settings);
         providerRouter?.resetCircuit?.();
+        onPolicyChange?.(settings);
         syncUi();
         logger?.info('Selected NemoLore story profile.', { preset: id });
         return settings;

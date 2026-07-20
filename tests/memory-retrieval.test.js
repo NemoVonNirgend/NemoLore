@@ -59,3 +59,16 @@ test('retrieval obeys token budget and returns audit metadata', () => {
     assert.ok(result.omitted.some(item => item.omissionReason === 'token-budget'));
     assert.ok(Array.isArray(result.records));
 });
+
+test('retrieval limits the scored candidate pool before composing context', () => {
+    let id = 0;
+    const store = createMemoryStore({ recordOptions: { idFactory: () => `m-${++id}`, now: () => '2026-07-19T10:00:00Z' } });
+    for (let index = 0; index < 6; index += 1) {
+        store.save({ type: 'episode', content: `Station memory number ${index}.`, importance: 0.9 - (index * 0.05) });
+    }
+    const result = makeRetriever(store).retrieve({ text: 'station' }, { maxTokens: 100, candidateLimit: 2 });
+    assert.equal(result.eligibleCount, 6);
+    assert.equal(result.scoredCount, 2);
+    assert.equal(result.candidateLimit, 2);
+    assert.ok(result.selected.length <= 2);
+});

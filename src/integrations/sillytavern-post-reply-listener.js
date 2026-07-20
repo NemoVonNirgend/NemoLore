@@ -61,11 +61,13 @@ export function createSillyTavernPostReplyListener({
             return dispatcher.dispatch({
                 chatId,
                 messageId: String(messageId),
+                messageCount: assistantIndex + 1,
                 input: sources.map(source => `${source.role}: ${source.text}`).join('\n\n'),
                 messages,
                 sources,
                 context: {
                     chat: chat.slice(0, assistantIndex + 1),
+                    chatLength: assistantIndex + 1,
                     messages,
                     assistantIndex,
                     userIndex: previousUser?.index ?? null,

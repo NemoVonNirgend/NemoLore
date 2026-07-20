@@ -76,3 +76,31 @@ test('scheduling policy enforces limits, minimums, and lore signals', () => {
     now += 1001;
     assert.equal(policy.evaluate('memory', { chatId: 'chat', messageCount: 5 }).allowed, true);
 });
+
+test('profile cadence controls summary and lore frequency per chat', () => {
+    const settings = {
+        helperMemoryAfterReply: false,
+        helperSummaryAfterReply: true,
+        helperLoreAfterReply: true,
+        helperSummaryMinMessages: 0,
+        helperLoreMinMessages: 0,
+        helperLoreRequireSignal: false,
+        helperMaxCallsPerReply: 3,
+        summaryChunkSize: 8,
+        loreUpdateStrategy: 'balanced',
+    };
+    const policy = createHelperSchedulingPolicy({ settings });
+    assert.deepEqual(policy.select({ chatId: 'chat', messageCount: 10 }).selected.map(item => item.workflow), ['summary', 'lore']);
+    const tooSoon = policy.select({ chatId: 'chat', messageCount: 12 });
+    assert.equal(tooSoon.decisions.find(item => item.workflow === 'summary').reason, 'message-cadence');
+    assert.equal(tooSoon.decisions.find(item => item.workflow === 'lore').reason, 'message-cadence');
+    assert.deepEqual(policy.select({ chatId: 'chat', messageCount: 18 }).selected.map(item => item.workflow), ['summary', 'lore']);
+
+    settings.summaryChunkSize = 4;
+    settings.loreUpdateStrategy = 'aggressive';
+    policy.reset();
+    policy.select({ chatId: 'chat', messageCount: 20 });
+    const aggressive = policy.select({ chatId: 'chat', messageCount: 21 });
+    assert.equal(aggressive.decisions.find(item => item.workflow === 'summary').reason, 'message-cadence');
+    assert.equal(aggressive.decisions.find(item => item.workflow === 'lore').allowed, true);
+});

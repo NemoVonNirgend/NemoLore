@@ -195,7 +195,7 @@ const contextContributors = Object.freeze({
         settings,
         logger,
     }),
-    memory: createMemoryContextContributor({ retrieval: memoryRetriever, logger }),
+    memory: createMemoryContextContributor({ retrieval: memoryRetriever, settings, logger }),
 });
 contextRegistry.register('summary', contextContributors.summary);
 contextRegistry.register('memory', contextContributors.memory);
@@ -234,7 +234,7 @@ helperAgents.register('lore', createCallbackHelperAgent({
 const helperRuntime = createHelperAgentRuntime({
     registry: helperAgents,
     logger,
-    concurrency: settings.helperAgentConcurrency,
+    concurrency: () => settings.helperAgentConcurrency,
     contextFactory: () => ({
         lorebooks,
         loreGeneration,
@@ -263,6 +263,7 @@ function registerHelperWorkflow(name, handler) {
 const contextRequestFactory = createSillyTavernContextRequestFactory({
     getChatId: getCurrentChatId,
     getContext,
+    settings,
 });
 function wrapGenerationInterceptor(next, overrides = {}) {
     return createSillyTavernGenerationOrchestrator({
@@ -298,6 +299,7 @@ const settingsController = createModularSettingsController({
     save: persistSettings,
     observability,
     providerRouter: generationRouter,
+    onPolicyChange: () => helperScheduling.reset(),
     logger,
 });
 

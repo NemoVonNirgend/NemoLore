@@ -18,3 +18,16 @@ The first checkpoint classifies pre-preset settings and records a migration expl
 Later checkpoints will replace direct module reads with resolved policy values, introduce preset cards and a small Advanced override surface, migrate every legacy data family, validate record counts and provenance, and finally disable legacy runtime execution.
 
 Migration is required to be idempotent, resumable, and source-preserving.
+
+## Live policy adoption
+
+The runtime reads profile values dynamically for:
+
+- memory retrieval token budgets and candidate limits;
+- recent-message and summary input windows;
+- summary and lore message cadence;
+- helper workflow enablement, limits, and concurrency;
+- message exclusion windows;
+- provider routing and circuit behavior.
+
+Switching profiles resets scheduling history so the newly selected cadence takes effect without retaining stale per-chat counters. Running helper jobs are allowed to finish; a lower concurrency limit applies to subsequent work rather than cancelling active operations.
