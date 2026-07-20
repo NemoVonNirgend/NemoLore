@@ -20,8 +20,8 @@ export function createSummaryService({ generation, store, settings, logger } = {
             }),
             maxTokens: payload.maxTokens ?? 500,
             temperature: payload.temperature ?? 0.2,
-            metadata: { task: 'summary', chatId },
-        }, { provider: payload.provider });
+            metadata: { task: 'summary', chatId, engine: 'modular' },
+        }, { provider: payload.provider, workflow: 'summary' });
 
         const text = String(result.text ?? result).trim();
         const record = await store.save(chatId, {
@@ -29,9 +29,21 @@ export function createSummaryService({ generation, store, settings, logger } = {
             sourceMessageIds: messages.map(message => message.id ?? message.messageId).filter(Boolean),
             sourceRange: payload.sourceRange ?? null,
             paired: payload.paired ?? settings?.enablePairedSummarization,
-            metadata: { provider: payload.provider ?? null },
+            metadata: {
+                engine: 'modular',
+                provider: result.provider ?? payload.provider ?? null,
+                inputMessageCount: messages.length,
+                previousSummaryUpdatedAt: previous?.updatedAt ?? null,
+                previousSummarySourceIds: previous?.sourceMessageIds ?? [],
+                legacyCompatibility: {
+                    paired: payload.paired ?? settings?.enablePairedSummarization,
+                    linkSummariesToAI: Boolean(settings?.linkSummariesToAI),
+                    showSummariesInChat: Boolean(settings?.showSummariesInChat),
+                    hideMessagesWhenThreshold: Boolean(settings?.hideMessagesWhenThreshold),
+                },
+            },
         });
-        logger?.debug('Stored generated summary.', { chatId, messages: messages.length });
+        logger?.debug('Stored generated summary.', { chatId, messages: messages.length, provider: record.metadata.provider });
         return { skipped: false, record, generation: result };
     }
 
