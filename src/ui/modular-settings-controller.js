@@ -15,6 +15,12 @@ const FIELDS = Object.freeze({
     helperLoreRequireSignal: { type: 'checkbox', label: 'Require a lore-worthy signal' },
     helperRequestTimeoutMs: { type: 'number', label: 'Helper request timeout (ms)', min: 1000, max: 300000 },
     helperRetryCount: { type: 'number', label: 'Retry count', min: 0, max: 5 },
+    summaryEngineMode: {
+        type: 'select',
+        label: 'Summary engine',
+        options: ['legacy', 'modular'],
+    },
+    summaryInputMaxMessages: { type: 'number', label: 'Summary input window', min: 2, max: 500 },
     enableSummaryContext: { type: 'checkbox', label: 'Inject conversation summary' },
     summaryContextPrecedence: {
         type: 'select',
