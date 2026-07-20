@@ -66,6 +66,8 @@ Changing either engine selector requires a reload. Manual legacy tools remain av
 
 NemoLore never intentionally runs the legacy and modular automatic workflow for the same subsystem at the same time. Memory helpers are independent of the summary and lore engine selectors.
 
+On the NemoTavern fork, `legacy` delegates to the enabled native summary/lore engine and the native memory worker owns automatic memory unless the modular memory helper is enabled. See [NemoTavern interoperability](docs/NEMOTAVERN.md) for ownership, migration, and diagnostic details.
+
 For full mode and precedence details, see [Configuration](docs/CONFIGURATION.md).
 
 ## Helper agents and providers
@@ -110,7 +112,7 @@ The inspector is the easiest way to confirm which contributions were selected or
 
 ## Migration
 
-The default engine mode remains `legacy`; installing this branch does not opt a chat into modular automation. On chat activation, eligible legacy summaries are copied once into modular memory records and tagged as migrated. Original legacy summary data is preserved. Modular and legacy summary sources can then be selected with `new-first`, `legacy-first`, `new-only`, or `legacy-only` precedence.
+The default engine mode remains `legacy`; installing this branch does not opt a chat into modular automation. On chat activation, eligible legacy summaries and NemoTavern's native per-message summaries/chapter chunks are copied into source-linked modular memory records. Original source data is preserved, while later edits, deletes, invalid chunks, and appended summaries are reconciled. Modular and legacy summary sources can then be selected with `new-first`, `legacy-first`, `new-only`, or `legacy-only` precedence.
 
 Back up SillyTavern user data before a large migration or downgrade. See [Migration notes](docs/MIGRATION.md) for the staged procedure and rollback expectations.
 

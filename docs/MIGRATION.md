@@ -21,7 +21,7 @@ Leave both engines on `legacy`. Confirm existing chats, the legacy settings draw
 
 Enable helper agents and leave **Run memory after replies** enabled. Keep summary and lore engines on legacy. Validate records in the Memory Manager and switch between chats to verify isolation.
 
-When a chat activates, NemoLore searches compatible legacy summary locations. Eligible legacy summaries are copied into consolidated modular memory records with `legacy-summary` and `migrated` tags. A per-chat migration marker prevents duplicate imports. The original source is not removed.
+When a chat activates, NemoLore searches compatible legacy summary locations. Eligible legacy summaries are copied into consolidated modular memory records with `legacy-summary` and `migrated` tags. On NemoTavern it also imports valid native per-message summaries and chapter chunks as source-linked records. Repeated activation is a no-op, while source edits, deletes, invalid chunks, and appended summaries are reconciled. The original source is not removed.
 
 ### Stage 3: modular summary
 

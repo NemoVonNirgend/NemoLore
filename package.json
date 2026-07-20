@@ -1,6 +1,6 @@
 {
   "name": "nemolore",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Memory management and automated lorebook creation toolkit for SillyTavern.",
   "private": true,
   "type": "module",

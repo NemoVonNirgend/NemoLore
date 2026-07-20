@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.3.0 - 2026-07-20
+
+### Added
+
+- NemoTavern runtime interop with explicit per-engine ownership and native
+  context-ledger/provenance visibility.
+- Source-linked import of NemoTavern per-message summaries and valid chapter
+  chunks, including edit, append, delete, and stale-chunk reconciliation.
+
+### Changed
+
+- Legacy engine modes delegate to enabled NemoTavern native workers when the
+  fork is present; stock SillyTavern continues to use standalone legacy mode.
+- The inspector now displays engine owners and native ledger, memory, and
+  provenance state.
+
+### Fixed
+
+- Duplicate native/modular summary and memory context contributions.
+- Late helper and migration commits after ownership or active-chat changes.
+- Ownership checks cloning complete native stores on generation hot paths.
+
 ## 1.2.0 - 2026-07-20
 
 ### Added

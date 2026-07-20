@@ -118,4 +118,9 @@ NemoLore.agents.runtime.inspect()
 NemoLore.observability.snapshot()
 ```
 
+On NemoTavern, also inspect `NemoLore.ownership.snapshot()`,
+`NemoTavern.capabilities.active()`, and
+`NemoTavern.contextLedger.snapshot()`. Installed capability flags alone do
+not mean the native worker is enabled.
+
 Avoid mutating stores or chat metadata from the console when reproducing a persistence issue; doing so bypasses the normal lifecycle being tested.
