@@ -39,6 +39,7 @@ import { createSillyTavernContextBridge } from './src/integrations/sillytavern-c
 import { createSillyTavernContextRequestFactory } from './src/integrations/sillytavern-context-request-factory.js';
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
+import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
 import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
@@ -48,6 +49,8 @@ import { createNounDetector } from './src/lore/noun-detector.js';
 import { createAtomicFactExtractor } from './src/memory/extractors/atomic-fact-extractor.js';
 import { createEpisodeExtractor } from './src/memory/extractors/episode-extractor.js';
 import { createStateChangeExtractor } from './src/memory/extractors/state-change-extractor.js';
+import { createLegacyMemoryMigrator } from './src/memory/legacy-memory-migrator.js';
+import { createMemoryPersistence } from './src/memory/memory-persistence.js';
 import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
 import { createMemoryStore } from './src/memory/memory-store.js';
 import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
@@ -106,6 +109,29 @@ if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
 const sourceLedger = createSourceLedger({ logger });
 const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
+const memoryPersistence = createMemoryPersistence({
+    store: memoryStore,
+    metadata: chat_metadata,
+    saveMetadata,
+    logger,
+});
+const legacyMemoryMigrator = createLegacyMemoryMigrator({
+    store: memoryStore,
+    settings,
+    metadata: chat_metadata,
+    saveMetadata,
+    logger,
+});
+const memoryLifecycle = createSillyTavernMemoryLifecycle({
+    eventSource,
+    chatChangedEvent: event_types.CHAT_CHANGED,
+    chatLoadedEvent: event_types.CHAT_LOADED,
+    getChatId: getCurrentChatId,
+    persistence: memoryPersistence,
+    migrator: legacyMemoryMigrator,
+    logger,
+});
+
 const memoryExtractors = Object.freeze({
     episode: createEpisodeExtractor({ generation: providers, logger }),
     atomicFact: createAtomicFactExtractor({ generation: providers, logger }),
@@ -180,6 +206,7 @@ const helperRuntime = createHelperAgentRuntime({
         summary: summaryService,
         summaryStore,
         memory: memoryPipeline,
+        memoryPersistence,
         retrieval: memoryRetriever,
         context: contextInjector,
     }),
@@ -246,6 +273,9 @@ const publicApi = Object.freeze({
         sourceLedger,
         store: memoryStore,
         pipeline: memoryPipeline,
+        persistence: memoryPersistence,
+        migrator: legacyMemoryMigrator,
+        lifecycle: memoryLifecycle,
         extractors: memoryExtractors,
         processors: memoryProcessors,
         retrieval: Object.freeze({ ...memoryRetrieval, retriever: memoryRetriever }),
@@ -260,6 +290,7 @@ const publicApi = Object.freeze({
         agents: helperRuntime,
         postReply: postReplyDispatcher,
         memory: memoryPipeline,
+        memoryPersistence,
         retrieval: memoryRetriever,
         context: contextInjector,
         contextBridge,
@@ -283,6 +314,7 @@ try {
         logger.warn('Legacy NemoLore interceptor was not found; context bridge remains available manually.');
     }
 
+    memoryLifecycle.install();
     postReplyListener.install();
     lifecycle.markLegacyLoaded();
     lifecycle.markReady();
