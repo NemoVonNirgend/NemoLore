@@ -1,16 +1,19 @@
+import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
+
 const SCHEMA_VERSION = 2;
 
 export function createMemoryPersistence({
     store,
     sourceLedger,
     metadata,
+    getMetadata,
     saveMetadata,
     logger,
     clock = Date,
     debounceMs = 250,
 } = {}) {
     if (!store?.exportRecords || !store?.importRecords) throw new TypeError('Memory persistence requires a serializable store.');
-    if (!metadata || typeof metadata !== 'object') throw new TypeError('Memory persistence requires mutable chat metadata.');
+    const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Memory persistence');
     if (typeof saveMetadata !== 'function') throw new TypeError('Memory persistence requires saveMetadata().');
 
     let timer = null;
@@ -19,8 +22,9 @@ export function createMemoryPersistence({
     let rejectPending = null;
     let unsubscribe = null;
     let activeChatId = null;
+    let activeMetadata = null;
 
-    function container() {
+    function container(metadata = activeMetadata ?? currentMetadata()) {
         metadata.nemolore ??= {};
         metadata.nemolore.memory ??= {};
         return metadata.nemolore.memory;
@@ -71,6 +75,8 @@ export function createMemoryPersistence({
 
     function load(chatId) {
         activeChatId = chatId ? String(chatId) : null;
+        activeMetadata = currentMetadata();
+        const metadata = activeMetadata;
         const saved = metadata.nemolore?.memory;
         if (!saved || saved.chatId !== activeChatId || !Array.isArray(saved.records)) {
             store.clear({ silent: true });
@@ -111,6 +117,7 @@ export function createMemoryPersistence({
         pending = null;
         resolvePending = null;
         rejectPending = null;
+        activeMetadata = null;
     }
 
     return Object.freeze({

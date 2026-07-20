@@ -73,6 +73,67 @@ test('deduplicates active jobs by key', async () => {
     assert.equal(first.id, second.id);
 });
 
+test('deduplicates replayed jobs after successful completion', async () => {
+    const registry = createHelperAgentRegistry();
+    let runs = 0;
+    registry.register('work', {
+        async run() {
+            runs += 1;
+            return true;
+        },
+    });
+    const runtime = createHelperAgentRuntime({ registry, concurrency: 1 });
+
+    const first = runtime.enqueue({ agent: 'work', dedupeKey: 'chat:message:work' });
+    await new Promise(resolve => {
+        const unsubscribe = runtime.subscribe((event, job) => {
+            if (event === 'succeeded' && job.id === first.id) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+    const replay = runtime.enqueue({ agent: 'work', dedupeKey: 'chat:message:work' });
+
+    assert.equal(replay.id, first.id);
+    assert.equal(replay.status, 'succeeded');
+    assert.equal(runs, 1);
+});
+
+test('failed jobs release their dedupe key for a later retry', async () => {
+    const registry = createHelperAgentRegistry();
+    let runs = 0;
+    registry.register('work', {
+        async run() {
+            runs += 1;
+            if (runs === 1) throw new Error('temporary');
+            return true;
+        },
+    });
+    const runtime = createHelperAgentRuntime({ registry, concurrency: 1, logger: { error() {} } });
+    const first = runtime.enqueue({ agent: 'work', dedupeKey: 'retryable' });
+    await new Promise(resolve => {
+        const unsubscribe = runtime.subscribe((event, job) => {
+            if (event === 'failed' && job.id === first.id) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+
+    const retry = runtime.enqueue({ agent: 'work', dedupeKey: 'retryable' });
+    assert.notEqual(retry.id, first.id);
+    await new Promise(resolve => {
+        const unsubscribe = runtime.subscribe((event, job) => {
+            if (event === 'succeeded' && job.id === retry.id) {
+                unsubscribe();
+                resolve();
+            }
+        });
+    });
+    assert.equal(runs, 2);
+});
+
 test('reads concurrency dynamically after a profile change', () => {
     const registry = createHelperAgentRegistry();
     let concurrency = 1;

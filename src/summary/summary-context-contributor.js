@@ -7,6 +7,7 @@ import {
 export function createSummaryContextContributor({
     summaryStore,
     settings = {},
+    ownership,
     logger,
 } = {}) {
     if (!summaryStore?.get) throw new TypeError('Summary context contributor requires a summary store.');
@@ -22,6 +23,8 @@ export function createSummaryContextContributor({
 
         async contribute(request = {}, options = {}) {
             if (settings.enableSummaryContext === false) return [];
+            const owner = ownership?.ownerFor?.('summary');
+            if (owner !== undefined && owner !== 'nemolore-modular') return [];
             const chatId = request.chatId ?? request.context?.chatId;
             if (!chatId) return [];
             const resolved = resolve(String(chatId));

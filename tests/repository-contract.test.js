@@ -36,3 +36,13 @@ test('bootstrap no longer loads the legacy runtime module', async () => {
     assert.match(settings, /data-nemolore-modular-host/);
     assert.ok(settings.length < 2_000, 'Settings template should remain a small modular host.');
 });
+
+test('bootstrap always registers the built-in SillyTavern generation provider', async () => {
+    const bootstrap = await readFile('bootstrap.js', 'utf8');
+
+    assert.match(bootstrap, /\bgenerateRaw\b/);
+    assert.match(
+        bootstrap,
+        /providers\.register\(['"]sillytavern['"],\s*createSillyTavernProvider\(/,
+    );
+});

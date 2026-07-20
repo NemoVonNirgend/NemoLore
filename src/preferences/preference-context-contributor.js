@@ -7,7 +7,8 @@ export function createPreferenceContextContributor({ store, settings, getPersona
         name: 'preferences',
         async contribute(request = {}, options = {}) {
             if (!settings?.enablePreferenceMemory) return [];
-            const personaId = request.personaId ?? getPersonaId?.() ?? null;
+            const requestedPersonaId = request.personaId ?? getPersonaId?.() ?? null;
+            const personaId = String(requestedPersonaId ?? '').trim() || null;
             const limit = Math.max(1, Number(settings.preferenceContextLimit ?? 12));
             const budget = Math.max(40, Number(options.maxTokens ?? settings.preferenceContextBudget ?? 400));
             const accepted = store.list()

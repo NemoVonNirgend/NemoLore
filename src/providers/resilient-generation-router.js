@@ -25,9 +25,10 @@ export function createResilientGenerationRouter({ registry, settings, logger, cl
             summary: 'helperSummaryProvider',
             lore: 'helperLoreProvider',
         }[workflow];
-        return (overrideKey && settings?.[overrideKey])
+        const configured = (overrideKey && settings?.[overrideKey])
             || settings?.helperAgentProvider
-            || registry.activeProvider;
+            || null;
+        return configured && registry.has(configured) ? configured : registry.activeProvider;
     }
 
     function fallbackFor(primary) {

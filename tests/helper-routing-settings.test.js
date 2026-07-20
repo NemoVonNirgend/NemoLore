@@ -34,6 +34,25 @@ test('routes workflows to overrides and falls back after provider failure', asyn
     assert.equal(router.routeFor('summary'), 'primary');
 });
 
+test('stale persisted provider names fall back to the active built-in provider', async () => {
+    const calls = [];
+    const registry = createRegistry({
+        primary: async () => { calls.push('primary'); return { text: 'ok' }; },
+    });
+    const router = createResilientGenerationRouter({
+        registry,
+        settings: {
+            helperAgentProvider: 'async',
+            helperSummaryProvider: 'removed-provider',
+            helperRetryCount: 0,
+        },
+    });
+
+    assert.equal(router.routeFor('summary'), 'primary');
+    assert.equal((await router.generate({}, { workflow: 'summary' })).text, 'ok');
+    assert.deepEqual(calls, ['primary']);
+});
+
 test('opens a circuit after repeated failures', async () => {
     let attempts = 0;
     const router = createResilientGenerationRouter({

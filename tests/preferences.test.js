@@ -43,3 +43,19 @@ test('persona preferences only inject for their matching persona', async () => {
     assert.deepEqual(await contributor.contribute({ personaId: 'other' }), []);
     assert.match((await contributor.contribute({ personaId: 'minimalist' })).content, /terse narration/);
 });
+
+test('persona identifiers are normalized at storage and contribution boundaries', async () => {
+    const context = setup();
+    const record = context.store.save({
+        content: 'Use scene breaks between locations.',
+        status: 'accepted',
+        scope: 'persona',
+        personaId: '  director  ',
+    });
+    const contributor = createPreferenceContextContributor({ store: context.store, settings: context.settings });
+
+    assert.equal(record.personaId, 'director');
+    const contribution = await contributor.contribute({ personaId: ' director ' });
+    assert.match(contribution.content, /scene breaks/);
+    assert.equal(contribution.metadata.personaId, 'director');
+});

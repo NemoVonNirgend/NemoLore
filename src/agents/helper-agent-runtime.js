@@ -5,7 +5,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
     const jobs = new Map();
     const queue = [];
-    const activeDedupeKeys = new Map();
+    const dedupeKeys = new Map();
     const listeners = new Set();
     let running = 0;
 
@@ -55,7 +55,9 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
         } finally {
             job.completedAt = new Date().toISOString();
             running -= 1;
-            if (job.dedupeKey) activeDedupeKeys.delete(job.dedupeKey);
+            if (job.dedupeKey && job.status !== HELPER_JOB_STATUS.SUCCEEDED) {
+                dedupeKeys.delete(job.dedupeKey);
+            }
             drain();
         }
     }
@@ -70,13 +72,13 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
     function prepare(input) {
         if (!registry.has(input?.agent)) throw new Error(`Unknown helper agent: ${input?.agent}`);
-        if (input.dedupeKey && activeDedupeKeys.has(input.dedupeKey)) {
-            return { snapshot: snapshot(jobs.get(activeDedupeKeys.get(input.dedupeKey))) };
+        if (input.dedupeKey && dedupeKeys.has(input.dedupeKey)) {
+            return { snapshot: snapshot(jobs.get(dedupeKeys.get(input.dedupeKey))) };
         }
 
         const job = createHelperJob(input);
         jobs.set(job.id, job);
-        if (job.dedupeKey) activeDedupeKeys.set(job.dedupeKey, job.id);
+        if (job.dedupeKey) dedupeKeys.set(job.dedupeKey, job.id);
         queue.push(job);
         emit('queued', job);
         return { job, snapshot: snapshot(job) };
@@ -113,7 +115,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
         if (job.status === HELPER_JOB_STATUS.QUEUED) {
             job.status = HELPER_JOB_STATUS.CANCELLED;
             job.completedAt = new Date().toISOString();
-            if (job.dedupeKey) activeDedupeKeys.delete(job.dedupeKey);
+            if (job.dedupeKey) dedupeKeys.delete(job.dedupeKey);
             emit('cancelled', job);
         }
         return true;

@@ -1,9 +1,13 @@
-export function createMemoryHelperAgent({ pipeline, maintenance } = {}) {
+import { createActiveChatGuard } from '../core/active-chat-guard.js';
+
+export function createMemoryHelperAgent({ pipeline, maintenance, getActiveChatId } = {}) {
     if (!pipeline?.ingest) throw new TypeError('Memory helper agent requires a memory pipeline.');
 
     return Object.freeze({
         async run(job) {
             const payload = job.payload ?? {};
+            const shouldCommit = createActiveChatGuard(getActiveChatId, payload.chatId);
+            if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
             const extractorNames = payload.extractors ?? ['episode', 'atomic-fact', 'state-change'];
             const results = [];
             const context = {
@@ -16,17 +20,23 @@ export function createMemoryHelperAgent({ pipeline, maintenance } = {}) {
             };
 
             for (const extractor of extractorNames) {
+                if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
                 results.push(...await pipeline.ingest({
                     extractor,
                     input: payload.input,
                     sources: payload.sources ?? [],
                     context,
+                    shouldCommit,
                 }));
+                if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
             }
 
+            if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
             const maintenanceResult = await maintenance?.run?.({
                 messageCount: payload.context?.chatLength ?? payload.messageCount,
+                shouldCommit,
             });
+            if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
 
             return { memoryIds: results.map(record => record.id), records: results, maintenance: maintenanceResult ?? null };
         },

@@ -19,6 +19,8 @@ export function createObservabilityService({
     lorebooks,
     semanticMemory,
     getChatId,
+    hostInterop,
+    ownership,
     logger,
     historyLimit = 100,
 } = {}) {
@@ -49,6 +51,16 @@ export function createObservabilityService({
         const jobs = helperRuntime?.list?.() ?? [];
         const memories = memoryStore?.list?.() ?? [];
         const summary = chatId ? summaryStore?.get?.(chatId) ?? null : null;
+        const hostCapabilities = hostInterop?.snapshot?.() ?? null;
+        const hostState = hostInterop?.observabilitySnapshot?.() ?? null;
+        const host = hostCapabilities?.available || hostState?.contextLedger || hostState?.provenance
+            ? {
+                ...safeClone(hostCapabilities),
+                contextLedger: safeClone(hostState?.contextLedger ?? null),
+                memory: safeClone(hostState?.memory ?? null),
+                provenance: safeClone(hostState?.provenance ?? null),
+            }
+            : null;
 
         return Object.freeze({
             capturedAt: new Date().toISOString(),
@@ -73,6 +85,8 @@ export function createObservabilityService({
                 active: memories.filter(item => item.status === 'active').length,
             },
             semanticMemory: safeClone(semanticMemory?.inspect?.() ?? null),
+            host,
+            ownership: safeClone(ownership?.snapshot?.() ?? null),
             summary: safeClone(summary),
             lorebook: lorebooks?.getAssociatedName?.() ?? null,
             helpers: {
@@ -94,6 +108,7 @@ export function createObservabilityService({
             `Context: ${context ? `${context.usedTokens}/${context.maxTokens} tokens, ${context.selectedCount} selected, ${context.omittedCount} omitted` : 'not yet built'}`,
             `Memory: ${data.memory.total} total, ${data.memory.active} active`,
             `Semantic index: ${data.semanticMemory ? `${data.semanticMemory.indexedCount} indexed (${data.semanticMemory.available ? 'available' : 'unavailable'})` : 'not configured'}`,
+            `NemoTavern host: ${data.host ? 'available' : 'not detected'}`,
             `Summary: ${data.summary?.text ? 'available' : 'none'}`,
             `Lorebook: ${data.lorebook ?? 'none'}`,
             `Helpers: ${data.helpers.runtime?.running ?? 0} running, ${data.helpers.runtime?.queued ?? 0} queued`,

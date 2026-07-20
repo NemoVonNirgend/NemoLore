@@ -21,9 +21,17 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
         return processor;
     }
 
-    async function ingest({ sources = [], input, extractor, context = {} } = {}) {
+    async function ingest({ sources = [], input, extractor, context = {}, shouldCommit } = {}) {
+        const canCommit = () => typeof shouldCommit !== 'function' || shouldCommit();
+        if (!canCommit()) return [];
+
         const registeredSources = sources.map(source => sourceLedger.register(source));
         const sourceIds = registeredSources.map(source => source.id);
+        const ensureSources = () => {
+            for (const source of registeredSources) {
+                if (!sourceLedger.has(source.id)) sourceLedger.register(source);
+            }
+        };
         const selectedExtractor = typeof extractor === 'string'
             ? extractors.get(extractor)
             : extractor;
@@ -38,6 +46,8 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
             context,
         });
 
+        if (!canCommit()) return [];
+
         const candidates = Array.isArray(extracted) ? extracted : [extracted];
         const saved = [];
 
@@ -48,11 +58,17 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
             };
 
             for (const processor of processors) {
-                current = await processor(current, { context, store, sourceLedger });
+                if (!canCommit()) return saved;
+                ensureSources();
+                current = await processor(current, { context, store, sourceLedger, shouldCommit: canCommit });
+                if (!canCommit()) return saved;
                 if (!current) break;
             }
 
-            if (current) saved.push(store.save(current));
+            if (current && canCommit()) {
+                ensureSources();
+                saved.push(store.save(current));
+            }
         }
 
         logger?.debug('Memory ingestion completed.', {

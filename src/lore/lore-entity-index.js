@@ -38,5 +38,5 @@ export function createLoreEntityIndex() {
         return null;
     }
 
-    return Object.freeze({ build, resolve, normalizeIdentity, entriesFromLorebook });
+    return Object.freeze({ build, resolve, normalizeIdentity, identitiesFor, entriesFromLorebook });
 }

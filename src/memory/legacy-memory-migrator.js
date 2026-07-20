@@ -1,3 +1,5 @@
+import { createActiveChatGuard } from '../core/active-chat-guard.js';
+import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
 import { MEMORY_TYPES } from './memory-types.js';
 
 const MIGRATION_VERSION = 2;
@@ -20,13 +22,28 @@ function collectLegacySummaries(value) {
     })));
 }
 
-export function createLegacyMemoryMigrator({ store, sourceLedger, summaryStore, settings, metadata, saveMetadata, logger, clock = Date } = {}) {
+export function createLegacyMemoryMigrator({
+    store,
+    sourceLedger,
+    summaryStore,
+    settings,
+    metadata,
+    getMetadata,
+    getActiveChatId,
+    saveMetadata,
+    logger,
+    clock = Date,
+} = {}) {
     if (!store?.save) throw new TypeError('Legacy memory migrator requires a memory store.');
+    const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Legacy memory migrator');
 
     async function migrate(chatId) {
         const normalizedChatId = String(chatId ?? '');
         if (!normalizedChatId) return { migrated: 0, skipped: true, reason: 'missing-chat-id' };
+        const shouldCommit = createActiveChatGuard(getActiveChatId, normalizedChatId);
+        if (!shouldCommit()) return { migrated: 0, skipped: true, reason: 'stale-chat' };
 
+        const metadata = currentMetadata();
         metadata.nemolore ??= {};
         metadata.nemolore.migrations ??= {};
         const marker = metadata.nemolore.migrations.legacyChatSummaries;
@@ -109,6 +126,9 @@ export function createLegacyMemoryMigrator({ store, sourceLedger, summaryStore, 
             summaryImported = true;
         }
 
+        if (!shouldCommit()) {
+            return { migrated, upgraded, summaryImported, skipped: true, reason: 'stale-chat' };
+        }
         metadata.nemolore.migrations.legacyChatSummaries = {
             version: MIGRATION_VERSION,
             chatId: normalizedChatId,

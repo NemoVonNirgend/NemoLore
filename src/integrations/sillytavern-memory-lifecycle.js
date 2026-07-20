@@ -13,33 +13,79 @@ export function createSillyTavernMemoryLifecycle({
 
     let installed = false;
     let currentChatId = null;
+    let activationQueue = Promise.resolve();
 
-    async function activate(chatId = getChatId?.()) {
+    function staleResult(nextChatId) {
+        const activeChatId = getChatId?.();
+        if (activeChatId == null || String(activeChatId) === nextChatId) return null;
+        return {
+            loaded: 0,
+            migrated: 0,
+            skipped: true,
+            reason: 'stale-chat',
+            requestedChatId: nextChatId,
+            activeChatId: String(activeChatId),
+        };
+    }
+
+    async function activateNow(chatId, { force = false } = {}) {
         const nextChatId = chatId ? String(chatId) : null;
         if (!nextChatId) return { loaded: 0, migrated: 0, skipped: true };
+        let stale = staleResult(nextChatId);
+        if (stale) return stale;
+        if (currentChatId === nextChatId && !force) {
+            return { loaded: 0, migrated: 0, skipped: true, reason: 'already-active' };
+        }
         if (currentChatId && currentChatId !== nextChatId) {
             try { await persistence.flush(); } catch (error) { logger?.error('Unable to flush previous chat memory.', error); }
         }
 
-        currentChatId = nextChatId;
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
         const loaded = persistence.start(nextChatId);
         const migration = await migrator?.migrate(nextChatId) ?? { migrated: 0 };
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
         if (migration.migrated || migration.upgraded || migration.summaryImported) await persistence.flush();
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
         await onActivated?.(nextChatId, { loaded, migration });
+        stale = staleResult(nextChatId);
+        if (stale) return stale;
+        currentChatId = nextChatId;
         logger?.debug('Activated chat memory persistence.', { chatId: nextChatId, loaded: loaded.length, migrated: migration.migrated });
         return { loaded: loaded.length, migrated: migration.migrated ?? 0, skipped: false };
     }
 
-    function onChatChanged(chatId) {
+    function activate(chatId = getChatId?.(), options = {}) {
+        const requestedChatId = chatId;
+        const activation = activationQueue.then(() => activateNow(requestedChatId, options));
+        activationQueue = activation.catch(() => {});
+        return activation;
+    }
+
+    function eventChatId(value) {
+        return typeof value === 'string' || typeof value === 'number'
+            ? value
+            : getChatId?.();
+    }
+
+    function onChatChanged(eventValue) {
+        const chatId = eventChatId(eventValue);
         void activate(chatId).catch(error => logger?.error('Chat memory activation failed.', error));
+    }
+
+    function onChatLoaded(eventValue) {
+        const chatId = eventChatId(eventValue);
+        void activate(chatId, { force: true }).catch(error => logger?.error('Loaded chat memory activation failed.', error));
     }
 
     function install() {
         if (installed) return false;
         if (chatChangedEvent) eventSource.on(chatChangedEvent, onChatChanged);
-        if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) eventSource.on(chatLoadedEvent, onChatChanged);
+        if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) eventSource.on(chatLoadedEvent, onChatLoaded);
         installed = true;
-        void activate();
+        void activate().catch(error => logger?.error('Initial chat memory activation failed.', error));
         return true;
     }
 
@@ -50,8 +96,8 @@ export function createSillyTavernMemoryLifecycle({
             eventSource.off?.(chatChangedEvent, onChatChanged);
         }
         if (chatLoadedEvent && chatLoadedEvent !== chatChangedEvent) {
-            eventSource.removeListener?.(chatLoadedEvent, onChatChanged);
-            eventSource.off?.(chatLoadedEvent, onChatChanged);
+            eventSource.removeListener?.(chatLoadedEvent, onChatLoaded);
+            eventSource.off?.(chatLoadedEvent, onChatLoaded);
         }
         persistence.stop?.();
         installed = false;

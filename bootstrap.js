@@ -1,5 +1,7 @@
 import {
     chat_metadata,
+    generateRaw,
+    user_avatar,
     saveMetadata,
     saveSettingsDebounced,
     getCurrentChatId,
@@ -37,7 +39,7 @@ import { MODULE_NAME } from './src/core/constants.js';
 import { createKeyedLock } from './src/core/keyed-lock.js';
 import { createLifecycle } from './src/core/lifecycle.js';
 import { createLogger } from './src/core/logger.js';
-import { createSettings } from './src/core/settings.js';
+import { applySettingsDefaults, linkExtensionSettingsNamespaces } from './src/core/settings.js';
 import { createNemoLoreState } from './src/core/state.js';
 import { createSillyTavernContextBridge } from './src/integrations/sillytavern-context-bridge.js';
 import { createSillyTavernContextExclusionInterceptor } from './src/integrations/sillytavern-context-exclusion-interceptor.js';
@@ -48,6 +50,7 @@ import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createSillyTavernVectorAdapter } from './src/integrations/sillytavern-vector-adapter.js';
 import { createWorldInfoAdapter } from './src/integrations/world-info-adapter.js';
+import { createEngineOwnership, createNemoTavernHostInterop } from './src/integrations/nemotavern-host-interop.js';
 import { createLoreGenerationService } from './src/lore/lore-generation-service.js';
 import { createLoreHelperWorkflow } from './src/lore/lore-helper-workflow.js';
 import { createLorebookRepository } from './src/lore/lorebook-repository.js';
@@ -96,13 +99,14 @@ import { createNotificationCenter } from './src/ui/notification-center.js';
 import { createPopupCoordinator } from './src/ui/popup-coordinator.js';
 
 const logger = createLogger({ moduleName: MODULE_NAME });
-extension_settings.nemolore ??= {};
-const settings = createSettings(extension_settings.nemolore);
-Object.assign(extension_settings.nemolore, settings);
+const settingsBacking = linkExtensionSettingsNamespaces(extension_settings);
+const settings = applySettingsDefaults(settingsBacking);
 const persistSettings = updated => {
-    Object.assign(extension_settings.nemolore, updated);
+    Object.assign(settingsBacking, updated);
     saveSettingsDebounced();
 };
+const hostInterop = createNemoTavernHostInterop();
+const ownership = createEngineOwnership({ settings, hostInterop });
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
@@ -123,20 +127,34 @@ const worldInfo = createWorldInfoAdapter({
 const lorebooks = createLorebookRepository({
     adapter: worldInfo,
     metadata: chat_metadata,
+    getMetadata: () => chat_metadata,
     saveMetadata,
     metadataKey: METADATA_KEY,
     state,
     logger,
+    getActiveChatId: getCurrentChatId,
 });
 
 const providers = createProviderRegistry({ logger });
-if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
+providers.register('sillytavern', createSillyTavernProvider({
+    generate: ({ prompt, maxTokens, prefill }) => generateRaw({
+        prompt,
+        responseLength: maxTokens,
+        prefill,
+    }),
+    logger,
+}));
+function synchronizeAsyncProvider() {
+    if (providers.has('async')) providers.unregister('async');
+    if (!settings.enableAsyncApi || !settings.asyncApiEndpoint) return false;
     providers.register('async', createOpenAICompatibleProvider({
         endpoint: settings.asyncApiEndpoint,
         apiKey: settings.asyncApiKey,
         model: settings.asyncApiModel,
     }));
+    return true;
 }
+synchronizeAsyncProvider();
 const generationRouter = createResilientGenerationRouter({ registry: providers, settings, logger });
 
 const sourceLedger = createSourceLedger({ logger });
@@ -148,11 +166,12 @@ const vectorAdapter = createSillyTavernVectorAdapter({
     logger,
 });
 const semanticMemoryIndex = createSemanticMemoryIndex({ store: memoryStore, adapter: vectorAdapter, settings, logger });
-const summaryStore = createSummaryStore({ metadata: chat_metadata, saveMetadata });
+const summaryStore = createSummaryStore({ metadata: chat_metadata, getMetadata: () => chat_metadata, saveMetadata });
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
     sourceLedger,
     metadata: chat_metadata,
+    getMetadata: () => chat_metadata,
     saveMetadata,
     logger,
 });
@@ -162,7 +181,9 @@ const legacyMemoryMigrator = createLegacyMemoryMigrator({
     summaryStore,
     settings,
     metadata: chat_metadata,
+    getMetadata: () => chat_metadata,
     saveMetadata,
+    getActiveChatId: getCurrentChatId,
     logger,
 });
 const memoryLifecycle = createSillyTavernMemoryLifecycle({
@@ -211,18 +232,42 @@ const memoryRetrieval = Object.freeze({
 });
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, semantic: semanticMemoryIndex, settings, logger });
 
-const summaryService = createSummaryService({ generation: generationRouter, store: summaryStore, settings, logger });
-const loreGeneration = createLoreGenerationService({ generation: generationRouter, lorebooks, lock: writeLock, logger });
+const summaryService = createSummaryService({
+    generation: generationRouter,
+    store: summaryStore,
+    settings,
+    logger,
+    getActiveChatId: getCurrentChatId,
+});
+const loreGeneration = createLoreGenerationService({
+    generation: generationRouter,
+    lorebooks,
+    lock: writeLock,
+    logger,
+    getActiveChatId: getCurrentChatId,
+});
 
 const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
     summary: createSummaryContextContributor({
         summaryStore,
         settings,
+        ownership,
         logger,
     }),
-    memory: createMemoryContextContributor({ retrieval: memoryRetriever, settings, logger }),
-    preferences: createPreferenceContextContributor({ store: preferenceStore, settings, logger }),
+    memory: createMemoryContextContributor({
+        retrieval: memoryRetriever,
+        persistence: memoryPersistence,
+        settings,
+        ownership,
+        logger,
+    }),
+    preferences: createPreferenceContextContributor({
+        store: preferenceStore,
+        settings,
+        getPersonaId: () => user_avatar,
+        logger,
+    }),
 });
 contextRegistry.register('summary', contextContributors.summary);
 contextRegistry.register('memory', contextContributors.memory);
@@ -245,7 +290,11 @@ const contextBridge = createSillyTavernContextBridge({
 const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: generationRouter, tasks: helperTasks, logger }));
-helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline, maintenance: memoryMaintenanceService }));
+helperAgents.register('memory', createMemoryHelperAgent({
+    pipeline: memoryPipeline,
+    maintenance: memoryMaintenanceService,
+    getActiveChatId: getCurrentChatId,
+}));
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
     handler: createSummaryHelperWorkflow({
@@ -290,6 +339,7 @@ function registerHelperWorkflow(name, handler) {
 const contextRequestFactory = createSillyTavernContextRequestFactory({
     getChatId: getCurrentChatId,
     getContext,
+    getPersonaId: () => user_avatar,
     settings,
 });
 function wrapGenerationInterceptor(next, overrides = {}) {
@@ -319,6 +369,8 @@ const observability = createObservabilityService({
     lorebooks,
     semanticMemory: semanticMemoryIndex,
     getChatId: getCurrentChatId,
+    hostInterop,
+    ownership,
     logger,
     historyLimit: settings.observabilityHistoryLimit,
 });
@@ -328,6 +380,11 @@ const settingsController = createModularSettingsController({
     observability,
     providerRouter: generationRouter,
     onPolicyChange: () => helperScheduling.reset(),
+    onProviderConfigChange: synchronizeAsyncProvider,
+    getChatId: getCurrentChatId,
+    eventSource,
+    chatChangedEvent: event_types.CHAT_CHANGED,
+    chatLoadedEvent: event_types.CHAT_LOADED,
     logger,
 });
 const modularUi = createModularUiBootstrap({
@@ -354,6 +411,8 @@ const publicApi = Object.freeze({
     settings,
     state,
     lifecycle,
+    hostInterop,
+    ownership,
     providers: Object.freeze({
         registry: providers,
         router: generationRouter,

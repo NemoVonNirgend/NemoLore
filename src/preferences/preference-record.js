@@ -19,14 +19,15 @@ export function createPreferenceRecord(input, { now = () => new Date().toISOStri
     if (!VALID_STATUS.has(status)) throw new TypeError(`Unknown preference status: ${status}`);
     const scope = input.scope ?? 'global';
     if (!VALID_SCOPE.has(scope)) throw new TypeError(`Unknown preference scope: ${scope}`);
-    if (scope === 'persona' && !String(input.personaId ?? '').trim()) throw new TypeError('Persona preferences require personaId.');
+    const personaId = String(input.personaId ?? '').trim();
+    if (scope === 'persona' && !personaId) throw new TypeError('Persona preferences require personaId.');
     const timestamp = input.createdAt ?? now();
     return Object.freeze({
         id: input.id ?? createId(),
         content,
         status,
         scope,
-        personaId: scope === 'persona' ? String(input.personaId) : null,
+        personaId: scope === 'persona' ? personaId : null,
         confidence: Math.min(1, Math.max(0, Number(input.confidence ?? 0.5))),
         priority: Math.min(1, Math.max(0, Number(input.priority ?? 0.5))),
         tags: [...new Set((input.tags ?? []).map(String).map(value => value.trim()).filter(Boolean))],

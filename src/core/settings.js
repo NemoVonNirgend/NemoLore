@@ -121,6 +121,35 @@ export const DEFAULT_SETTINGS = Object.freeze({
     preferenceEvidence: [],
 });
 
+export const SETTINGS_NAMESPACE = 'nemolore';
+export const LEGACY_SETTINGS_NAMESPACE = 'NemoLore';
+
+function isSettingsObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function linkExtensionSettingsNamespaces(extensionSettings) {
+    if (!extensionSettings || typeof extensionSettings !== 'object') {
+        throw new TypeError('Extension settings must be an object.');
+    }
+    const canonical = isSettingsObject(extensionSettings[SETTINGS_NAMESPACE])
+        ? extensionSettings[SETTINGS_NAMESPACE]
+        : null;
+    const legacy = isSettingsObject(extensionSettings[LEGACY_SETTINGS_NAMESPACE])
+        ? extensionSettings[LEGACY_SETTINGS_NAMESPACE]
+        : null;
+    const shared = legacy ?? canonical ?? {};
+
+    if (canonical && legacy && canonical !== legacy) {
+        for (const [key, value] of Object.entries(canonical)) {
+            if (!(key in legacy)) legacy[key] = value;
+        }
+    }
+    extensionSettings[SETTINGS_NAMESPACE] = shared;
+    extensionSettings[LEGACY_SETTINGS_NAMESPACE] = shared;
+    return shared;
+}
+
 export function createSettings(overrides = {}) {
     const hasStoredSettings = Object.keys(overrides ?? {}).length > 0;
     const hasPresetSchema = Number(overrides.settingsSchemaVersion) >= 2 && overrides.preset;
@@ -164,6 +193,14 @@ export function createSettings(overrides = {}) {
             ...(overrides.chatSummaries ?? {}),
         },
     };
+}
+
+export function applySettingsDefaults(settings) {
+    if (!isSettingsObject(settings)) {
+        throw new TypeError('Settings must be an object.');
+    }
+    Object.assign(settings, createSettings(settings));
+    return settings;
 }
 
 export function mergeSettings(storedSettings = {}) {

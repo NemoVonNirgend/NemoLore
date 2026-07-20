@@ -151,13 +151,14 @@ test('upgrades the earlier memory-only migration marker to the modular cutover',
 test('flushes old chat memory before activating the next chat', async () => {
     const calls = [];
     const listeners = new Map();
+    let activeChatId = 'chat-a';
     const lifecycle = createSillyTavernMemoryLifecycle({
         eventSource: {
             on(event, handler) { listeners.set(event, handler); },
             off(event) { listeners.delete(event); },
         },
         chatChangedEvent: 'changed',
-        getChatId: () => 'chat-a',
+        getChatId: () => activeChatId,
         persistence: {
             start(chatId) { calls.push(`start:${chatId}`); return []; },
             async flush() { calls.push('flush'); },
@@ -167,6 +168,7 @@ test('flushes old chat memory before activating the next chat', async () => {
     });
 
     await lifecycle.activate('chat-a');
+    activeChatId = 'chat-b';
     await lifecycle.activate('chat-b');
     assert.deepEqual(calls, ['start:chat-a', 'flush', 'start:chat-b']);
 });

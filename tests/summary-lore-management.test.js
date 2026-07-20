@@ -86,6 +86,8 @@ test('lore manager protects entries and merges duplicates', async () => {
         generation: { preview() {}, apply() {} },
         entityIndex: createLoreEntityIndex(),
     });
+    const listed = await manager.list();
+    assert.deepEqual(listed[0].normalizedIdentities, ['marcus', 'marcus']);
     await manager.protect(1, true);
     assert.equal(repository.book.entries[1].extensions.nemolore.protected, true);
     await manager.merge(1, [2]);

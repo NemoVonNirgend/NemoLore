@@ -70,6 +70,33 @@ test('revisions preserve identity and increment revision number', () => {
     assert.equal(revised.confidence, 0.9);
 });
 
+test('re-registers active sources if same-chat lifecycle reload clears the ledger during extraction', async () => {
+    const sourceLedger = createSourceLedger();
+    const store = createMemoryStore({ sourceLedger });
+    const pipeline = createMemoryPipeline({ store, sourceLedger });
+    pipeline.registerExtractor('delayed', {
+        async extract() {
+            sourceLedger.clear();
+            return {
+                type: 'atomic',
+                title: 'Recovered source',
+                content: 'The source remains linkable.',
+                importance: 0.5,
+                confidence: 1,
+            };
+        },
+    });
+
+    const [record] = await pipeline.ingest({
+        extractor: 'delayed',
+        input: 'source',
+        sources: [{ chatId: 'chat', messageId: 'message' }],
+    });
+
+    assert.equal(record.sourceIds[0], 'chat:message');
+    assert.equal(sourceLedger.has('chat:message'), true);
+});
+
 test('invalidating a source invalidates linked memories', async () => {
     const { store, pipeline } = createFixture();
     pipeline.registerExtractor('fact', {

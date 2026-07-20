@@ -9,6 +9,10 @@ const FIELDS = Object.freeze({
     helperSummaryProvider: { type: 'text', label: 'Summary provider override' },
     helperLoreProvider: { type: 'text', label: 'Lore provider override' },
     helperFallbackProvider: { type: 'text', label: 'Fallback provider' },
+    enableAsyncApi: { type: 'checkbox', label: 'Enable OpenAI-compatible provider' },
+    asyncApiEndpoint: { type: 'text', label: 'Async API endpoint' },
+    asyncApiKey: { type: 'password', label: 'Async API key' },
+    asyncApiModel: { type: 'text', label: 'Async API model' },
     helperMemoryAfterReply: { type: 'checkbox', label: 'Run memory after replies' },
     helperSummaryAfterReply: { type: 'checkbox', label: 'Run summary after replies' },
     helperLoreAfterReply: { type: 'checkbox', label: 'Run lore after replies' },
@@ -82,7 +86,19 @@ function createControl(key, definition, settings, onChange) {
     return { row, input };
 }
 
-export function createModularSettingsController({ settings, save, observability, providerRouter, onPolicyChange, logger } = {}) {
+export function createModularSettingsController({
+    settings,
+    save,
+    observability,
+    providerRouter,
+    onPolicyChange,
+    onProviderConfigChange,
+    getChatId,
+    eventSource,
+    chatChangedEvent,
+    chatLoadedEvent,
+    logger,
+} = {}) {
     let root = null;
     let summaryDisplay = null;
     let memoryPanel = null;
@@ -113,7 +129,10 @@ export function createModularSettingsController({ settings, save, observability,
         if (PRESET_SETTING_KEYS.includes(key)) Object.assign(settings, setPresetOverride(settings, key, value));
         else settings[key] = value;
         save?.(settings);
-        if (key.includes('Provider')) providerRouter?.resetCircuit?.();
+        if (key === 'enableAsyncApi' || key.includes('Provider') || key.startsWith('asyncApi')) {
+            providerRouter?.resetCircuit?.();
+        }
+        if (key === 'enableAsyncApi' || key.startsWith('asyncApi')) onProviderConfigChange?.(settings);
         if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
         if (PRESET_SETTING_KEYS.includes(key)) onPolicyChange?.(settings);
         syncUi();
@@ -178,7 +197,10 @@ export function createModularSettingsController({ settings, save, observability,
         summaryDisplay = createSummaryDisplayController({
             summaryStore: globalThis.NemoLore.summary.store,
             settings,
-            getChatId: () => globalThis.NemoLore?.memory?.persistence?.activeChatId ?? null,
+            getChatId: getChatId ?? (() => globalThis.NemoLore?.memory?.persistence?.activeChatId ?? null),
+            eventSource,
+            chatChangedEvent,
+            chatLoadedEvent,
             logger,
         });
         return summaryDisplay.install();
