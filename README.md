@@ -9,6 +9,7 @@ NemoLore is a comprehensive SillyTavern extension that enhances roleplay through
 - **Core Memory Detection**: Identifies and preserves pivotal story moments marked with `<CORE_MEMORY>` tags
 - **Running Memory System**: Maintains a configurable sliding window of recent conversation context
 - **Semantic Memory Retrieval**: Blends SillyTavern vector similarity with deterministic entity, importance, recency, and memory-type scoring
+- **Reviewed Preferences (opt-in)**: Stores global or persona-scoped preference candidates with evidence and injects only preferences the user explicitly accepts
 
 ### 🎯 Interactive Story Enhancement  
 - **Real-time Noun Highlighting**: Detects and highlights important story elements (characters, locations, objects) as you chat

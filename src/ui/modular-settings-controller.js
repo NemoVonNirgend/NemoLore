@@ -43,6 +43,9 @@ const FIELDS = Object.freeze({
     memoryContextBudget: { type: 'number', label: 'Memory context token budget', min: 100, max: 20000 },
     memoryCandidateLimit: { type: 'number', label: 'Memory retrieval candidate limit', min: 1, max: 500 },
     enableObservability: { type: 'checkbox', label: 'Enable observability history' },
+    enablePreferenceMemory: { type: 'checkbox', label: 'Inject reviewed cross-chat preferences' },
+    preferenceContextBudget: { type: 'number', label: 'Preference context token budget', min: 40, max: 4000 },
+    preferenceContextLimit: { type: 'number', label: 'Maximum accepted preferences', min: 1, max: 100 },
 });
 
 function createControl(key, definition, settings, onChange) {

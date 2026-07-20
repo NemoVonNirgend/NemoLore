@@ -76,6 +76,9 @@ import { createTokenBudget } from './src/memory/retrieval/token-budget.js';
 import { createSemanticMemoryIndex } from './src/memory/retrieval/semantic-memory-index.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
 import { createObservabilityService } from './src/observability/observability-service.js';
+import { createPreferenceContextContributor } from './src/preferences/preference-context-contributor.js';
+import { createPreferenceManagementService } from './src/preferences/preference-management-service.js';
+import { createPreferenceStore } from './src/preferences/preference-store.js';
 import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createResilientGenerationRouter } from './src/providers/resilient-generation-router.js';
@@ -103,6 +106,8 @@ const persistSettings = updated => {
 const state = createNemoLoreState({ logger });
 const lifecycle = createLifecycle({ logger, state });
 const writeLock = createKeyedLock();
+const preferenceStore = createPreferenceStore({ settings, persist: persistSettings, logger });
+const preferenceManagement = createPreferenceManagementService({ store: preferenceStore });
 const summaryInputBuilder = createSummaryInputBuilder({ settings, logger });
 const contextExclusion = createContextExclusionPolicy({ settings, logger });
 
@@ -217,9 +222,11 @@ const contextContributors = Object.freeze({
         logger,
     }),
     memory: createMemoryContextContributor({ retrieval: memoryRetriever, settings, logger }),
+    preferences: createPreferenceContextContributor({ store: preferenceStore, settings, logger }),
 });
 contextRegistry.register('summary', contextContributors.summary);
 contextRegistry.register('memory', contextContributors.memory);
+contextRegistry.register('preferences', contextContributors.preferences);
 const contextInjector = createContextInjector({ registry: contextRegistry, logger });
 
 const extensionPromptAdapter = createSillyTavernExtensionPromptAdapter({ resolveContext: getContext, logger });
@@ -382,6 +389,7 @@ const publicApi = Object.freeze({
         inputBuilder: summaryInputBuilder,
     }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
+    preferences: Object.freeze({ store: preferenceStore, management: preferenceManagement, contributor: contextContributors.preferences }),
     memory: Object.freeze({
         sourceLedger,
         store: memoryStore,

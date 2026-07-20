@@ -112,6 +112,13 @@ export const DEFAULT_SETTINGS = Object.freeze({
     memoryContextBudget: 1_200,
     memoryCandidateLimit: 16,
     loreUpdateStrategy: 'balanced',
+
+    enablePreferenceMemory: false,
+    preferenceContextBudget: 400,
+    preferenceContextLimit: 12,
+    preferenceContextPriority: 90,
+    preferenceRecords: [],
+    preferenceEvidence: [],
 });
 
 export function createSettings(overrides = {}) {
