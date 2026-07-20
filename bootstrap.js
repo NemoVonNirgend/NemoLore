@@ -63,9 +63,11 @@ import { createRedundancyFilter } from './src/memory/retrieval/redundancy-filter
 import { createRelevanceScorer } from './src/memory/retrieval/relevance-scorer.js';
 import { createTokenBudget } from './src/memory/retrieval/token-budget.js';
 import { createSourceLedger } from './src/memory/source-ledger.js';
+import { createObservabilityService } from './src/observability/observability-service.js';
 import { createOpenAICompatibleProvider } from './src/providers/openai-compatible-provider.js';
 import { createProviderRegistry } from './src/providers/provider-registry.js';
 import { createSillyTavernProvider } from './src/providers/sillytavern-provider.js';
+import { createSummaryContextContributor } from './src/summary/summary-context-contributor.js';
 import { createSummaryHelperWorkflow } from './src/summary/summary-helper-workflow.js';
 import { createSummaryService } from './src/summary/summary-service.js';
 import { createSummaryStore } from './src/summary/summary-store.js';
@@ -165,8 +167,15 @@ const loreGeneration = createLoreGenerationService({ generation: providers, lore
 
 const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
+    summary: createSummaryContextContributor({
+        summaryStore,
+        legacySummaries: settings.chatSummaries,
+        settings,
+        logger,
+    }),
     memory: createMemoryContextContributor({ retrieval: memoryRetriever, logger }),
 });
+contextRegistry.register('summary', contextContributors.summary);
 contextRegistry.register('memory', contextContributors.memory);
 const contextInjector = createContextInjector({ registry: contextRegistry, logger });
 
@@ -239,6 +248,18 @@ const postReplyListener = createSillyTavernPostReplyListener({
     logger,
 });
 
+const observability = createObservabilityService({
+    contextBridge,
+    contextRegistry,
+    helperRuntime,
+    memoryStore,
+    summaryStore,
+    lorebooks,
+    getChatId: getCurrentChatId,
+    logger,
+    historyLimit: settings.observabilityHistoryLimit,
+});
+
 const nounDetector = createNounDetector({ settings, logger });
 const highlighter = createHighlighter({ settings, state, logger });
 const notifications = createNotificationCenter({ logger });
@@ -267,7 +288,12 @@ const publicApi = Object.freeze({
         requestFactory: contextRequestFactory,
         wrapGenerationInterceptor,
     }),
-    summary: Object.freeze({ store: summaryStore, service: summaryService }),
+    observability,
+    summary: Object.freeze({
+        store: summaryStore,
+        service: summaryService,
+        contributor: contextContributors.summary,
+    }),
     lore: Object.freeze({ repository: lorebooks, generation: loreGeneration }),
     memory: Object.freeze({
         sourceLedger,
@@ -294,6 +320,7 @@ const publicApi = Object.freeze({
         retrieval: memoryRetriever,
         context: contextInjector,
         contextBridge,
+        observability,
         nounDetector,
         highlighter,
         notifications,
