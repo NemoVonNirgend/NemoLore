@@ -59,8 +59,12 @@ export function createRelevanceScorer({ now = () => Date.now() } = {}) {
             contradictionPenalty: -contradictionPenalty,
         };
 
-        const total = Object.values(components).reduce((sum, value) => sum + value, 0);
-        return { record, score: Math.max(0, total), components };
+        const agingMultiplier = Math.max(0, Math.min(1, Number(record.metadata?.aging?.retrievalMultiplier ?? 1)));
+        components.aging = agingMultiplier - 1;
+        const subtotal = Object.entries(components)
+            .filter(([key]) => key !== 'aging')
+            .reduce((sum, [, value]) => sum + value, 0);
+        return { record, score: Math.max(0, subtotal * agingMultiplier), components };
     }
 
     return Object.freeze({ score });

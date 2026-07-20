@@ -56,6 +56,9 @@ import { createStateChangeExtractor } from './src/memory/extractors/state-change
 import { createLegacyMemoryMigrator } from './src/memory/legacy-memory-migrator.js';
 import { createMemoryPersistence } from './src/memory/memory-persistence.js';
 import { createMemoryPipeline } from './src/memory/memory-pipeline.js';
+import { createMemoryAgingService } from './src/memory/maintenance/memory-aging-service.js';
+import { createMemoryConsolidationService } from './src/memory/maintenance/memory-consolidation-service.js';
+import { createMemoryMaintenanceService } from './src/memory/maintenance/memory-maintenance-service.js';
 import { createMemoryStore } from './src/memory/memory-store.js';
 import { createContradictionDetector } from './src/memory/processors/contradiction-detector.js';
 import { createDeduplicator } from './src/memory/processors/deduplicator.js';
@@ -135,6 +138,7 @@ const memoryStore = createMemoryStore({ sourceLedger, logger });
 const memoryPipeline = createMemoryPipeline({ store: memoryStore, sourceLedger, logger });
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
+    sourceLedger,
     metadata: chat_metadata,
     saveMetadata,
     logger,
@@ -173,6 +177,12 @@ const memoryProcessors = Object.freeze({
 memoryPipeline.registerProcessor(memoryProcessors.deduplicator);
 memoryPipeline.registerProcessor(memoryProcessors.contradictionDetector);
 memoryPipeline.registerProcessor(memoryProcessors.importanceScorer);
+
+const memoryMaintenance = Object.freeze({
+    aging: createMemoryAgingService({ store: memoryStore, sourceLedger, settings, logger }),
+    consolidation: createMemoryConsolidationService({ store: memoryStore, settings, logger }),
+});
+const memoryMaintenanceService = createMemoryMaintenanceService({ ...memoryMaintenance, logger });
 
 const memoryRetrieval = Object.freeze({
     selector: createCandidateSelector({ store: memoryStore }),
@@ -217,7 +227,7 @@ const contextBridge = createSillyTavernContextBridge({
 const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: generationRouter, tasks: helperTasks, logger }));
-helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline }));
+helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline, maintenance: memoryMaintenanceService }));
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
     handler: createSummaryHelperWorkflow({
@@ -357,6 +367,7 @@ const publicApi = Object.freeze({
         lifecycle: memoryLifecycle,
         extractors: memoryExtractors,
         processors: memoryProcessors,
+        maintenance: Object.freeze({ ...memoryMaintenance, service: memoryMaintenanceService }),
         retrieval: Object.freeze({ ...memoryRetrieval, retriever: memoryRetriever }),
     }),
     services: Object.freeze({
@@ -373,6 +384,7 @@ const publicApi = Object.freeze({
         scheduling: helperScheduling,
         postReply: postReplyDispatcher,
         memory: memoryPipeline,
+        memoryMaintenance: memoryMaintenanceService,
         memoryPersistence,
         retrieval: memoryRetriever,
         context: contextInjector,

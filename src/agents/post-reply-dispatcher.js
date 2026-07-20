@@ -8,7 +8,7 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
         if (workflow === 'memory') {
             return {
                 agent: 'memory',
-                payload: { ...common, input: payload.input, sources: payload.sources, context: payload.context, provider },
+                payload: { ...common, messageCount: payload.messageCount, input: payload.input, sources: payload.sources, context: payload.context, provider },
                 dedupeKey: dedupeBase ? `memory:${dedupeBase}` : null,
                 priority: 50,
                 metadata: { trigger: 'post-reply', batch: dedupeBase, workflow, provider },

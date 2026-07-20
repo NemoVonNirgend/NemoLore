@@ -47,12 +47,14 @@ export function createSillyTavernPostReplyListener({
                 previousUser && {
                     chatId,
                     messageId: String(previousUser.message.send_date ?? previousUser.index),
+                    messageIndex: previousUser.index,
                     role: 'user',
                     text: previousUser.message.mes ?? '',
                 },
                 {
                     chatId,
                     messageId: String(messageId),
+                    messageIndex: assistantIndex,
                     role: 'assistant',
                     text: assistantMessage.mes ?? '',
                 },

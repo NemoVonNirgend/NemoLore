@@ -29,6 +29,21 @@ test('creates clean installations from the complete Long Form policy', () => {
     assert.equal(settings.memoryConsolidationEnabled, true);
 });
 
+test('profiles scale maintenance without sacrificing Epic source precision', () => {
+    const short = getPreset('short-rp').settings;
+    const long = getPreset('long-form').settings;
+    const episodic = getPreset('episodic').settings;
+    const epic = getPreset('epic').settings;
+    assert.equal(short.memoryAgingEnabled, false);
+    assert.equal(short.memoryConsolidationEnabled, false);
+    assert.ok(episodic.memoryAgingGraceMessages < long.memoryAgingGraceMessages);
+    assert.ok(episodic.memoryConsolidationMinRecords < long.memoryConsolidationMinRecords);
+    assert.equal(long.memoryConsolidationSourceMode, 'archive');
+    assert.equal(episodic.memoryConsolidationSourceMode, 'archive');
+    assert.equal(epic.memoryConsolidationSourceMode, 'retain');
+    assert.ok(epic.memoryAgingFloor > long.memoryAgingFloor);
+});
+
 test('classifies representative legacy configurations', () => {
     assert.equal(classifyLegacySettings({ hideMessagesWhenThreshold: false, enableVectorization: false, enableCoreMemories: false }).preset, 'short-rp');
     assert.equal(classifyLegacySettings({ runningMemorySize: 30, enableVectorization: true, vectorSearchLimit: 8 }).preset, 'epic');

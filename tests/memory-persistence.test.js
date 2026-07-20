@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createMemoryStore } from '../src/memory/memory-store.js';
+import { createSourceLedger } from '../src/memory/source-ledger.js';
 import { createMemoryPersistence } from '../src/memory/memory-persistence.js';
 import { createLegacyMemoryMigrator } from '../src/memory/legacy-memory-migrator.js';
 import { createSillyTavernMemoryLifecycle } from '../src/integrations/sillytavern-memory-lifecycle.js';
@@ -38,6 +39,28 @@ test('persists and restores memory records per chat', async () => {
     const restored = persistence.load('chat-a');
     assert.equal(restored.length, 1);
     assert.equal(store.list()[0].content, 'Elena carries the brass key.');
+});
+
+test('persists source provenance alongside linked memory records', async () => {
+    const metadata = {};
+    const sourceLedger = createSourceLedger();
+    const store = createMemoryStore({ sourceLedger });
+    const persistence = createMemoryPersistence({
+        store,
+        sourceLedger,
+        metadata,
+        saveMetadata: async () => {},
+        debounceMs: 1,
+    });
+    persistence.start('chat-a');
+    const source = sourceLedger.register({ chatId: 'chat-a', messageId: '7', messageIndex: 7, role: 'assistant' });
+    const record = store.save({ type: MEMORY_TYPES.EPISODE, content: 'A durable event.', sourceIds: [source.id] });
+    await persistence.flush();
+
+    store.clear({ silent: true });
+    persistence.load('chat-a');
+    assert.equal(sourceLedger.getForMemory(record.id)[0].messageIndex, 7);
+    assert.equal(metadata.nemolore.memory.schemaVersion, 2);
 });
 
 test('debounces repeated writes without stranding the pending promise', async () => {

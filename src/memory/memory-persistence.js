@@ -1,7 +1,8 @@
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export function createMemoryPersistence({
     store,
+    sourceLedger,
     metadata,
     saveMetadata,
     logger,
@@ -32,6 +33,7 @@ export function createMemoryPersistence({
         target.chatId = String(chatId);
         target.updatedAt = clock.now();
         target.records = store.exportRecords();
+        target.sources = sourceLedger?.list?.() ?? [];
         await saveMetadata();
         logger?.debug('Persisted NemoLore memory.', { chatId, count: target.records.length });
         return structuredClone(target);
@@ -74,7 +76,19 @@ export function createMemoryPersistence({
             store.clear({ silent: true });
             return [];
         }
-        return store.importRecords(saved.records, { replace: true, silent: true });
+        store.clear({ silent: true });
+        for (const source of saved.sources ?? []) sourceLedger?.register?.(source);
+        for (const sourceId of new Set(saved.records.flatMap(record => record.sourceIds ?? []))) {
+            if (sourceLedger?.has?.(sourceId)) continue;
+            const separator = sourceId.lastIndexOf(':');
+            sourceLedger?.register?.({
+                id: sourceId,
+                chatId: separator > 0 ? sourceId.slice(0, separator) : activeChatId,
+                messageId: separator > 0 ? sourceId.slice(separator + 1) : sourceId,
+                metadata: { restoredFromLegacyRecord: true },
+            });
+        }
+        return store.importRecords(saved.records, { replace: false, silent: true });
     }
 
     async function flush() {

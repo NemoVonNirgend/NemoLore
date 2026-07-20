@@ -1,4 +1,4 @@
-export function createMemoryHelperAgent({ pipeline } = {}) {
+export function createMemoryHelperAgent({ pipeline, maintenance } = {}) {
     if (!pipeline?.ingest) throw new TypeError('Memory helper agent requires a memory pipeline.');
 
     return Object.freeze({
@@ -24,7 +24,11 @@ export function createMemoryHelperAgent({ pipeline } = {}) {
                 }));
             }
 
-            return { memoryIds: results.map(record => record.id), records: results };
+            const maintenanceResult = await maintenance?.run?.({
+                messageCount: payload.context?.chatLength ?? payload.messageCount,
+            });
+
+            return { memoryIds: results.map(record => record.id), records: results, maintenance: maintenanceResult ?? null };
         },
     });
 }
