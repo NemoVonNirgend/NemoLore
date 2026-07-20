@@ -1,4 +1,4 @@
-export function createSummaryManagementService({ store, summary, settings, getChatId, getContext, logger } = {}) {
+export function createSummaryManagementService({ store, summary, settings, saveSettings, getChatId, getContext, logger } = {}) {
     if (!store?.get || !store?.save) throw new TypeError('Summary management requires a summary store.');
 
     function current(chatId = getChatId?.()) {
@@ -50,6 +50,7 @@ export function createSummaryManagementService({ store, summary, settings, getCh
         const allowed = new Set(['new-first', 'legacy-first', 'new-only', 'legacy-only']);
         if (!allowed.has(value)) throw new TypeError(`Unknown summary precedence: ${value}`);
         settings.summaryContextPrecedence = value;
+        saveSettings?.(settings);
         logger?.debug('Updated summary precedence.', { value });
         return value;
     }
