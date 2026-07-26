@@ -1,4 +1,24 @@
-const NON_REPLY_MESSAGE_TYPES = new Set(['first_message', 'command', 'extension']);
+const NON_REPLY_MESSAGE_TYPES = new Set([
+    'first_message',
+    'command',
+    'extension',
+    'image',
+    'image_generation',
+    'tool',
+    'tool_call',
+    'function',
+    'function_call',
+    'quiet',
+]);
+
+const NON_REPLY_TYPE_FRAGMENTS = Object.freeze([
+    'image',
+    'tool',
+    'function',
+    'extension',
+    'background',
+    'caption',
+]);
 
 function resolveMessageIndex(eventArgs, chat) {
     for (const value of eventArgs) {
@@ -17,6 +37,58 @@ function resolveMessageType(eventArgs) {
         if (typeof type === 'string' && type.trim()) return type.trim().toLowerCase();
     }
     return null;
+}
+
+function hasNonReplyType(type) {
+    if (!type) return false;
+    if (NON_REPLY_MESSAGE_TYPES.has(type)) return true;
+    return NON_REPLY_TYPE_FRAGMENTS.some(fragment => type.includes(fragment));
+}
+
+function isGeneratedMediaMessage(message) {
+    if (!message) return false;
+
+    const extra = message.extra ?? {};
+    const metadataType = String(
+        extra.generationType
+        ?? extra.generation_type
+        ?? extra.type
+        ?? extra.messageType
+        ?? extra.message_type
+        ?? '',
+    ).toLowerCase();
+
+    if (hasNonReplyType(metadataType)) return true;
+
+    if (
+        extra.image
+        || extra.inline_image
+        || extra.image_swipes
+        || extra.media
+        || extra.media_url
+        || extra.tool_call
+        || extra.tool_calls
+        || extra.function_call
+        || extra.extension
+    ) {
+        return true;
+    }
+
+    const text = String(message.mes ?? '').trim();
+    if (!text) return true;
+
+    // Image-generation extensions commonly emit a message containing only an
+    // image, media wrapper, or generated-file link. Those are UI artifacts,
+    // not prose replies and must never become preference/slop evidence.
+    const withoutMedia = text
+        .replace(/!\[[^\]]*]\([^)]*\)/g, '')
+        .replace(/<img\b[^>]*>/gi, '')
+        .replace(/<video\b[\s\S]*?<\/video>/gi, '')
+        .replace(/<audio\b[\s\S]*?<\/audio>/gi, '')
+        .replace(/\[(?:image|img|video|audio|media)[^\]]*]/gi, '')
+        .trim();
+
+    return withoutMedia.length === 0;
 }
 
 function findPreviousUserMessage(chat, assistantIndex) {
@@ -44,7 +116,7 @@ export function createSillyTavernPostReplyListener({
     function onMessageReceived(...eventArgs) {
         try {
             const messageType = resolveMessageType(eventArgs);
-            if (NON_REPLY_MESSAGE_TYPES.has(messageType)) return [];
+            if (hasNonReplyType(messageType)) return [];
 
             const context = getContext();
             const chat = context?.chat ?? [];
@@ -52,7 +124,7 @@ export function createSillyTavernPostReplyListener({
 
             const assistantIndex = resolveMessageIndex(eventArgs, chat);
             const assistantMessage = chat[assistantIndex];
-            if (!assistantMessage || assistantMessage.is_user) return [];
+            if (!assistantMessage || assistantMessage.is_user || isGeneratedMediaMessage(assistantMessage)) return [];
 
             const previousUser = findPreviousUserMessage(chat, assistantIndex);
             const chatId = getChatId?.() ?? context?.chatId ?? null;
@@ -78,18 +150,13 @@ export function createSillyTavernPostReplyListener({
             return dispatcher.dispatch({
                 chatId,
                 messageId: String(messageId),
-                messageCount: assistantIndex + 1,
+                messageCount: chat.length,
                 input: sources.map(source => `${source.role}: ${source.text}`).join('\n\n'),
                 messages,
                 sources,
-                messageCount: chat.length,
                 context: {
                     chat: chat.slice(0, assistantIndex + 1),
-<<<<<<< HEAD
-                    chatLength: chat.length,
-=======
                     chatLength: assistantIndex + 1,
->>>>>>> dev/preset-architecture
                     messages,
                     generationType: messageType,
                     assistantIndex,
