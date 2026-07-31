@@ -15,16 +15,30 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repair branch
+      - name: Check out repair branch with history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Create repository snapshot
-        run: git archive --format=zip --output=nemolore-source.zip HEAD
+      - name: Create repair and merge-parent snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          merge_sha=6a0b30788d55e45253a5a3b350b2cefaa469cd47
+          read -r parent_one parent_two <<< "$(git show -s --format='%P' "$merge_sha")"
+          printf 'merge=%s\nparent_one=%s\nparent_two=%s\n' "$merge_sha" "$parent_one" "$parent_two" > snapshot-refs.txt
+          git archive --format=zip --output=nemolore-source.zip HEAD
+          git archive --format=zip --output=nemolore-parent-one.zip "$parent_one"
+          git archive --format=zip --output=nemolore-parent-two.zip "$parent_two"
 
-      - name: Upload repository snapshot
+      - name: Upload repository snapshots
         uses: actions/upload-artifact@v4
         with:
-          name: nemolore-source
-          path: nemolore-source.zip
+          name: nemolore-merge-snapshots
+          path: |
+            nemolore-source.zip
+            nemolore-parent-one.zip
+            nemolore-parent-two.zip
+            snapshot-refs.txt
           if-no-files-found: error
           retention-days: 1
