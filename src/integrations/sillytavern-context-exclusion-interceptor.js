@@ -20,14 +20,6 @@ export function createSillyTavernContextExclusionInterceptor({
             hiddenCount: result.hiddenCount,
             visibleCount: result.visibleCount,
         });
-<<<<<<< HEAD
-
-        if (result.hiddenCount > 0 && Array.isArray(chat)) {
-            chat.splice(0, result.hiddenCount);
-        }
-
-        return next(chat, contextSize, abort, type);
-=======
         const ignoreSymbol = getContext?.()?.symbols?.ignore;
         if (ignoreSymbol && Array.isArray(chat)) {
             for (let index = 0; index < result.hiddenCount; index += 1) {
@@ -38,6 +30,5 @@ export function createSillyTavernContextExclusionInterceptor({
             return typeof next === 'function' ? next(chat, contextSize, abort, type) : undefined;
         }
         return typeof next === 'function' ? next(result.visible, contextSize, abort, type) : undefined;
->>>>>>> dev/preset-architecture
     };
 }

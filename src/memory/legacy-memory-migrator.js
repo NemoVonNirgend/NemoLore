@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-=======
 import { createActiveChatGuard } from '../core/active-chat-guard.js';
->>>>>>> dev/preset-architecture
 import { createChatMetadataAccessor } from '../core/chat-metadata-accessor.js';
 import { MEMORY_TYPES } from './memory-types.js';
-import { createNemoTavernMemoryMigrator } from './nemotavern-memory-migrator.js';
 
 const MIGRATION_VERSION = 2;
 
@@ -29,17 +25,10 @@ function collectLegacySummaries(value) {
 export function createLegacyMemoryMigrator({
     store,
     sourceLedger,
-<<<<<<< HEAD
-    settings,
-    metadata,
-    getMetadata,
-    getChat,
-=======
     summaryStore,
     settings,
     metadata,
     getMetadata,
->>>>>>> dev/preset-architecture
     getActiveChatId,
     saveMetadata,
     logger,
@@ -47,45 +36,19 @@ export function createLegacyMemoryMigrator({
 } = {}) {
     if (!store?.save) throw new TypeError('Legacy memory migrator requires a memory store.');
     const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Legacy memory migrator');
-<<<<<<< HEAD
-    const nativeMigrator = createNemoTavernMemoryMigrator({
-        store, sourceLedger, metadata, getMetadata, getChat, getActiveChatId, saveMetadata, logger, clock,
-    });
-=======
->>>>>>> dev/preset-architecture
 
     async function migrate(chatId) {
         const normalizedChatId = String(chatId ?? '');
         if (!normalizedChatId) return { migrated: 0, skipped: true, reason: 'missing-chat-id' };
-<<<<<<< HEAD
-        if (getActiveChatId && String(getActiveChatId() ?? '') !== normalizedChatId) {
-            return { migrated: 0, skipped: true, reason: 'stale-chat' };
-        }
-        const native = await nativeMigrator.migrate(normalizedChatId);
-        if (getActiveChatId && String(getActiveChatId() ?? '') !== normalizedChatId) {
-            return { migrated: native.migrated, skipped: true, reason: 'stale-chat', sources: { native } };
-        }
-=======
         const shouldCommit = createActiveChatGuard(getActiveChatId, normalizedChatId);
         if (!shouldCommit()) return { migrated: 0, skipped: true, reason: 'stale-chat' };
->>>>>>> dev/preset-architecture
 
         const metadata = currentMetadata();
         metadata.nemolore ??= {};
         metadata.nemolore.migrations ??= {};
         const marker = metadata.nemolore.migrations.legacyChatSummaries;
-<<<<<<< HEAD
-        if (marker?.chatId === normalizedChatId && marker?.completedAt) {
-            return {
-                migrated: native.migrated,
-                skipped: native.skipped,
-                ...(native.skipped ? { reason: 'already-migrated' } : {}),
-                sources: { native, legacy: { migrated: 0, skipped: true } },
-            };
-=======
         if (marker?.chatId === normalizedChatId && marker?.completedAt && Number(marker.version) >= MIGRATION_VERSION) {
             return { migrated: 0, skipped: true, reason: 'already-migrated' };
->>>>>>> dev/preset-architecture
         }
 
         const legacyRoot = settings?.chatSummaries ?? {};
@@ -176,20 +139,11 @@ export function createLegacyMemoryMigrator({
             sourcePreserved: true,
         };
         await saveMetadata?.();
-<<<<<<< HEAD
-        logger?.info('Migrated legacy NemoLore summaries.', { chatId: normalizedChatId, migrated });
-        return {
-            migrated: migrated + native.migrated,
-            skipped: false,
-            sources: { native, legacy: { migrated, skipped: false } },
-        };
-=======
         logger?.info('Migrated legacy NemoLore summaries.', { chatId: normalizedChatId, migrated, upgraded, summaryImported });
         return { migrated, upgraded, summaryImported, skipped: false };
->>>>>>> dev/preset-architecture
     }
 
-    return Object.freeze({ migrate, collectLegacySummaries, native: nativeMigrator });
+    return Object.freeze({ migrate, collectLegacySummaries });
 }
 
 export { collectLegacySummaries };

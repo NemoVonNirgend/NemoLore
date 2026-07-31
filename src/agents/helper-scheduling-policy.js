@@ -68,12 +68,10 @@ export function createHelperSchedulingPolicy({ settings, clock = Date } = {}) {
         lastMessageCount.set(key, Number(payload.messageCount ?? payload.context?.chatLength ?? 0));
     }
 
-    function select(payload = {}, { allowWorkflow = () => true } = {}) {
+    function select(payload = {}) {
         const maximum = Math.max(0, Number(settings?.helperMaxCallsPerReply ?? 3));
         const order = ['memory', 'summary', 'lore'];
-        const decisions = order.map(workflow => allowWorkflow(workflow)
-            ? { workflow, ...evaluate(workflow, payload) }
-            : { workflow, allowed: false, reason: 'engine-mode' });
+        const decisions = order.map(workflow => ({ workflow, ...evaluate(workflow, payload) }));
         const selected = decisions.filter(item => item.allowed).slice(0, maximum);
         for (const item of selected) mark(item.workflow, payload);
         return Object.freeze({ selected, decisions, maximum });

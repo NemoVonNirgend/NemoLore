@@ -14,14 +14,6 @@ function normalizePersonaId(value) {
 export function createSillyTavernContextRequestFactory({ getChatId, getContext, getPersonaId, settings, recentMessageCount = 8 } = {}) {
     return async function build({ chat, contextSize, type } = {}) {
         const context = getContext?.() ?? {};
-<<<<<<< HEAD
-        const contextChat = Array.isArray(context.chat) ? context.chat : null;
-        const messages = Array.isArray(chat) ? chat : (contextChat ?? []);
-        const messageCount = contextChat?.length ?? messages.length;
-        const recent = messages.slice(-recentMessageCount);
-        const chatId = getChatId?.() ?? context.chatId ?? null;
-        const normalizedChatId = String(chatId ?? 'unknown-chat');
-=======
         const personaId = normalizePersonaId(getPersonaId?.() ?? context.personaId ?? context.userPersonaId ?? context.user_avatar);
         const messages = Array.isArray(chat) ? chat : (context.chat ?? []);
         const configuredCount = Number(settings?.summaryChunkSize ?? recentMessageCount);
@@ -30,7 +22,6 @@ export function createSillyTavernContextRequestFactory({ getChatId, getContext, 
         const chatId = getChatId?.() ?? context.chatId ?? null;
         const normalizedChatId = String(chatId ?? 'unknown-chat');
         const messageCount = Array.isArray(context.chat) ? context.chat.length : messages.length;
->>>>>>> dev/preset-architecture
         const latest = recent.at(-1);
         const input = recent.map(messageText).filter(Boolean).join('\n\n');
         const sources = recent.map((message, offset) => ({
@@ -68,11 +59,7 @@ export function createSillyTavernContextRequestFactory({ getChatId, getContext, 
                 messageCount,
                 input,
                 sources,
-<<<<<<< HEAD
-                context: { generationType: type, entityIds, chatLength: messageCount },
-=======
                 context: { generationType: type, entityIds, personaId, chatLength: messageCount },
->>>>>>> dev/preset-architecture
             },
         };
     };

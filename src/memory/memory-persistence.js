@@ -13,12 +13,9 @@ export function createMemoryPersistence({
     debounceMs = 250,
 } = {}) {
     if (!store?.exportRecords || !store?.importRecords) throw new TypeError('Memory persistence requires a serializable store.');
-<<<<<<< HEAD
     if (sourceLedger && (!sourceLedger.list || !sourceLedger.register || !sourceLedger.has)) {
         throw new TypeError('Memory persistence requires a serializable source ledger.');
     }
-=======
->>>>>>> dev/preset-architecture
     const currentMetadata = createChatMetadataAccessor({ metadata, getMetadata }, 'Memory persistence');
     if (typeof saveMetadata !== 'function') throw new TypeError('Memory persistence requires saveMetadata().');
 
@@ -44,15 +41,10 @@ export function createMemoryPersistence({
         target.schemaVersion = SCHEMA_VERSION;
         target.chatId = String(chatId);
         target.updatedAt = clock.now();
-<<<<<<< HEAD
         target.records = records;
         target.sources = sourceLedger
             ? sourceLedger.list().filter(source => referencedSourceIds.has(source.id))
             : [];
-=======
-        target.records = store.exportRecords();
-        target.sources = sourceLedger?.list?.() ?? [];
->>>>>>> dev/preset-architecture
         await saveMetadata();
         logger?.debug('Persisted NemoLore memory.', { chatId, count: target.records.length });
         return structuredClone(target);
@@ -105,7 +97,6 @@ export function createMemoryPersistence({
             store.clear({ silent: true });
             return [];
         }
-<<<<<<< HEAD
 
         store.clear({ silent: true });
         if (sourceLedger) {
@@ -127,19 +118,6 @@ export function createMemoryPersistence({
                     });
                 }
             }
-=======
-        store.clear({ silent: true });
-        for (const source of saved.sources ?? []) sourceLedger?.register?.(source);
-        for (const sourceId of new Set(saved.records.flatMap(record => record.sourceIds ?? []))) {
-            if (sourceLedger?.has?.(sourceId)) continue;
-            const separator = sourceId.lastIndexOf(':');
-            sourceLedger?.register?.({
-                id: sourceId,
-                chatId: separator > 0 ? sourceId.slice(0, separator) : activeChatId,
-                messageId: separator > 0 ? sourceId.slice(separator + 1) : sourceId,
-                metadata: { restoredFromLegacyRecord: true },
-            });
->>>>>>> dev/preset-architecture
         }
         return store.importRecords(saved.records, { replace: false, silent: true });
     }

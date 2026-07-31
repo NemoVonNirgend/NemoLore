@@ -1,5 +1,3 @@
-import { linkExtensionSettingsNamespaces } from '../core/settings.js';
-
 export const SUMMARY_ENGINE_MODES = Object.freeze({
     MODULAR: 'modular',
 });
@@ -23,20 +21,12 @@ export function createSummaryCompatibilityCoordinator({
     }
 
     function prepareLegacyImport() {
-<<<<<<< HEAD
-        linkExtensionSettingsNamespaces(extensionSettings);
-        if (!needsSuppression()) return false;
-        logger?.info('Selected modular engines will gate legacy automatic generation.', {
-            summaryMode: mode(),
-            loreMode: loreMode(),
-=======
         extensionSettings.nemolore ??= {};
         Object.assign(extensionSettings.nemolore, {
             enableSummarization: false,
             autoSummarize: false,
             enablePairedSummarization: false,
             autoMode: false,
->>>>>>> dev/preset-architecture
         });
         logger?.info('Disabled retired legacy automatic generation after modular cutover.');
         return true;
@@ -60,13 +50,9 @@ export function createSummaryCompatibilityCoordinator({
             && Boolean(settings.helperLoreAfterReply);
     }
 
-<<<<<<< HEAD
-    function dispose() {}
-=======
     function dispose() {
         return undefined;
     }
->>>>>>> dev/preset-architecture
 
     return Object.freeze({
         mode,

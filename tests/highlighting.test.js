@@ -1,9 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-<<<<<<< HEAD
-import { readFile } from 'node:fs/promises';
-=======
->>>>>>> dev/preset-architecture
 
 import { createHighlighter, highlightTextSegments, segmentHighlightedText } from '../src/ui/highlighting.js';
 
@@ -185,21 +181,3 @@ test('modular highlighter uses the safe text-node pass', () => {
     assert.deepEqual([...highlightedNouns], ['Seraphina', 'Lorebook']);
     assert.equal(findElements(root, element => element.classList.contains('nemolore-highlighted-noun')).length, 2);
 });
-<<<<<<< HEAD
-
-test('legacy highlighter delegates to the shared safe text-node pass', async () => {
-    const source = await readFile('index.js', 'utf8');
-    const start = source.indexOf('static highlightNouns(element, nouns)');
-    const end = source.indexOf('// Lorebook management', start);
-    const implementation = source.slice(start, end);
-
-    assert.notEqual(start, -1);
-    assert.notEqual(end, -1);
-    assert.match(implementation, /highlightTextSegments\(element, nouns\)/);
-    assert.match(implementation, /if \(!element\.isConnected\) return/);
-    assert.match(implementation, /element\.removeAttribute\('data-nemolore-processed'\)/);
-    assert.match(implementation, /const retry = highlightTextSegments\(element, nouns\)/);
-    assert.doesNotMatch(implementation, /element\.innerHTML|Generated invalid HTML/);
-});
-=======
->>>>>>> dev/preset-architecture

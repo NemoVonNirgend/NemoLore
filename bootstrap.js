@@ -1,10 +1,7 @@
 import {
     chat_metadata,
     generateRaw,
-<<<<<<< HEAD
-=======
     user_avatar,
->>>>>>> dev/preset-architecture
     saveMetadata,
     saveSettingsDebounced,
     getCurrentChatId,
@@ -129,10 +126,7 @@ const worldInfo = createWorldInfoAdapter({
 });
 const lorebooks = createLorebookRepository({
     adapter: worldInfo,
-<<<<<<< HEAD
-=======
     metadata: chat_metadata,
->>>>>>> dev/preset-architecture
     getMetadata: () => chat_metadata,
     saveMetadata,
     metadataKey: METADATA_KEY,
@@ -150,13 +144,9 @@ providers.register('sillytavern', createSillyTavernProvider({
     }),
     logger,
 }));
-<<<<<<< HEAD
-if (settings.enableAsyncApi && settings.asyncApiEndpoint) {
-=======
 function synchronizeAsyncProvider() {
     if (providers.has('async')) providers.unregister('async');
     if (!settings.enableAsyncApi || !settings.asyncApiEndpoint) return false;
->>>>>>> dev/preset-architecture
     providers.register('async', createOpenAICompatibleProvider({
         endpoint: settings.asyncApiEndpoint,
         apiKey: settings.asyncApiKey,
@@ -180,10 +170,7 @@ const summaryStore = createSummaryStore({ metadata: chat_metadata, getMetadata: 
 const memoryPersistence = createMemoryPersistence({
     store: memoryStore,
     sourceLedger,
-<<<<<<< HEAD
-=======
     metadata: chat_metadata,
->>>>>>> dev/preset-architecture
     getMetadata: () => chat_metadata,
     saveMetadata,
     logger,
@@ -191,17 +178,10 @@ const memoryPersistence = createMemoryPersistence({
 const legacyMemoryMigrator = createLegacyMemoryMigrator({
     store: memoryStore,
     sourceLedger,
-<<<<<<< HEAD
-    settings,
-    getMetadata: () => chat_metadata,
-    getChat: () => getContext()?.chat ?? [],
-    getActiveChatId: getCurrentChatId,
-=======
     summaryStore,
     settings,
     metadata: chat_metadata,
     getMetadata: () => chat_metadata,
->>>>>>> dev/preset-architecture
     saveMetadata,
     getActiveChatId: getCurrentChatId,
     logger,
@@ -252,10 +232,6 @@ const memoryRetrieval = Object.freeze({
 });
 const memoryRetriever = createMemoryRetriever({ ...memoryRetrieval, semantic: semanticMemoryIndex, settings, logger });
 
-<<<<<<< HEAD
-const summaryStore = createSummaryStore({ getMetadata: () => chat_metadata, saveMetadata });
-=======
->>>>>>> dev/preset-architecture
 const summaryService = createSummaryService({
     generation: generationRouter,
     store: summaryStore,
@@ -275,11 +251,6 @@ const contextRegistry = createContextRegistry({ logger });
 const contextContributors = Object.freeze({
     summary: createSummaryContextContributor({
         summaryStore,
-<<<<<<< HEAD
-        legacySummaries: settings.chatSummaries,
-        getMetadata: () => chat_metadata,
-=======
->>>>>>> dev/preset-architecture
         settings,
         ownership,
         logger,
@@ -287,9 +258,6 @@ const contextContributors = Object.freeze({
     memory: createMemoryContextContributor({
         retrieval: memoryRetriever,
         persistence: memoryPersistence,
-<<<<<<< HEAD
-        ownership,
-=======
         settings,
         ownership,
         logger,
@@ -298,7 +266,6 @@ const contextContributors = Object.freeze({
         store: preferenceStore,
         settings,
         getPersonaId: () => user_avatar,
->>>>>>> dev/preset-architecture
         logger,
     }),
 });
@@ -323,15 +290,11 @@ const contextBridge = createSillyTavernContextBridge({
 const helperTasks = createHelperTaskRegistry({ logger });
 const helperAgents = createHelperAgentRegistry({ logger });
 helperAgents.register('api', createApiHelperAgent({ generation: generationRouter, tasks: helperTasks, logger }));
-<<<<<<< HEAD
-helperAgents.register('memory', createMemoryHelperAgent({ pipeline: memoryPipeline, getActiveChatId: getCurrentChatId }));
-=======
 helperAgents.register('memory', createMemoryHelperAgent({
     pipeline: memoryPipeline,
     maintenance: memoryMaintenanceService,
     getActiveChatId: getCurrentChatId,
 }));
->>>>>>> dev/preset-architecture
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
     handler: createSummaryHelperWorkflow({
@@ -416,23 +379,17 @@ const settingsController = createModularSettingsController({
     save: persistSettings,
     observability,
     providerRouter: generationRouter,
-<<<<<<< HEAD
-=======
     onPolicyChange: () => helperScheduling.reset(),
     onProviderConfigChange: synchronizeAsyncProvider,
->>>>>>> dev/preset-architecture
     getChatId: getCurrentChatId,
     eventSource,
     chatChangedEvent: event_types.CHAT_CHANGED,
     chatLoadedEvent: event_types.CHAT_LOADED,
-<<<<<<< HEAD
-=======
     logger,
 });
 const modularUi = createModularUiBootstrap({
     renderTemplate: renderExtensionTemplateAsync,
     settingsController,
->>>>>>> dev/preset-architecture
     logger,
 });
 
@@ -452,8 +409,6 @@ const popups = createPopupCoordinator({ state, logger });
 const publicApi = Object.freeze({
     logger,
     settings,
-    hostInterop,
-    ownership,
     state,
     lifecycle,
     hostInterop,
@@ -539,20 +494,6 @@ const publicApi = Object.freeze({
 });
 globalThis.NemoLore = publicApi;
 
-async function installSettingsControllerWhenReady({ attempts = 20, delayMs = 250 } = {}) {
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-        if (settingsController.install()) return true;
-        if (attempt < attempts) {
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
-    }
-    logger.warn('Legacy settings loaded without a compatible container for modular controls.', {
-        attempts,
-        selector: '#nemo-ext-nemolore .inline-drawer-content',
-    });
-    return false;
-}
-
 lifecycle.start();
 try {
     await modularUi.install();
@@ -570,13 +511,8 @@ try {
     semanticMemoryIndex.start();
     memoryLifecycle.install();
     postReplyListener.install();
-<<<<<<< HEAD
-    await installSettingsControllerWhenReady();
-    lifecycle.markLegacyLoaded();
-=======
     chatHighlighting.install();
     lifecycle.markUiReady();
->>>>>>> dev/preset-architecture
     lifecycle.markReady();
     logger.info('NemoLore modular runtime ready; legacy data import remains available without legacy execution.');
 } catch (error) {
