@@ -95,6 +95,8 @@ export function createObservabilityService({
                 byStatus: countBy(jobs, item => item.status),
                 jobs: safeClone(jobs),
             },
+            host,
+            ownership: safeClone(ownership?.snapshot?.() ?? null),
             recentEvents: safeClone(history),
         });
     }
@@ -112,6 +114,7 @@ export function createObservabilityService({
             `Summary: ${data.summary?.text ? 'available' : 'none'}`,
             `Lorebook: ${data.lorebook ?? 'none'}`,
             `Helpers: ${data.helpers.runtime?.running ?? 0} running, ${data.helpers.runtime?.queued ?? 0} queued`,
+            `NemoTavern host: ${data.host ? 'available' : 'not detected'}`,
         ];
         return lines.join('\n');
     }

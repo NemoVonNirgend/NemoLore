@@ -37,7 +37,7 @@ function valuesConflict(left, right) {
 }
 
 export function createContradictionDetector({ logger } = {}) {
-    return async function detectContradictions(candidate, { store }) {
+    return async function detectContradictions(candidate, { store, shouldCommit }) {
         const stateKey = livingStateKey(candidate);
         const factKey = atomicKey(candidate);
         if (!stateKey && !factKey) return candidate;
@@ -54,6 +54,7 @@ export function createContradictionDetector({ logger } = {}) {
         if (!contradiction) return candidate;
 
         if (isLivingMemoryType(candidate.type)) {
+            if (shouldCommit && !shouldCommit()) return candidate;
             const updated = store.update(contradiction.id, {
                 status: MEMORY_STATUS.SUPERSEDED,
                 metadata: {
