@@ -99,8 +99,6 @@ test('deduplicates replayed jobs after successful completion', async () => {
     assert.equal(replay.status, 'succeeded');
     assert.equal(runs, 1);
 });
-<<<<<<< HEAD
-=======
 
 test('failed jobs release their dedupe key for a later retry', async () => {
     const registry = createHelperAgentRegistry();
@@ -144,4 +142,3 @@ test('reads concurrency dynamically after a profile change', () => {
     concurrency = 3;
     assert.equal(runtime.inspect().concurrency, 3);
 });
->>>>>>> dev/preset-architecture

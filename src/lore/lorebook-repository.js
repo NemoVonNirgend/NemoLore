@@ -58,11 +58,6 @@ export function createLorebookRepository({
         return ensureLock.run(`lorebook:${chatId}`, async () => {
             if (!canCommit()) return null;
 
-<<<<<<< HEAD
-            // Recheck inside the per-chat lock because another concurrent
-            // ensure may have created and associated the book while waiting.
-=======
->>>>>>> dev/preset-architecture
             const existing = getAssociatedName();
             if (existing) {
                 state.raw.lifecycle.currentChatLorebook = existing;

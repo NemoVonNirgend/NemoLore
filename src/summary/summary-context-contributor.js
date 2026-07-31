@@ -6,11 +6,6 @@ import {
 
 export function createSummaryContextContributor({
     summaryStore,
-<<<<<<< HEAD
-    legacySummaries = {},
-    getMetadata,
-=======
->>>>>>> dev/preset-architecture
     settings = {},
     ownership,
     logger,
@@ -19,32 +14,7 @@ export function createSummaryContextContributor({
 
     function resolve(chatId) {
         const current = summaryStore.get(chatId);
-<<<<<<< HEAD
-        const nativeValue = getMetadata?.()?.nemolore?.summary;
-        const configuredValue = legacySummaries?.[chatId];
-        const nativeText = extractLegacySummary(nativeValue);
-        const configuredText = extractLegacySummary(configuredValue);
-        const legacy = nativeText
-            ? { text: nativeText, record: nativeValue, legacySource: 'nemotavern' }
-            : configuredText
-                ? { text: configuredText, record: configuredValue, legacySource: 'chatSummaries' }
-                : null;
-        const precedence = settings.summaryContextPrecedence ?? 'new-first';
-
-        if (precedence === 'legacy-only') {
-            return legacy ? { ...legacy, source: 'legacy' } : null;
-        }
-        if (precedence === 'new-only') {
-            return current?.text ? { text: current.text, source: 'new', record: current } : null;
-        }
-        if (precedence === 'legacy-first' && legacy) {
-            return { ...legacy, source: 'legacy' };
-        }
-        if (current?.text) return { text: current.text, source: 'new', record: current };
-        return legacy ? { ...legacy, source: 'legacy' } : null;
-=======
         return current?.text ? { text: current.text, source: 'modular', record: current } : null;
->>>>>>> dev/preset-architecture
     }
 
     return Object.freeze({
@@ -78,12 +48,7 @@ export function createSummaryContextContributor({
                     summarySource: resolved.source,
                     summaryUpdatedAt: resolved.record?.updatedAt ?? null,
                     sourceMessageIds: resolved.record?.sourceMessageIds ?? [],
-<<<<<<< HEAD
-                    precedence: settings.summaryContextPrecedence ?? 'new-first',
-                    legacySummarySource: resolved.legacySource ?? null,
-=======
                     precedence: 'modular-only',
->>>>>>> dev/preset-architecture
                 },
             });
         },

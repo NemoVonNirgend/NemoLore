@@ -132,24 +132,12 @@ export function linkExtensionSettingsNamespaces(extensionSettings) {
     if (!extensionSettings || typeof extensionSettings !== 'object') {
         throw new TypeError('Extension settings must be an object.');
     }
-<<<<<<< HEAD
-
-=======
->>>>>>> dev/preset-architecture
     const canonical = isSettingsObject(extensionSettings[SETTINGS_NAMESPACE])
         ? extensionSettings[SETTINGS_NAMESPACE]
         : null;
     const legacy = isSettingsObject(extensionSettings[LEGACY_SETTINGS_NAMESPACE])
         ? extensionSettings[LEGACY_SETTINGS_NAMESPACE]
         : null;
-<<<<<<< HEAD
-    // The original extension has historically written to the uppercase
-    // namespace. Keep that object authoritative during an upgrade so a stale
-    // lowercase snapshot cannot silently replace user-selected legacy modes.
-    // Lowercase-only modular settings are copied across before both names are
-    // linked to the same live object.
-=======
->>>>>>> dev/preset-architecture
     const shared = legacy ?? canonical ?? {};
 
     if (canonical && legacy && canonical !== legacy) {
@@ -157,26 +145,11 @@ export function linkExtensionSettingsNamespaces(extensionSettings) {
             if (!(key in legacy)) legacy[key] = value;
         }
     }
-<<<<<<< HEAD
-
-=======
->>>>>>> dev/preset-architecture
     extensionSettings[SETTINGS_NAMESPACE] = shared;
     extensionSettings[LEGACY_SETTINGS_NAMESPACE] = shared;
     return shared;
 }
 
-<<<<<<< HEAD
-export function isLegacySummaryEngine(settings = {}) {
-    return settings.summaryEngineMode !== 'modular';
-}
-
-export function isLegacyLoreEngine(settings = {}) {
-    return settings.loreEngineMode !== 'modular';
-}
-
-=======
->>>>>>> dev/preset-architecture
 export function createSettings(overrides = {}) {
     const hasStoredSettings = Object.keys(overrides ?? {}).length > 0;
     const hasPresetSchema = Number(overrides.settingsSchemaVersion) >= 2 && overrides.preset;
@@ -226,10 +199,6 @@ export function applySettingsDefaults(settings) {
     if (!isSettingsObject(settings)) {
         throw new TypeError('Settings must be an object.');
     }
-<<<<<<< HEAD
-
-=======
->>>>>>> dev/preset-architecture
     Object.assign(settings, createSettings(settings));
     return settings;
 }

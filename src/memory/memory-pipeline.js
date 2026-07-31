@@ -59,23 +59,16 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
 
             for (const processor of processors) {
                 if (!canCommit()) return saved;
-<<<<<<< HEAD
-=======
                 ensureSources();
->>>>>>> dev/preset-architecture
                 current = await processor(current, { context, store, sourceLedger, shouldCommit: canCommit });
                 if (!canCommit()) return saved;
                 if (!current) break;
             }
 
-<<<<<<< HEAD
-            if (current && canCommit()) saved.push(store.save(current));
-=======
             if (current && canCommit()) {
                 ensureSources();
                 saved.push(store.save(current));
             }
->>>>>>> dev/preset-architecture
         }
 
         logger?.debug('Memory ingestion completed.', {

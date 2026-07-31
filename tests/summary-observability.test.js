@@ -31,21 +31,6 @@ test('summary contributor ignores retired legacy summary storage', async () => {
     assert.equal(contribution.metadata.summarySource, 'modular');
 });
 
-test('native NemoTavern running summary participates in legacy precedence ahead of settings chatSummaries', async () => {
-    const contributor = createSummaryContextContributor({
-        summaryStore: { get: () => ({ text: 'Modular summary.' }) },
-        legacySummaries: { chat: 'Settings summary.' },
-        getMetadata: () => ({ nemolore: { summary: 'Native running summary.' } }),
-        settings: { summaryContextPrecedence: 'legacy-first' },
-        ownership: { ownerFor: () => 'nemolore-modular' },
-    });
-
-    const contribution = await contributor.contribute({ chatId: 'chat' });
-    assert.match(contribution.content, /Native running summary/);
-    assert.equal(contribution.metadata.summarySource, 'legacy');
-    assert.equal(contribution.metadata.legacySummarySource, 'nemotavern');
-});
-
 test('summary contributor leaves context placement to the legacy or native owner', async () => {
     const contributor = createSummaryContextContributor({
         summaryStore: { get: () => ({ text: 'Would duplicate.' }) },

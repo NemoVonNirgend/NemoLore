@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSummaryDisplayController } from '../src/ui/summary-display-controller.js';
-<<<<<<< HEAD
-import { createModularSettingsController } from '../src/ui/modular-settings-controller.js';
-=======
->>>>>>> dev/preset-architecture
 
 function createElement(tagName) {
     return {
@@ -170,36 +166,3 @@ test('installs and removes summary store and chat listeners idempotently', () =>
         dom.restore();
     }
 });
-<<<<<<< HEAD
-
-test('modular settings controller forwards host chat lifecycle integration', async () => {
-    const dom = installFakeDocument();
-    const previousNemoLore = globalThis.NemoLore;
-    try {
-        let chatId = 'chat-a';
-        const eventSource = createEventSource();
-        globalThis.NemoLore = { summary: { store: createSummaryStore(records()) } };
-        const settingsController = createModularSettingsController({
-            settings: { showSummariesInChat: true },
-            getChatId: () => chatId,
-            eventSource,
-            chatChangedEvent: 'chat-changed',
-            chatLoadedEvent: 'chat-loaded',
-        });
-
-        assert.equal(await settingsController.installSummaryDisplay(), true);
-        chatId = 'chat-b';
-        eventSource.emit('chat-loaded', { chatId });
-
-        assert.equal(settingsController.summaryDisplay.element.dataset.nemoloreSummary, 'chat-b');
-        settingsController.uninstall();
-        assert.equal(eventSource.count('chat-changed'), 0);
-        assert.equal(eventSource.count('chat-loaded'), 0);
-    } finally {
-        if (previousNemoLore === undefined) delete globalThis.NemoLore;
-        else globalThis.NemoLore = previousNemoLore;
-        dom.restore();
-    }
-});
-=======
->>>>>>> dev/preset-architecture

@@ -5,12 +5,9 @@ import {
     createEngineOwnership,
     createNemoTavernHostInterop,
 } from '../src/integrations/nemotavern-host-interop.js';
-<<<<<<< HEAD
-=======
 import { createSettings } from '../src/core/settings.js';
 import { createMemoryContextContributor } from '../src/context/contributors/memory-context-contributor.js';
 import { createSummaryContextContributor } from '../src/summary/summary-context-contributor.js';
->>>>>>> dev/preset-architecture
 
 test('engine ownership resolves stock legacy, NemoTavern, and modular modes dynamically', () => {
     const scope = {};
@@ -139,8 +136,6 @@ test('host interop snapshots native memory ledger and provenance without retaini
     assert.deepEqual(snapshot.contextLedger, memory);
     assert.deepEqual(snapshot.provenance, provenance);
 });
-<<<<<<< HEAD
-=======
 
 test('preset cutover keeps summary and lore modular while suppressing competing fork ownership', () => {
     const settings = createSettings({
@@ -199,4 +194,3 @@ test('native ownership suppresses duplicate modular context contributors', async
     assert.deepEqual(await memory.contribute({ chatId: 'chat' }), []);
     assert.deepEqual(await summary.contribute({ chatId: 'chat' }), []);
 });
->>>>>>> dev/preset-architecture

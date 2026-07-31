@@ -91,11 +91,8 @@ export function createModularSettingsController({
     save,
     observability,
     providerRouter,
-<<<<<<< HEAD
-=======
     onPolicyChange,
     onProviderConfigChange,
->>>>>>> dev/preset-architecture
     getChatId,
     eventSource,
     chatChangedEvent,

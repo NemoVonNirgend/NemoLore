@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHelperSchedulingPolicy } from '../src/agents/helper-scheduling-policy.js';
-import { createPostReplyDispatcher } from '../src/agents/post-reply-dispatcher.js';
 import { createResilientGenerationRouter } from '../src/providers/resilient-generation-router.js';
 
 function createRegistry(handlers) {
@@ -97,45 +96,13 @@ test('scheduling policy enforces limits, minimums, and lore signals', () => {
     assert.equal(policy.evaluate('memory', { chatId: 'chat', messageCount: 5 }).allowed, true);
 });
 
-<<<<<<< HEAD
-test('engine-disabled workflows do not consume scheduling capacity or cooldowns', () => {
-    let now = 100_000;
-    const settings = {
-        enableHelperAgents: true,
-        summaryEngineMode: 'legacy',
-        loreEngineMode: 'modular',
-=======
 test('profile cadence controls summary and lore frequency per chat', () => {
     const settings = {
->>>>>>> dev/preset-architecture
         helperMemoryAfterReply: false,
         helperSummaryAfterReply: true,
         helperLoreAfterReply: true,
         helperSummaryMinMessages: 0,
         helperLoreMinMessages: 0,
-<<<<<<< HEAD
-        helperSummaryCooldownMs: 60_000,
-        helperLoreCooldownMs: 60_000,
-        helperLoreRequireSignal: false,
-        helperMaxCallsPerReply: 1,
-    };
-    const policy = createHelperSchedulingPolicy({ settings, clock: { now: () => now } });
-    let requests = [];
-    const dispatcher = createPostReplyDispatcher({
-        runtime: { enqueueMany(value) { requests = value; return value; } },
-        settings,
-        policy,
-    });
-
-    dispatcher.dispatch({ chatId: 'chat', messageId: '1', messageCount: 1, input: 'quiet reply' });
-
-    assert.deepEqual(requests.map(request => request.agent), ['lore']);
-    assert.equal(policy.evaluate('summary', { chatId: 'chat', messageCount: 1 }).allowed, true);
-    assert.equal(policy.evaluate('lore', { chatId: 'chat', messageCount: 1 }).reason, 'cooldown');
-
-    now += 60_001;
-    assert.equal(policy.evaluate('lore', { chatId: 'chat', messageCount: 1 }).allowed, true);
-=======
         helperLoreRequireSignal: false,
         helperMaxCallsPerReply: 3,
         summaryChunkSize: 8,
@@ -155,5 +122,4 @@ test('profile cadence controls summary and lore frequency per chat', () => {
     const aggressive = policy.select({ chatId: 'chat', messageCount: 21 });
     assert.equal(aggressive.decisions.find(item => item.workflow === 'summary').reason, 'message-cadence');
     assert.equal(aggressive.decisions.find(item => item.workflow === 'lore').allowed, true);
->>>>>>> dev/preset-architecture
 });
