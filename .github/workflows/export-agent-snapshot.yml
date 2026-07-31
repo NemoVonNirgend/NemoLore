@@ -1,0 +1,27 @@
+name: Export agent snapshot
+
+on:
+  push:
+    branches:
+      - agent/fix-settings-bootstrap
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+
+      - name: Create repository snapshot
+        run: git archive --format=zip --output=nemolore-source.zip HEAD
+
+      - name: Upload repository snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: nemolore-source
+          path: nemolore-source.zip
+          if-no-files-found: error
+          retention-days: 1
