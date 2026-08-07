@@ -1,11 +1,12 @@
 export const SUMMARY_SYSTEM_PROMPT = `Summarize roleplay continuity for future scene generation. Return concise prose only.
 Preserve concrete events, decisions, promises, injuries, possessions, relationship changes, locations, unresolved threads, and important dialogue meaning.
-Do not invent motives or facts. Prefer names over pronouns. Omit decorative prose and repeated information.`;
+Do not invent motives or facts. Prefer names over pronouns. Omit decorative prose and repeated information. Plain text, no markdown.`;
 
 export function buildSummaryPrompt({ messages = [], previousSummary = '', maxLength = 150 } = {}) {
     const transcript = messages.map(message => {
-        const speaker = message.name || (message.is_user ? 'User' : 'Assistant');
-        return `${speaker}: ${String(message.mes ?? message.content ?? '').trim()}`;
+        const speaker = message.name || (message.role === 'user' ? 'User' : 'Assistant');
+        const text = String(message.text ?? message.mes ?? message.content ?? '').trim();
+        return `${speaker}: ${text}`;
     }).filter(line => !line.endsWith(':')).join('\n');
 
     return [
