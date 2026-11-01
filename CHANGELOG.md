@@ -2,6 +2,13 @@
 
 All notable changes to NemoLore are documented here.
 
+## 1.4.0-rc.2 - 2026-11-01
+
+### Fixed
+
+- Kept in-chat summaries below the message content instead of beside it, preventing summaries from shrinking the narration and workbench column.
+- Isolated summary styling from SillyTavern's narration layout, preserved summary line breaks, and wrapped long unbroken text within the available width.
+
 ## 1.4.0-rc.1 - 2026-07-20
 
 ### Added

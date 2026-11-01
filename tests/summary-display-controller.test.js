@@ -29,22 +29,38 @@ function createElement(tagName) {
     };
 }
 
-function installFakeDocument() {
+function installFakeDocument({ messageCount = 1, withMessageBlock = true } = {}) {
     const previous = globalThis.document;
     const chatRoot = createElement('div');
-    const message = createElement('div');
-    message.className = 'mes';
-    message.attributes.set('mesid', '1');
-    chatRoot.append(message);
-    chatRoot.querySelectorAll = selector => selector === '.mes' ? [message] : [];
-    chatRoot.querySelector = selector => selector === '.mes:last-child' ? message : null;
+    const messages = Array.from({ length: messageCount }, (_, index) => {
+        const message = createElement('div');
+        message.className = 'mes';
+        message.attributes.set('mesid', String(index + 1));
+        const avatar = createElement('div');
+        const messageBlock = createElement('div');
+        messageBlock.className = 'mes_block';
+        const messageText = createElement('div');
+        messageText.className = 'mes_text';
+        messageText.textContent = 'Original narration';
+        const workbench = createElement('details');
+        workbench.textContent = 'Nemo workbench';
+        messageBlock.append(messageText, workbench);
+        message.append(avatar);
+        if (withMessageBlock) message.append(messageBlock);
+        message.querySelector = selector => selector === '.mes_block' && withMessageBlock ? messageBlock : null;
+        chatRoot.append(message);
+        return { message, messageBlock, messageText, workbench };
+    });
+    chatRoot.querySelectorAll = selector => selector === '.mes' ? messages.map(item => item.message) : [];
+    chatRoot.querySelector = selector => selector === '.mes:last-child' ? messages.at(-1)?.message ?? null : null;
     globalThis.document = {
         createElement,
         querySelector: selector => selector === '#chat' ? chatRoot : null,
     };
     return {
         chatRoot,
-        message,
+        messages,
+        ...messages[0],
         restore() {
             if (previous === undefined) delete globalThis.document;
             else globalThis.document = previous;
@@ -126,9 +142,75 @@ test('refreshes the rendered summary when SillyTavern changes chats', () => {
 
         assert.equal(controller.element.dataset.nemoloreSummary, 'chat-b');
         assert.equal(controller.element.children[1].textContent, 'Summary B');
-        assert.equal(dom.message.children.length, 1, 'old summary element should be removed before rendering the new chat');
+        assert.deepEqual(dom.messageBlock.children, [dom.messageText, dom.workbench, controller.element],
+            'old summary element should be removed without changing the narration or workbench');
     } finally {
         dom.restore();
+    }
+});
+
+test('summary stays below source message content without adding a flex column or entering narration', () => {
+    const dom = installFakeDocument({ messageCount: 2 });
+    try {
+        const controller = createSummaryDisplayController({
+            summaryStore: createSummaryStore(records()),
+            settings: { showSummariesInChat: true },
+            getChatId: () => 'chat-a',
+        });
+        const messageChildren = [...dom.message.children];
+
+        controller.install();
+
+        assert.deepEqual(dom.message.children, messageChildren, 'summary must not become a third message flex item');
+        assert.deepEqual(dom.messageBlock.children, [dom.messageText, dom.workbench, controller.element]);
+        assert.equal(dom.messageText.textContent, 'Original narration');
+        assert.equal(dom.messageText.children.length, 0, 'summary must remain outside story content');
+        assert.equal(dom.messages[1].messageBlock.children.length, 2, 'summary should attach to the source range');
+        assert.ok(!controller.element.className.split(/\s+/).includes('mes_narration'), 'summary must not inherit host narration layout rules');
+
+        controller.uninstall();
+        assert.deepEqual(dom.messageBlock.children, [dom.messageText, dom.workbench]);
+        assert.deepEqual(dom.message.children, messageChildren);
+    } finally {
+        dom.restore();
+    }
+});
+
+test('summary uses the last message body when the source message is not rendered', () => {
+    const dom = installFakeDocument({ messageCount: 2 });
+    try {
+        const controller = createSummaryDisplayController({
+            summaryStore: createSummaryStore(records()),
+            settings: { showSummariesInChat: true },
+        });
+
+        assert.equal(controller.render({ chatId: 'chat-a', text: 'Older summary', sourceRange: { end: 99 } }), true);
+        assert.equal(controller.element.parentNode, dom.messages[1].messageBlock);
+        assert.equal(dom.messages[1].message.children.length, 2);
+    } finally {
+        dom.restore();
+    }
+});
+
+test('summary falls back to the chat container when there is no message body', () => {
+    for (const options of [{ messageCount: 0 }, { withMessageBlock: false }]) {
+        const dom = installFakeDocument(options);
+        try {
+            const controller = createSummaryDisplayController({
+                summaryStore: createSummaryStore(records()),
+                settings: { showSummariesInChat: true },
+            });
+            const chatChildren = [...dom.chatRoot.children];
+
+            assert.equal(controller.render(records().get('chat-a')), true);
+            assert.equal(controller.element.parentNode, dom.chatRoot);
+            if (dom.message) assert.equal(dom.message.children.length, 1, 'summary must never join the avatar row');
+
+            controller.remove();
+            assert.deepEqual(dom.chatRoot.children, chatChildren);
+        } finally {
+            dom.restore();
+        }
     }
 });
 
