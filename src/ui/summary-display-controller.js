@@ -1,11 +1,11 @@
 function findTargetMessage(record, root) {
+    const messages = [...root.querySelectorAll('.mes')];
     const endIndex = record?.sourceRange?.end;
     if (Number.isInteger(endIndex)) {
-        const match = [...root.querySelectorAll('.mes')]
-            .find(element => Number(element.getAttribute('mesid')) === endIndex);
+        const match = messages.find(element => Number(element.getAttribute('mesid')) === endIndex);
         if (match) return match;
     }
-    return root.querySelector('.mes:last-child') ?? root;
+    return messages.at(-1) ?? null;
 }
 
 export function createSummaryDisplayController({
@@ -39,7 +39,7 @@ export function createSummaryDisplayController({
         if (!chatRoot) return false;
 
         element = document.createElement('div');
-        element.className = 'mes_narration nemolore-modular-summary';
+        element.className = 'nemolore-modular-summary';
         element.dataset.nemoloreSummary = record.chatId;
 
         const heading = document.createElement('strong');
@@ -49,7 +49,12 @@ export function createSummaryDisplayController({
         content.textContent = record.text;
         element.append(heading, content);
 
-        findTargetMessage(record, chatRoot).append(element);
+        const message = findTargetMessage(record, chatRoot);
+        // .mes is a horizontal flex row for the avatar and message body.
+        // Keep the summary outside .mes_text, but inside the body column so
+        // it neither competes for narration width nor becomes story content.
+        const container = message?.querySelector('.mes_block') ?? chatRoot;
+        container.append(element);
         logger?.debug('Rendered modular summary display.', { chatId: record.chatId });
         return true;
     }

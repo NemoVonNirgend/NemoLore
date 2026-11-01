@@ -865,3 +865,19 @@ body:not(.dark) .nemolore-summary-textarea {
         grid-template-columns: 1fr;
     }
 }
+
+/* Summaries share the message body column without changing the chat layout. */
+.nemolore-modular-summary {
+    display: block;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--SmartThemeQuoteColor, var(--customThemeColor));
+    overflow-wrap: anywhere;
+}
+
+.nemolore-modular-summary-text {
+    white-space: pre-wrap;
+}
