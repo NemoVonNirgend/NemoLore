@@ -2,6 +2,21 @@
 
 All notable changes to NemoLore are documented here.
 
+## 1.4.0-rc.5 - 2026-11-02
+
+### Fixed
+
+- Deleting, editing, or swiping source messages now cancels obsolete helper jobs, invalidates affected memory and summaries, and resets that chat's scheduling cadence. Source revision guards prevent late responses from writing to a replaced turn.
+- Duplicate completion events use a turn revision key, and stale message indices and synthetic helper/system messages cannot dispatch extra helper work.
+- Timed-out provider requests are aborted before retrying. User/job cancellation prevents retries and fallback, and cancelled jobs cannot report success or erase a replacement job's deduplication state.
+- Summary requests now include normalized message text and roles, retain stored continuity when appropriate, and honor explicit summary resets.
+
+### Changed
+
+- Helpers inherit connection temperature by default instead of forcing 0.2. An optional Helper temperature field in Advanced tuning overrides sampling only for helper requests.
+- Helpers following the current Chat Completions connection use isolated native requests, avoiding foreground prompt hooks and temporary global token settings. Other active API types retain the generateRaw fallback.
+- Workflow labels show normal request counts, and Maximum helper jobs per reply now accurately describes its limit: a memory job can issue three extraction requests.
+
 ## 1.4.0-rc.4 - 2026-11-01
 
 ### Added

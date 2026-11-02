@@ -37,7 +37,7 @@ export function createSillyTavernProvider({ generate, logger }) {
                 text: request.prefill && text.startsWith(request.prefill)
                     ? text.slice(request.prefill.length)
                     : text,
-                model: request.model,
+                model: request.model ?? output?.model ?? null,
                 raw: output,
             };
         },

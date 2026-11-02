@@ -39,10 +39,12 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
 
         try {
             const context = (await contextFactory?.(job)) ?? {};
+            job.controller.signal.throwIfAborted();
             job.result = await agent.run(snapshot(job), {
                 ...context,
                 signal: job.controller.signal,
             });
+            job.controller.signal.throwIfAborted();
             job.status = HELPER_JOB_STATUS.SUCCEEDED;
             emit('succeeded', job);
         } catch (error) {
@@ -56,7 +58,7 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
             job.completedAt = new Date().toISOString();
             running -= 1;
             if (job.dedupeKey && job.status !== HELPER_JOB_STATUS.SUCCEEDED) {
-                dedupeKeys.delete(job.dedupeKey);
+                if (dedupeKeys.get(job.dedupeKey) === job.id) dedupeKeys.delete(job.dedupeKey);
             }
             drain();
         }
@@ -126,10 +128,23 @@ export function createHelperAgentRuntime({ registry, logger, concurrency = 2, co
         return () => listeners.delete(listener);
     }
 
+    function invalidate(predicate, reason = 'source-changed') {
+        const affected = [];
+        for (const job of jobs.values()) {
+            if (!predicate(snapshot(job))) continue;
+            cancel(job.id, reason);
+            job.metadata.invalidationReason = reason;
+            if (dedupeKeys.get(job.dedupeKey) === job.id) dedupeKeys.delete(job.dedupeKey);
+            affected.push(job.id);
+        }
+        return affected;
+    }
+
     return Object.freeze({
         enqueue,
         enqueueMany,
         cancel,
+        invalidate,
         subscribe,
         get: id => snapshot(jobs.get(id)),
         list: () => [...jobs.values()].map(snapshot),

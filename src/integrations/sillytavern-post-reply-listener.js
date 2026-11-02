@@ -1,3 +1,5 @@
+import { messageIdentity, messageRevision } from '../core/helper-source-guard.js';
+
 const NON_REPLY_MESSAGE_TYPES = new Set([
     'first_message',
     'command',
@@ -9,6 +11,11 @@ const NON_REPLY_MESSAGE_TYPES = new Set([
     'function',
     'function_call',
     'quiet',
+    'summary',
+    'summarize',
+    'helper',
+    'memory',
+    'impersonate',
 ]);
 
 const NON_REPLY_TYPE_FRAGMENTS = Object.freeze([
@@ -18,13 +25,15 @@ const NON_REPLY_TYPE_FRAGMENTS = Object.freeze([
     'extension',
     'background',
     'caption',
+    'helper',
+    'summary',
+    'memory',
 ]);
 
 function resolveMessageIndex(eventArgs, chat) {
     for (const value of eventArgs) {
-        if (Number.isInteger(value) && value >= 0 && value < chat.length) return value;
-        if (Number.isInteger(value?.messageId) && value.messageId >= 0 && value.messageId < chat.length) return value.messageId;
-        if (Number.isInteger(value?.index) && value.index >= 0 && value.index < chat.length) return value.index;
+        const index = typeof value === 'number' ? value : typeof value?.messageId === 'number' ? value.messageId : value?.index;
+        if (typeof index === 'number') return Number.isInteger(index) && index >= 0 && index < chat.length ? index : -1;
     }
     return chat.length - 1;
 }
@@ -101,9 +110,15 @@ function findPreviousUserMessage(chat, assistantIndex) {
 export function createSillyTavernPostReplyListener({
     eventSource,
     messageReceivedEvent,
+    messageDeletedEvent,
+    messageEditedEvent,
+    messageSwipedEvent,
+    chatChangedEvent,
+    chatLoadedEvent,
     getContext,
     getChatId,
     dispatcher,
+    onSourcesChanged,
     logger,
 } = {}) {
     if (!eventSource?.on) throw new TypeError('Post-reply listener requires an event source.');
@@ -112,6 +127,27 @@ export function createSillyTavernPostReplyListener({
     if (!dispatcher?.dispatch) throw new TypeError('Post-reply listener requires a dispatcher.');
 
     let installed = false;
+    let observedChatId = null;
+    let observed = [];
+    const mutationEvents = [...new Set([messageDeletedEvent, messageEditedEvent, messageSwipedEvent, chatChangedEvent, chatLoadedEvent].filter(Boolean))];
+
+    function reconcile(context = getContext()) {
+        const chatId = String(getChatId?.() ?? context?.chatId ?? '');
+        const next = (context?.chat ?? []).map((message, index) => `${messageIdentity(message, index)}:${messageRevision(message)}`);
+        let changed = 0;
+        while (changed < observed.length && observed[changed] === next[changed]) changed++;
+        const replaced = observedChatId === chatId && changed < observed.length;
+        observedChatId = chatId;
+        observed = next;
+        if (replaced) {
+            return Promise.resolve(onSourcesChanged?.({ chatId, firstChangedIndex: changed }))
+                .catch(error => logger?.error('Unable to invalidate changed helper sources.', error));
+        }
+    }
+
+    function onMessagesChanged() {
+        try { return reconcile(); } catch (error) { logger?.error('Unable to reconcile helper sources.', error); }
+    }
 
     function onMessageReceived(...eventArgs) {
         try {
@@ -124,11 +160,12 @@ export function createSillyTavernPostReplyListener({
 
             const assistantIndex = resolveMessageIndex(eventArgs, chat);
             const assistantMessage = chat[assistantIndex];
-            if (!assistantMessage || assistantMessage.is_user || isGeneratedMediaMessage(assistantMessage)) return [];
+            if (!assistantMessage || assistantMessage.is_user || assistantMessage.is_system || isGeneratedMediaMessage(assistantMessage)) return [];
+            reconcile(context);
 
             const previousUser = findPreviousUserMessage(chat, assistantIndex);
             const chatId = getChatId?.() ?? context?.chatId ?? null;
-            const messageId = assistantMessage.send_date ?? assistantMessage.extra?.id ?? assistantIndex;
+            const messageId = messageIdentity(assistantMessage, assistantIndex);
             const messages = [previousUser?.message, assistantMessage].filter(Boolean);
             const sources = [
                 previousUser && {
@@ -137,6 +174,7 @@ export function createSillyTavernPostReplyListener({
                     messageIndex: previousUser.index,
                     role: 'user',
                     text: previousUser.message.mes ?? '',
+                    hash: messageRevision(previousUser.message),
                 },
                 {
                     chatId,
@@ -144,12 +182,14 @@ export function createSillyTavernPostReplyListener({
                     messageIndex: assistantIndex,
                     role: 'assistant',
                     text: assistantMessage.mes ?? '',
+                    hash: messageRevision(assistantMessage),
                 },
             ].filter(Boolean);
 
             return dispatcher.dispatch({
                 chatId,
                 messageId: String(messageId),
+                revisionKey: `${assistantIndex}:${previousUser ? messageRevision(previousUser.message) : ''}:${messageRevision(assistantMessage)}`,
                 messageCount: chat.length,
                 input: sources.map(source => `${source.role}: ${source.text}`).join('\n\n'),
                 messages,
@@ -174,6 +214,8 @@ export function createSillyTavernPostReplyListener({
     function install() {
         if (installed) return false;
         eventSource.on(messageReceivedEvent, onMessageReceived);
+        for (const event of mutationEvents) eventSource.on(event, onMessagesChanged);
+        reconcile();
         installed = true;
         return true;
     }
@@ -182,9 +224,15 @@ export function createSillyTavernPostReplyListener({
         if (!installed) return false;
         eventSource.removeListener?.(messageReceivedEvent, onMessageReceived);
         eventSource.off?.(messageReceivedEvent, onMessageReceived);
+        for (const event of mutationEvents) {
+            if (typeof eventSource.removeListener === 'function') eventSource.removeListener(event, onMessagesChanged);
+            else eventSource.off?.(event, onMessagesChanged);
+        }
+        observedChatId = null;
+        observed = [];
         installed = false;
         return true;
     }
 
-    return Object.freeze({ install, uninstall, onMessageReceived, get installed() { return installed; } });
+    return Object.freeze({ install, uninstall, onMessageReceived, onMessagesChanged, get installed() { return installed; } });
 }

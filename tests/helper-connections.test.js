@@ -64,7 +64,8 @@ test('saved Vertex helpers reuse service-account auth and visible response lengt
     assert.equal(calls[1].payload.max_tokens, 64000);
     assert.equal(calls[1].payload.stream, false);
     assert.equal(calls[1].payload.stop, undefined);
-    assert.equal(calls[1].signal, signal);
+    assert.ok(calls[1].signal instanceof AbortSignal);
+    assert.equal(calls[1].signal.aborted, false);
     assert.deepEqual(native, before);
     assert.equal(calls[1].payload.reverse_proxy, '');
     assert.ok(!JSON.stringify(calls).includes('NEVER-COPY-ME'));
@@ -83,6 +84,25 @@ test('Vertex Express uses its saved key ID and project; explicit budgets and mod
     assert.equal(calls[0].snapshot.temp_openai, 0.5);
 });
 
+test('helper temperature inherits native settings or a helper override without changing foreground sampling', async () => {
+    const { service, native, calls, settings } = fixture();
+    native.temp_openai = 1;
+    const registry = createProviderRegistry();
+    registry.register(SAVED_HELPER_PROVIDER, service);
+    const router = createResilientGenerationRouter({ registry, settings });
+    for (const [configured, explicit, expected] of [[null, null, 1], [0.4, null, 0.4], [0.4, 0, 0], [null, 0.8, 0.8]]) {
+        settings.helperTemperature = configured;
+        await router.generate({ prompt: 'Extract facts', temperature: explicit });
+        assert.equal(calls.at(-2).snapshot.temp_openai, expected);
+        assert.equal(native.temp_openai, 1);
+    }
+    await service.generateCurrent({ messages: [{ role: 'user', content: 'Current connection helper' }], temperature: 0.6 });
+    assert.equal(calls.at(-2).snapshot.temp_openai, 0.6);
+    assert.equal(calls.at(-1).payload.model, 'chat-model');
+    assert.equal(calls.at(-1).payload.chat_completion_source, 'openai');
+    assert.equal(native.temp_openai, 1);
+});
+
 test('models combine the source catalogue and saved custom ID without leaking the active source list', () => {
     const { service } = fixture();
     assert.deepEqual(service.models('vertexai').map(model => model.id), ['vertexai-catalogue', 'gemini-3.8-flash', 'gemini-4-argon']);
@@ -91,6 +111,16 @@ test('models combine the source catalogue and saved custom ID without leaking th
     assert.match(service.describe('vertexai').credentials, /saved/);
     assert.match(service.describe('vertexai').endpoint, /global/);
     assert.equal(service.describe('vertexai').canRefresh, false);
+});
+
+test('following the current OpenRouter connection preserves its website-model selection', async () => {
+    const { service, native, calls } = fixture({ getSources: () => [{ id: 'openrouter', label: 'OpenRouter' }] });
+    native.chat_completion_source = 'openrouter';
+    native.openrouter_model = 'OR_Website';
+    await service.generateCurrent({ messages: [{ role: 'user', content: 'Task' }] });
+    assert.equal(calls[1].payload.model, null);
+    assert.equal(calls[0].snapshot.openrouter_model, 'OR_Website');
+    assert.equal(native.openrouter_model, 'OR_Website');
 });
 
 test('Vertex model refresh reloads ST catalogue without calling an unsupported listing endpoint', async () => {

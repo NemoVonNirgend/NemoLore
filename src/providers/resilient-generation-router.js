@@ -2,15 +2,28 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function withTimeout(promise, timeoutMs, label) {
-    if (!timeoutMs || timeoutMs <= 0) return promise;
+async function runAttempt(registry, input, provider, timeoutMs) {
+    const controller = new AbortController();
+    const parent = input.signal;
+    const forwardAbort = () => controller.abort(parent.reason);
     let timer;
-    return Promise.race([
-        promise,
-        new Promise((_, reject) => {
-            timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-        }),
-    ]).finally(() => clearTimeout(timer));
+    let onAbort;
+    const aborted = new Promise((_, reject) => {
+        onAbort = () => reject(controller.signal.reason);
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+    });
+    parent?.addEventListener('abort', forwardAbort, { once: true });
+    try {
+        parent?.throwIfAborted();
+        if (timeoutMs > 0) timer = setTimeout(() => {
+            controller.abort(new Error(`${provider} generation timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        return await Promise.race([registry.generate({ ...input, signal: controller.signal }, { provider }), aborted]);
+    } finally {
+        clearTimeout(timer);
+        parent?.removeEventListener('abort', forwardAbort);
+        controller.signal.removeEventListener('abort', onAbort);
+    }
 }
 
 export function createResilientGenerationRouter({ registry, settings, logger, clock = Date } = {}) {
@@ -64,14 +77,12 @@ export function createResilientGenerationRouter({ registry, settings, logger, cl
 
         for (let attemptIndex = 0; attemptIndex <= retries; attemptIndex += 1) {
             try {
-                const result = await withTimeout(
-                    registry.generate(input, { provider }),
-                    timeoutMs,
-                    `${provider} generation`,
-                );
+                const result = await runAttempt(registry, input, provider, timeoutMs);
+                input.signal?.throwIfAborted();
                 recordSuccess(provider);
                 return result;
             } catch (error) {
+                if (input.signal?.aborted) throw error;
                 lastError = error;
                 recordFailure(provider);
                 logger?.warn('Helper generation attempt failed.', {
@@ -87,6 +98,11 @@ export function createResilientGenerationRouter({ registry, settings, logger, cl
     }
 
     async function generate(input, options = {}) {
+        input.signal?.throwIfAborted();
+        const configuredTemperature = settings?.helperTemperature;
+        if (input.temperature == null && configuredTemperature != null && configuredTemperature !== '') {
+            input = { ...input, temperature: Number(configuredTemperature) };
+        }
         const workflow = options.workflow ?? input?.metadata?.task ?? 'helper';
         const primary = routeFor(workflow, options.provider);
         const fallback = options.fallbackProvider ?? fallbackFor(primary);
@@ -94,6 +110,7 @@ export function createResilientGenerationRouter({ registry, settings, logger, cl
         try {
             return await attempt(input, primary, options);
         } catch (primaryError) {
+            if (input.signal?.aborted) throw primaryError;
             if (!fallback) throw primaryError;
             logger?.warn('Falling back to alternate helper provider.', { workflow, primary, fallback });
             return attempt(input, fallback, { ...options, retries: 0 });

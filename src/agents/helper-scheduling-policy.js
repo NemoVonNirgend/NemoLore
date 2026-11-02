@@ -80,7 +80,14 @@ export function createHelperSchedulingPolicy({ settings, clock = Date } = {}) {
     return Object.freeze({
         evaluate,
         select,
-        reset() {
+        reset(chatId) {
+            if (chatId != null) {
+                for (const workflow of ['memory', 'summary', 'lore']) {
+                    lastRun.delete(`${workflow}:${chatId}`);
+                    lastMessageCount.delete(`${workflow}:${chatId}`);
+                }
+                return;
+            }
             lastRun.clear();
             lastMessageCount.clear();
         },

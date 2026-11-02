@@ -1,8 +1,8 @@
 import { SUMMARY_SYSTEM_PROMPT, buildSummaryPrompt } from './summary-prompt.js';
-import { createActiveChatGuard } from '../core/active-chat-guard.js';
+import { createHelperSourceGuard } from '../core/helper-source-guard.js';
 import { createKeyedLock } from '../core/keyed-lock.js';
 
-export function createSummaryService({ generation, store, settings, logger, getActiveChatId } = {}) {
+export function createSummaryService({ generation, store, settings, logger, getActiveChatId, getContext } = {}) {
     if (!generation?.generate) throw new TypeError('Summary service requires generation.');
     if (!store?.save) throw new TypeError('Summary service requires a store.');
 
@@ -10,7 +10,7 @@ export function createSummaryService({ generation, store, settings, logger, getA
 
     async function summarizeUnlocked(payload = {}) {
         const chatId = payload.chatId;
-        const shouldCommit = createActiveChatGuard(getActiveChatId, chatId);
+        const shouldCommit = createHelperSourceGuard({ payload, getActiveChatId, getContext, signal: payload.signal });
         if (!shouldCommit()) return { skipped: true, reason: 'chat-changed' };
         const previous = store.get(chatId);
         const messages = payload.messages ?? [];
@@ -24,7 +24,8 @@ export function createSummaryService({ generation, store, settings, logger, getA
                 maxLength: payload.maxLength ?? settings?.summaryMaxLength ?? 150,
             }),
             maxTokens: payload.maxTokens ?? null,
-            temperature: payload.temperature ?? 0.2,
+            temperature: payload.temperature ?? null,
+            signal: payload.signal,
             metadata: { task: 'summary', chatId, engine: 'modular' },
         }, { provider: payload.provider, workflow: 'summary' });
 

@@ -11,14 +11,15 @@ const ROUTES = [
 
 const FIELDS = Object.freeze({
     helperAgentConcurrency: { type: 'number', label: 'Concurrent helper jobs', min: 1, max: 6 },
+    helperTemperature: { type: 'number', label: 'Helper temperature (blank = inherit connection)', min: 0, max: 2, step: 0.01, nullable: true },
     helperMemoryProvider: { type: 'select', label: 'Memory connection', options: ROUTES },
     helperSummaryProvider: { type: 'select', label: 'Summary connection', options: ROUTES },
     helperLoreProvider: { type: 'select', label: 'Lore connection', options: ROUTES },
     helperFallbackProvider: { type: 'select', label: 'Fallback connection', options: [['', 'No fallback'], ...ROUTES.slice(1)] },
-    helperMemoryAfterReply: { type: 'checkbox', label: 'Run memory after replies' },
-    helperSummaryAfterReply: { type: 'checkbox', label: 'Run summary after replies' },
-    helperLoreAfterReply: { type: 'checkbox', label: 'Run lore after replies' },
-    helperMaxCallsPerReply: { type: 'number', label: 'Maximum helper calls per reply', min: 0, max: 3 },
+    helperMemoryAfterReply: { type: 'checkbox', label: 'Run memory after replies (up to 3 requests)' },
+    helperSummaryAfterReply: { type: 'checkbox', label: 'Run summary after replies (1 request)' },
+    helperLoreAfterReply: { type: 'checkbox', label: 'Run lore after replies (1 request)' },
+    helperMaxCallsPerReply: { type: 'number', label: 'Maximum helper jobs per reply', min: 0, max: 3 },
     helperSummaryMinMessages: { type: 'number', label: 'Summary minimum messages', min: 0, max: 1000 },
     helperLoreMinMessages: { type: 'number', label: 'Lore minimum messages', min: 0, max: 1000 },
     helperLoreRequireSignal: { type: 'checkbox', label: 'Require a lore-worthy signal' },
@@ -75,6 +76,7 @@ function createControl(key, definition, settings, onChange) {
         input.type = definition.type;
         if (definition.min != null) input.min = String(definition.min);
         if (definition.max != null) input.max = String(definition.max);
+        if (definition.step != null) input.step = String(definition.step);
     }
     input.id = `nemolore_modular_${key}`;
     input.classList.add('text_pole');
@@ -88,7 +90,9 @@ function createControl(key, definition, settings, onChange) {
         row.append(label, input);
     }
     input.addEventListener('change', () => {
-        const value = definition.type === 'checkbox' ? input.checked : definition.type === 'number' ? Number(input.value) : input.value;
+        const value = definition.type === 'checkbox' ? input.checked : definition.type === 'number'
+            ? definition.nullable && input.value.trim() === '' ? null : Number(input.value)
+            : input.value;
         onChange(key, value);
     });
     return { row, input };
@@ -143,7 +147,7 @@ export function createModularSettingsController({
             else settings[key] = value;
         }
         save?.(settings);
-        if (keys.some(key => key === 'enableAsyncApi' || key.includes('Provider') || key.startsWith('asyncApi') || key.startsWith('helperConnection'))) {
+        if (keys.some(key => key === 'enableAsyncApi' || key === 'helperTemperature' || key.includes('Provider') || key.startsWith('asyncApi') || key.startsWith('helperConnection'))) {
             providerRouter?.resetCircuit?.();
         }
         if (keys.some(key => key === 'enableAsyncApi' || key.startsWith('asyncApi'))) onProviderConfigChange?.(settings);

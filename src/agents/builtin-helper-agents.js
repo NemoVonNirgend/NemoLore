@@ -1,17 +1,18 @@
-import { createActiveChatGuard } from '../core/active-chat-guard.js';
+import { createHelperSourceGuard } from '../core/helper-source-guard.js';
 
-export function createMemoryHelperAgent({ pipeline, maintenance, getActiveChatId } = {}) {
+export function createMemoryHelperAgent({ pipeline, maintenance, getActiveChatId, getContext } = {}) {
     if (!pipeline?.ingest) throw new TypeError('Memory helper agent requires a memory pipeline.');
 
     return Object.freeze({
-        async run(job) {
+        async run(job, runtimeContext = {}) {
             const payload = job.payload ?? {};
-            const shouldCommit = createActiveChatGuard(getActiveChatId, payload.chatId);
+            const shouldCommit = createHelperSourceGuard({ payload, getActiveChatId, getContext, signal: runtimeContext.signal });
             if (!shouldCommit()) return { skipped: true, reason: 'chat-changed', memoryIds: [], records: [], maintenance: null };
             const extractorNames = payload.extractors ?? ['episode', 'atomic-fact', 'state-change'];
             const results = [];
             const context = {
                 ...(payload.context ?? {}),
+                signal: runtimeContext.signal,
                 generationOptions: {
                     ...(payload.context?.generationOptions ?? {}),
                     provider: payload.provider,
@@ -47,7 +48,7 @@ export function createCallbackHelperAgent({ name, handler } = {}) {
     if (typeof handler !== 'function') throw new TypeError(`${name ?? 'Callback'} helper agent requires a handler.`);
     return Object.freeze({
         async run(job, context) {
-            return handler(job.payload ?? {}, context, job);
+            return handler({ ...(job.payload ?? {}), signal: context?.signal }, context, job);
         },
     });
 }

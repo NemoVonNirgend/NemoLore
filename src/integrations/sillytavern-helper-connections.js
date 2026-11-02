@@ -113,13 +113,14 @@ export function createSillyTavernHelperConnections({
         return models(source);
     }
 
-    async function generate(request) {
-        const source = settings.helperConnectionSource;
+    async function generateForSource(request, source, selectedModel) {
+        request.signal?.throwIfAborted();
         const native = snapshot(source);
-        const model = request.model || settings.helperConnectionModel || defaultModel(source);
-        if (!model) throw new Error('Choose a helper model in NemoLore’s Helper connection settings.');
+        const websiteModel = source === 'openrouter' && selectedModel === 'OR_Website' && !request.model;
+        const model = websiteModel ? null : request.model || selectedModel || defaultModel(source);
+        if (!model && !websiteModel) throw new Error('Choose a helper model in NemoLore’s Helper connection settings.');
         if (!createParameters || !sendRequest) throw new Error('Update SillyTavern to use saved helper connections.');
-        native[helperModelSetting(source)] = model;
+        native[helperModelSetting(source)] = websiteModel ? 'OR_Website' : model;
         const responseLimit = request.maxTokens ?? Number(getResponseLimit() || native.openai_max_tokens);
         if (Number.isFinite(responseLimit) && responseLimit > 0) native.openai_max_tokens = responseLimit;
         if (request.temperature != null) native.temp_openai = request.temperature;
@@ -127,6 +128,7 @@ export function createSillyTavernHelperConnections({
         const messages = structuredClone(request.messages);
         if (request.prefill) messages.push({ role: 'assistant', content: request.prefill });
         const { generate_data: payload } = await createParameters(native, model, 'quiet', messages);
+        request.signal?.throwIfAborted();
         const { id } = credential(source, native);
         if (id) payload.secret_id = id;
         payload.stream = false;
@@ -140,5 +142,12 @@ export function createSillyTavernHelperConnections({
         return { text, model, raw: output };
     }
 
-    return Object.freeze({ sources, models, defaultModel, describe, refreshModels, generate });
+    return Object.freeze({
+        sources, models, defaultModel, describe, refreshModels,
+        generate: request => generateForSource(request, settings.helperConnectionSource, settings.helperConnectionModel),
+        generateCurrent: request => {
+            const native = getSettings();
+            return generateForSource(request, native.chat_completion_source, native[helperModelSetting(native.chat_completion_source)]);
+        },
+    });
 }

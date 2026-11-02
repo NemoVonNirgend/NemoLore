@@ -9,9 +9,11 @@ export function createApiHelperAgent({ generation, tasks, logger } = {}) {
             if (!task) throw new Error(`Unknown helper task: ${taskName}`);
 
             const request = await task.buildRequest(job.payload, context);
-            const result = await generation.generate(request, {
+            context.signal?.throwIfAborted();
+            const result = await generation.generate({ ...request, signal: context.signal ?? request.signal }, {
                 provider: job.payload.provider,
             });
+            context.signal?.throwIfAborted();
 
             const applied = typeof task.applyResult === 'function'
                 ? await task.applyResult(result, job.payload, context)

@@ -26,7 +26,8 @@ export function createLlmExtractor({
             systemPrompt,
             prompt,
             maxTokens: context.maxTokens ?? null,
-            temperature: context.temperature ?? 0.2,
+            temperature: context.temperature ?? null,
+            signal: context.signal,
             metadata: { task: `memory-extraction:${name}` },
         }, context.generationOptions);
 

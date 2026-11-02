@@ -24,6 +24,14 @@ Primary and fallback failures are contained within the helper job and must not a
 
 Check the selected profile, helper enablement, per-workflow toggle, minimum-message count, maximum calls per reply, cooldown, and lore-signal requirement. A successfully completed dedupe key intentionally suppresses the same job replay.
 
+## Repeated helper requests or unexpected temperature
+
+Memory can normally make three extraction requests per reply, plus one each for enabled summary and lore jobs. The concurrency and per-reply limits count jobs. Reducing enabled workflows reduces these requests.
+
+From 1.4.0-rc.5 onward, helper temperature inherits the connection instead of forcing 0.2. **Advanced tuning → Helper temperature** can set a separate value; clear it to inherit. A helper's logged request parameters do not by themselves indicate a change to foreground sampling.
+
+Deleting, editing, or swiping messages cancels obsolete work, invalidates derived memory/summaries, and permits one replacement batch after a new reply completes. Late responses are discarded. Already-applied lore entries can be reviewed in the lore manager. If token counts still grow after updating and refreshing, compare the actual request prompts and workflow names in the inspector; a model-configuration screenshot alone does not identify duplicated content.
+
 ## Context is missing
 
 Use the inspector to confirm the contribution was selected rather than omitted by token budget. Summaries and story memories are chat-scoped. Preferences require opt-in plus explicit acceptance; persona preferences must match the active SillyTavern user avatar.
