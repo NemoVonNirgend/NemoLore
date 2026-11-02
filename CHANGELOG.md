@@ -2,6 +2,20 @@
 
 All notable changes to NemoLore are documented here.
 
+## 1.4.0-rc.4 - 2026-11-01
+
+### Added
+
+- A Helper connection panel above Advanced tuning: select a SillyTavern provider and model, with automatic saving across reloads.
+- Saved-connection helpers reuse SillyTavern's native default endpoints, provider configuration, and server-side credentials, including Vertex Express and service-account authentication.
+- Source-specific model lists, automatic API listing where supported, manual refresh, and custom model IDs. Vertex uses SillyTavern's catalogue, including models added by other extensions.
+- Common endpoint presets for manual OpenAI-compatible connections.
+
+### Changed
+
+- Replaced free-text workflow routing fields with labeled connection selectors and hid manual endpoint fields until needed.
+- Saved-connection helpers use isolated request settings and inherit the displayed response-token limit without changing the foreground connection or its token settings.
+
 ## 1.4.0-rc.3 - 2026-11-01
 
 ### Changed

@@ -881,3 +881,36 @@ body:not(.dark) .nemolore-summary-textarea {
 .nemolore-modular-summary-text {
     white-space: pre-wrap;
 }
+
+.nemolore-helper-connection {
+    margin: 14px 0;
+    padding: 12px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+}
+
+.nemolore-helper-connection h4 {
+    margin: 0 0 10px;
+}
+
+.nemolore-helper-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 10px 0;
+}
+
+.nemolore-helper-field .text_pole {
+    width: 100%;
+    min-width: 0;
+}
+
+.nemolore-helper-status {
+    margin: 10px 0 0;
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+
+.nemolore-helper-connection [hidden] {
+    display: none !important;
+}
