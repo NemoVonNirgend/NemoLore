@@ -11,9 +11,11 @@ The UI waits briefly for SillyTavern's extension host and installs idempotently.
 
 ## Provider failure
 
-- `sillytavern` requires a working active SillyTavern generation connection.
-- `async` requires the full OpenAI-compatible chat-completions endpoint, a valid model, and any required Bearer key.
-- Provider route fields use registry names (`sillytavern` or `async`), not model names.
+- **Use current chat connection** requires a working active SillyTavern generation connection.
+- For a named provider, configure its credentials in SillyTavern's API Connections first, then select it and a model in **NemoLore → Helper connection**. Vertex also needs its region and Express/project or service-account configuration there.
+- **Manual OpenAI-compatible endpoint** requires the full chat-completions URL, a valid model, and any required Bearer key. Changing the manual URL clears its old key.
+- If a model is missing, refresh the list or use **Enter another model ID…**. Vertex uses SillyTavern's catalogue; listed models still need account access.
+- Workflow selectors in Advanced tuning normally stay at **Use shared helper connection**. Integrations can still use registry IDs (`sillytavern`, `st-saved`, `async`).
 - Open the inspector to view current routes, recent helper failures, and circuit state; reset the circuit after fixing configuration.
 
 Primary and fallback failures are contained within the helper job and must not abort a foreground reply.

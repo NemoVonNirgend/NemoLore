@@ -17,7 +17,7 @@ Clone the branch into SillyTavern's third-party extensions directory. The instal
 
 ```powershell
 Set-Location <SillyTavern>\public\scripts\extensions\third-party
-git clone --branch dev/preset-architecture https://github.com/NemoVonNirgend/NemoLore.git NemoLore
+git clone --branch main https://github.com/NemoVonNirgend/NemoLore.git NemoLore
 ```
 
 Start SillyTavern, enable NemoLore under Extensions, and reload the page. Open the NemoLore drawer and confirm that a story profile and the management buttons are visible.
@@ -27,7 +27,7 @@ For an existing installation:
 ```powershell
 Set-Location <SillyTavern>\public\scripts\extensions\third-party\NemoLore
 git fetch origin
-git switch dev/preset-architecture
+git switch main
 git pull --ff-only
 ```
 
@@ -48,23 +48,23 @@ Advanced changes become explicit overrides on the selected profile. Profile chan
 
 ## Provider and helper-agent setup
 
-The provider registry always includes:
-
-- `sillytavern`: uses SillyTavern's active text-generation connection through `generateRaw`.
-- `async`: available when **Enable OpenAI-compatible provider** is enabled and a complete endpoint is configured.
-
-For an OpenAI-compatible provider, enter the full chat-completions URL, API key, and model, for example a URL ending in `/v1/chat/completions`. Credentials stay in SillyTavern extension settings; avoid sharing exported settings files containing keys.
-
-Helper routing fields accept the provider names `sillytavern` and `async`:
+Open **Extensions → NemoLore → Helper connection**, above Advanced tuning:
 
 1. Enable helper agents.
-2. Choose a shared helper provider, or set memory, summary, and lore overrides.
-3. Optionally choose a fallback provider.
-4. Enable the desired post-reply workflows and adjust cadence in Advanced settings.
+2. Choose a provider, such as **Google Vertex AI** or **Google AI Studio**.
+3. Pick a model. Changes save automatically and persist after refreshing SillyTavern.
+
+Configure the provider once in SillyTavern's **API Connections** first. NemoLore reuses its default endpoint, saved provider configuration, and server-side credentials. Vertex inherits its region and Express/project or service-account settings. The main chat connection stays selected, so helpers can use a different provider and model. Saved keys are never copied into NemoLore settings.
+
+Model lists include SillyTavern's source-specific catalogue and extension-added models. Providers with a model-list API refresh automatically when selected; use **Refresh models** to reload. Vertex uses the existing SillyTavern catalogue. These lists do not guarantee account access to every model. Choose **Enter another model ID…** for an unlisted model.
+
+Choose **Use current chat connection** to follow the main model instead. For a separate server, choose **Manual OpenAI-compatible endpoint**, select an endpoint preset or enter the full chat-completions URL, then provide its key and model. Manual keys are stored in extension settings; avoid sharing exports containing keys. Changing the manual endpoint clears its old key.
+
+Advanced tuning has optional memory, summary, lore, and fallback connection selectors, plus workflow toggles and cadence controls. Leave workflow connections at **Use shared helper connection** to use the picker for every helper.
 
 Jobs have bounded concurrency, timeouts, retries, circuit breaking, and replay deduplication. A helper failure is isolated from foreground chat generation. Failed jobs release their dedupe key so a later reply can retry them.
 
-Memory extraction, summary, and lore helpers do not impose a default output-token cap. With the `sillytavern` provider, they inherit the active **Max Response Length** through `generateRaw`. With the `async` provider, NemoLore omits `max_tokens` and the endpoint applies its default. A caller-supplied `maxTokens` still sets an explicit limit. Summary word targets and context-injection budgets remain separate from this output limit.
+Memory extraction, summary, and lore helpers do not impose a fixed output-token cap. Saved SillyTavern connections inherit the displayed **Max Response Length** using a separate request snapshot. The current-chat connection inherits it through `generateRaw`. Manual endpoints omit `max_tokens` and apply the endpoint default. A caller-supplied `maxTokens` still sets an explicit limit. Summary word targets and context-injection budgets remain separate from this output limit.
 
 ## Context injection
 
@@ -112,7 +112,7 @@ Release candidate 1.4.0-rc.1 was exercised against SillyTavern staging 1.18.0 at
 ## Troubleshooting
 
 - **Drawer does not appear:** confirm the folder is exactly `NemoLore`, the extension is enabled, and `manifest.json` loads `bootstrap.js`; then inspect the browser console.
-- **Helpers do not run:** confirm helper agents and the individual workflow are enabled, the minimum-message/lore-signal rule is met, and the provider name is `sillytavern` or `async`.
+- **Helpers do not run:** confirm helper agents and the individual workflow are enabled, the minimum-message/lore-signal rule is met, and Helper connection has a configured provider and model.
 - **OpenAI-compatible requests fail:** use the full chat-completions URL and confirm the endpoint accepts Bearer authentication and the configured model.
 - **No semantic matches:** configure a compatible SillyTavern Vector Storage source or rely on the automatic lexical fallback.
 - **Wrong chat data appears:** stop testing and capture the inspector snapshot and console. Chat switches are guarded; stale async work should be discarded rather than committed.

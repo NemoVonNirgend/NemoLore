@@ -1,18 +1,20 @@
 import { PRESET_SETTING_KEYS, listPresets } from '../presets/preset-registry.js';
 import { selectPreset, setPresetOverride } from '../core/settings.js';
+import { createHelperConnectionPanel } from './helper-connection-panel.js';
+
+const ROUTES = [
+    ['', 'Use shared helper connection'],
+    ['sillytavern', 'Current chat connection'],
+    ['st-saved', 'Selected SillyTavern helper connection'],
+    ['async', 'Manual endpoint'],
+];
 
 const FIELDS = Object.freeze({
-    enableHelperAgents: { type: 'checkbox', label: 'Enable parallel helper agents' },
     helperAgentConcurrency: { type: 'number', label: 'Concurrent helper jobs', min: 1, max: 6 },
-    helperAgentProvider: { type: 'text', label: 'Shared helper provider' },
-    helperMemoryProvider: { type: 'text', label: 'Memory provider override' },
-    helperSummaryProvider: { type: 'text', label: 'Summary provider override' },
-    helperLoreProvider: { type: 'text', label: 'Lore provider override' },
-    helperFallbackProvider: { type: 'text', label: 'Fallback provider' },
-    enableAsyncApi: { type: 'checkbox', label: 'Enable OpenAI-compatible provider' },
-    asyncApiEndpoint: { type: 'text', label: 'Async API endpoint' },
-    asyncApiKey: { type: 'password', label: 'Async API key' },
-    asyncApiModel: { type: 'text', label: 'Async API model' },
+    helperMemoryProvider: { type: 'select', label: 'Memory connection', options: ROUTES },
+    helperSummaryProvider: { type: 'select', label: 'Summary connection', options: ROUTES },
+    helperLoreProvider: { type: 'select', label: 'Lore connection', options: ROUTES },
+    helperFallbackProvider: { type: 'select', label: 'Fallback connection', options: [['', 'No fallback'], ...ROUTES.slice(1)] },
     helperMemoryAfterReply: { type: 'checkbox', label: 'Run memory after replies' },
     helperSummaryAfterReply: { type: 'checkbox', label: 'Run summary after replies' },
     helperLoreAfterReply: { type: 'checkbox', label: 'Run lore after replies' },
@@ -61,7 +63,13 @@ function createControl(key, definition, settings, onChange) {
     let input;
     if (definition.type === 'select') {
         input = document.createElement('select');
-        for (const value of definition.options) input.append(new Option(value, value));
+        for (const option of definition.options) {
+            const [value, label] = Array.isArray(option) ? option : [option, option];
+            input.append(new Option(label, value));
+        }
+        if (settings[key] && ![...input.options].some(option => option.value === settings[key])) {
+            input.append(new Option(`Existing route: ${settings[key]}`, settings[key]));
+        }
     } else {
         input = document.createElement('input');
         input.type = definition.type;
@@ -88,6 +96,7 @@ function createControl(key, definition, settings, onChange) {
 
 export function createModularSettingsController({
     settings,
+    helperConnections,
     save,
     observability,
     providerRouter,
@@ -104,6 +113,7 @@ export function createModularSettingsController({
     let memoryPanel = null;
     let summaryLorePanel = null;
     let profileStatus = null;
+    let helperPanel = null;
     const controls = new Map();
     const presetButtons = new Map();
 
@@ -123,19 +133,27 @@ export function createModularSettingsController({
             if (definition.type === 'checkbox') input.checked = Boolean(settings[key]);
             else input.value = settings[key] ?? '';
         }
+        helperPanel?.sync();
+    }
+
+    function updateSettings(patch) {
+        const keys = Object.keys(patch);
+        for (const [key, value] of Object.entries(patch)) {
+            if (PRESET_SETTING_KEYS.includes(key)) Object.assign(settings, setPresetOverride(settings, key, value));
+            else settings[key] = value;
+        }
+        save?.(settings);
+        if (keys.some(key => key === 'enableAsyncApi' || key.includes('Provider') || key.startsWith('asyncApi') || key.startsWith('helperConnection'))) {
+            providerRouter?.resetCircuit?.();
+        }
+        if (keys.some(key => key === 'enableAsyncApi' || key.startsWith('asyncApi'))) onProviderConfigChange?.(settings);
+        if (keys.includes('showSummariesInChat')) summaryDisplay?.refresh?.();
+        if (keys.some(key => PRESET_SETTING_KEYS.includes(key))) onPolicyChange?.(settings);
+        syncUi();
     }
 
     function setSetting(key, value) {
-        if (PRESET_SETTING_KEYS.includes(key)) Object.assign(settings, setPresetOverride(settings, key, value));
-        else settings[key] = value;
-        save?.(settings);
-        if (key === 'enableAsyncApi' || key.includes('Provider') || key.startsWith('asyncApi')) {
-            providerRouter?.resetCircuit?.();
-        }
-        if (key === 'enableAsyncApi' || key.startsWith('asyncApi')) onProviderConfigChange?.(settings);
-        if (key === 'showSummariesInChat') summaryDisplay?.refresh?.();
-        if (PRESET_SETTING_KEYS.includes(key)) onPolicyChange?.(settings);
-        syncUi();
+        updateSettings({ [key]: value });
         return value;
     }
 
@@ -244,6 +262,8 @@ export function createModularSettingsController({
         const body = document.createElement('div');
         body.className = 'inline-drawer-content';
         body.append(createPresetCards());
+        helperPanel = createHelperConnectionPanel({ settings, connections: helperConnections, update: updateSettings });
+        body.append(helperPanel.element);
 
         const advanced = document.createElement('details');
         advanced.className = 'nemolore-preset-advanced';
@@ -292,6 +312,8 @@ export function createModularSettingsController({
     }
 
     function uninstall() {
+        helperPanel?.dispose();
+        helperPanel = null;
         summaryLorePanel?.close?.();
         summaryLorePanel = null;
         memoryPanel?.close?.();

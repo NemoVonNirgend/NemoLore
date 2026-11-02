@@ -75,6 +75,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     enableHelperAgents: false,
     helperAgentConcurrency: 3,
     helperAgentProvider: '',
+    helperConnectionSource: '',
+    helperConnectionModel: '',
     helperMemoryProvider: '',
     helperSummaryProvider: '',
     helperLoreProvider: '',

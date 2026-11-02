@@ -13,6 +13,8 @@ import {
     getRequestHeaders,
 } from '../../../../script.js';
 import { extension_settings, getContext, renderExtensionTemplateAsync } from '../../../extensions.js';
+import * as nativeOpenai from '../../../openai.js';
+import { SECRET_KEYS, secret_state } from '../../../secrets.js';
 import {
     createNewWorldInfo,
     deleteWorldInfo,
@@ -46,6 +48,7 @@ import { createSillyTavernContextExclusionInterceptor } from './src/integrations
 import { createSillyTavernContextRequestFactory } from './src/integrations/sillytavern-context-request-factory.js';
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
+import { createSillyTavernHelperConnections, helperModelSetting, SAVED_HELPER_PROVIDER } from './src/integrations/sillytavern-helper-connections.js';
 import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createSillyTavernVectorAdapter } from './src/integrations/sillytavern-vector-adapter.js';
@@ -155,6 +158,37 @@ function synchronizeAsyncProvider() {
     return true;
 }
 synchronizeAsyncProvider();
+const helperConnections = createSillyTavernHelperConnections({
+    settings,
+    getSettings: () => nativeOpenai.oai_settings,
+    getSources: () => Object.values(nativeOpenai.chat_completion_sources).map(id => ({
+        id,
+        label: [...(document.querySelector('#chat_completion_source')?.options ?? [])]
+            .find(option => option.value === id)?.textContent?.trim()
+            || ({ makersuite: 'Google AI Studio', vertexai: 'Google Vertex AI', custom: 'Custom (saved in SillyTavern)' })[id]
+            || id,
+    })),
+    getModelOptions: source => {
+        const key = helperModelSetting(source);
+        const selector = nativeOpenai.settingsToUpdate?.[key]?.[0]
+            || `#model_${source === 'makersuite' ? 'google' : source}_select`;
+        return [...(document.querySelector(selector)?.options ?? [])].map(option => ({
+            id: option.value, label: option.textContent.trim(), disabled: option.disabled,
+        }));
+    },
+    getActiveModels: () => nativeOpenai.model_list ?? [],
+    getSecretState: () => secret_state,
+    secretKeys: SECRET_KEYS,
+    getResponseLimit: () => document.querySelector('#openai_max_tokens')?.value,
+    createParameters: nativeOpenai.createGenerationParameters,
+    sendRequest: (payload, signal) => {
+        const service = getContext().ChatCompletionService;
+        if (!service?.sendRequest) throw new Error('Update SillyTavern to use saved helper connections.');
+        return service.sendRequest(payload, true, signal);
+    },
+    getRequestHeaders,
+});
+providers.register(SAVED_HELPER_PROVIDER, helperConnections);
 const generationRouter = createResilientGenerationRouter({ registry: providers, settings, logger });
 
 const sourceLedger = createSourceLedger({ logger });
@@ -376,6 +410,7 @@ const observability = createObservabilityService({
 });
 const settingsController = createModularSettingsController({
     settings,
+    helperConnections,
     save: persistSettings,
     observability,
     providerRouter: generationRouter,

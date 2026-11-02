@@ -8,16 +8,15 @@ The modular architecture owns summary and lore execution. Stored `legacy` engine
 
 ## Generation providers
 
-`sillytavern` delegates helper requests to SillyTavern's active generation connection. It is registered on every bootstrap and is the default when a stored route names a provider that is no longer available.
+Use **Helper connection**, above Advanced tuning. Enable helpers, select a provider, then select a model. The choice saves automatically. SillyTavern providers reuse their native default endpoints and saved credentials through the SillyTavern server. Set up credentials in API Connections first. Vertex also inherits its authentication mode, region, and project settings.
 
-`async` sends OpenAI-compatible JSON to the exact endpoint configured in the drawer. Set:
+SillyTavern's model catalogue includes extension-added models. Sources supporting model-list APIs fetch models when selected and have a refresh button. Vertex uses the host catalogue. Account access must still be verified with the provider. An unlisted model can be entered by choosing **Enter another model ID…**.
 
-- **Enable OpenAI-compatible provider**
-- **Async API endpoint**: full chat-completions URL
-- **Async API key**: Bearer token, if required
-- **Async API model**: provider model identifier
+Choose **Use current chat connection** to follow the main model. Choose **Manual OpenAI-compatible endpoint** for separate endpoint/key/model fields, including common URL presets. The manual URL must be the full chat-completions URL. Changing it clears the old manual key; saved SillyTavern credentials are never placed in this field.
 
-Changing these fields replaces the live provider registration without requiring a full extension reinstall.
+Internal route IDs remain available to integrations: `sillytavern` follows `generateRaw`, `st-saved` uses `helperConnectionSource` and `helperConnectionModel`, and `async` uses the manual endpoint when enabled. Existing custom route names are retained. The native chat provider is always registered and remains the default for unavailable legacy routes.
+
+Saved-connection requests clone native generation settings and inherit the visible response-token limit, preserving explicit caller limits. They do not change the foreground source, model, or global token settings. Manual endpoints omit `max_tokens` unless a caller supplies a limit.
 
 ## Helper routing
 
