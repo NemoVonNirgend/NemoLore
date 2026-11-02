@@ -64,7 +64,13 @@ Advanced tuning has optional memory, summary, lore, and fallback connection sele
 
 Jobs have bounded concurrency, timeouts, retries, circuit breaking, and replay deduplication. A helper failure is isolated from foreground chat generation. Failed jobs release their dedupe key so a later reply can retry them.
 
-Memory extraction, summary, and lore helpers do not impose a fixed output-token cap. Saved SillyTavern connections inherit the displayed **Max Response Length** using a separate request snapshot. The current-chat connection inherits it through `generateRaw`. Manual endpoints omit `max_tokens` and apply the endpoint default. A caller-supplied `maxTokens` still sets an explicit limit. Summary word targets and context-injection budgets remain separate from this output limit.
+The workflow toggles represent jobs: memory normally makes three extraction requests, while summary and lore make one each. Enabling all three can therefore make five requests for one reply, before retries. **Maximum helper jobs per reply** limits jobs, and **Concurrent helper jobs** limits how many jobs run together.
+
+Helpers inherit the connection's temperature by default. To choose a separate value, set **Advanced tuning → Helper temperature**; leave it blank to inherit. This override applies to native Chat Completions and manual endpoints, without changing foreground sampling. Other active API types retain their native sampling through `generateRaw`.
+
+Memory extraction, summary, and lore helpers do not impose a fixed output-token cap. Saved SillyTavern connections and current-chat Chat Completions inherit the displayed **Max Response Length** using a separate request snapshot. Other current-chat APIs inherit it through `generateRaw`. Manual endpoints omit `max_tokens` and apply the endpoint default. A caller-supplied `maxTokens` still sets an explicit limit. Summary word targets and context-injection budgets remain separate from this output limit.
+
+Deleting, editing, or swiping a turn invalidates affected memories and summaries and cancels obsolete helper work. Those actions do not schedule new jobs by themselves. A completed replacement reply can start one new batch, and late results from the replaced turn are discarded. Already-applied lorebook edits are preserved for review in the lore manager rather than automatically rolled back.
 
 ## Context injection
 

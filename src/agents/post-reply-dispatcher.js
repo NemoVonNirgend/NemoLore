@@ -26,7 +26,8 @@ export function createPostReplyDispatcher({ runtime, settings, policy, providerR
 
     function dispatch(payload = {}) {
         if (!settings.enableHelperAgents) return [];
-        const dedupeBase = payload.chatId && payload.messageId ? `${payload.chatId}:${payload.messageId}` : null;
+        const identity = payload.revisionKey ?? payload.messageId;
+        const dedupeBase = payload.chatId != null && identity != null ? `${payload.chatId}:${identity}` : null;
         const scheduling = policy?.select?.(payload) ?? {
             selected: ['memory', 'summary', 'lore']
                 .filter(workflow => settings[`helper${workflow[0].toUpperCase()}${workflow.slice(1)}AfterReply`])

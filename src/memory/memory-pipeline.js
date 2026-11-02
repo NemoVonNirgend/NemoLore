@@ -1,3 +1,5 @@
+import { MEMORY_STATUS } from './memory-types.js';
+
 export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
     if (!store) throw new TypeError('Memory pipeline requires a store.');
     if (!sourceLedger) throw new TypeError('Memory pipeline requires a source ledger.');
@@ -83,7 +85,14 @@ export function createMemoryPipeline({ store, sourceLedger, logger } = {}) {
     function invalidateSource(sourceId, reason = 'source-removed') {
         const affected = sourceLedger.memoriesForSource(sourceId);
         for (const memoryId of affected) {
-            if (store.has(memoryId)) store.invalidate(memoryId, reason);
+            const record = store.get(memoryId);
+            if (record) {
+                store.update(memoryId, {
+                    status: MEMORY_STATUS.INVALIDATED,
+                    sourceIds: record.sourceIds.filter(id => id !== sourceId),
+                    metadata: { invalidationReason: reason },
+                });
+            }
         }
         sourceLedger.remove(sourceId);
         return affected;

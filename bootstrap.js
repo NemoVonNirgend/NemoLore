@@ -49,6 +49,7 @@ import { createSillyTavernContextRequestFactory } from './src/integrations/silly
 import { createSillyTavernExtensionPromptAdapter } from './src/integrations/sillytavern-extension-prompt-adapter.js';
 import { createSillyTavernGenerationOrchestrator } from './src/integrations/sillytavern-generation-orchestrator.js';
 import { createSillyTavernHelperConnections, helperModelSetting, SAVED_HELPER_PROVIDER } from './src/integrations/sillytavern-helper-connections.js';
+import { createHelperSourceInvalidator } from './src/integrations/sillytavern-helper-source-invalidator.js';
 import { createSillyTavernMemoryLifecycle } from './src/integrations/sillytavern-memory-lifecycle.js';
 import { createSillyTavernPostReplyListener } from './src/integrations/sillytavern-post-reply-listener.js';
 import { createSillyTavernVectorAdapter } from './src/integrations/sillytavern-vector-adapter.js';
@@ -140,11 +141,12 @@ const lorebooks = createLorebookRepository({
 
 const providers = createProviderRegistry({ logger });
 providers.register('sillytavern', createSillyTavernProvider({
-    generate: ({ prompt, maxTokens, prefill }) => generateRaw({
-        prompt,
-        responseLength: maxTokens,
-        prefill,
-    }),
+    generate: request => {
+        if (getContext().mainApi === 'openai' && nativeOpenai.createGenerationParameters && getContext().ChatCompletionService?.sendRequest) {
+            return helperConnections.generateCurrent(request);
+        }
+        return generateRaw({ prompt: request.prompt, responseLength: request.maxTokens, prefill: request.prefill });
+    },
     logger,
 }));
 function synchronizeAsyncProvider() {
@@ -272,6 +274,7 @@ const summaryService = createSummaryService({
     settings,
     logger,
     getActiveChatId: getCurrentChatId,
+    getContext,
 });
 const loreGeneration = createLoreGenerationService({
     generation: generationRouter,
@@ -279,6 +282,7 @@ const loreGeneration = createLoreGenerationService({
     lock: writeLock,
     logger,
     getActiveChatId: getCurrentChatId,
+    getContext,
 });
 
 const contextRegistry = createContextRegistry({ logger });
@@ -328,6 +332,7 @@ helperAgents.register('memory', createMemoryHelperAgent({
     pipeline: memoryPipeline,
     maintenance: memoryMaintenanceService,
     getActiveChatId: getCurrentChatId,
+    getContext,
 }));
 helperAgents.register('summary', createCallbackHelperAgent({
     name: 'summary',
@@ -388,9 +393,18 @@ function wrapGenerationInterceptor(next, overrides = {}) {
 const postReplyListener = createSillyTavernPostReplyListener({
     eventSource,
     messageReceivedEvent: event_types.MESSAGE_RECEIVED,
+    messageDeletedEvent: event_types.MESSAGE_DELETED,
+    messageEditedEvent: event_types.MESSAGE_EDITED,
+    messageSwipedEvent: event_types.MESSAGE_SWIPED,
+    chatChangedEvent: event_types.CHAT_CHANGED,
+    chatLoadedEvent: event_types.CHAT_LOADED,
     getContext,
     getChatId: getCurrentChatId,
     dispatcher: postReplyDispatcher,
+    onSourcesChanged: createHelperSourceInvalidator({
+        runtime: helperRuntime, scheduling: helperScheduling, persistence: memoryPersistence,
+        sourceLedger, pipeline: memoryPipeline, summaryStore, contextBridge,
+    }),
     logger,
 });
 

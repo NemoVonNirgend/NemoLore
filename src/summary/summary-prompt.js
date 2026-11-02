@@ -4,8 +4,8 @@ Do not invent motives or facts. Prefer names over pronouns. Omit decorative pros
 
 export function buildSummaryPrompt({ messages = [], previousSummary = '', maxLength = 150 } = {}) {
     const transcript = messages.map(message => {
-        const speaker = message.name || (message.is_user ? 'User' : 'Assistant');
-        return `${speaker}: ${String(message.mes ?? message.content ?? '').trim()}`;
+        const speaker = message.name || (message.is_user || message.role === 'user' ? 'User' : 'Assistant');
+        return `${speaker}: ${String(message.text ?? message.mes ?? message.content ?? '').trim()}`;
     }).filter(line => !line.endsWith(':')).join('\n');
 
     return [

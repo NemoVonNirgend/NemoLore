@@ -19,7 +19,6 @@ export function createSummaryHelperWorkflow({ summary, inputBuilder } = {}) {
             messages: built.messages,
             sourceRange: payload.sourceRange ?? built.sourceRange,
             paired: payload.paired ?? built.paired,
-            previousSummary: payload.previousSummary ?? built.previousSummary,
         });
     };
 }

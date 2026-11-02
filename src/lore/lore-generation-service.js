@@ -1,5 +1,6 @@
 import { parseJsonResponse } from '../memory/extractors/json-response.js';
 import { createActiveChatGuard } from '../core/active-chat-guard.js';
+import { createHelperSourceGuard } from '../core/helper-source-guard.js';
 import { createLoreEntityIndex } from './lore-entity-index.js';
 
 const SYSTEM_PROMPT = `Extract durable lore changes from roleplay text. Return JSON only as {"entries":[...]}. Each entry must include action (create|update|noop), key, title, content, keywords, and optional uid. Preserve manual prose where possible. Do not create entries for transient scene details.`;
@@ -47,7 +48,7 @@ function entryByUid(entityIndex, lorebook, uid) {
         .find(entry => String(entry.uid) === String(uid)) ?? null;
 }
 
-export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex = createLoreEntityIndex(), logger, getActiveChatId } = {}) {
+export function createLoreGenerationService({ generation, lorebooks, lock, entityIndex = createLoreEntityIndex(), logger, getActiveChatId, getContext } = {}) {
     if (!generation?.generate) throw new TypeError('Lore generation service requires generation.');
     if (!lorebooks?.ensureForChat) throw new TypeError('Lore generation service requires lorebooks.');
 
@@ -65,7 +66,7 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
 
     async function preview(payload = {}) {
         if (!payload.chatId) throw new TypeError('Lore generation requires chatId.');
-        const shouldCommit = createActiveChatGuard(getActiveChatId, payload.chatId);
+        const shouldCommit = createHelperSourceGuard({ payload, getActiveChatId, getContext, signal: payload.signal });
         if (!shouldCommit()) return skippedPreview(payload.chatId);
         const lorebookName = await lorebooks.ensureForChat(payload.chatId, { shouldCommit });
         if (!shouldCommit()) return skippedPreview(payload.chatId);
@@ -75,7 +76,8 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
             systemPrompt: payload.systemPrompt ?? SYSTEM_PROMPT,
             prompt: `Current lorebook:\n${JSON.stringify(current)}\n\nRecent roleplay:\n${payload.input ?? ''}`,
             maxTokens: payload.maxTokens ?? null,
-            temperature: payload.temperature ?? 0.2,
+            temperature: payload.temperature ?? null,
+            signal: payload.signal,
             metadata: { task: 'lore-generation', chatId: payload.chatId },
         }, { provider: payload.provider, workflow: 'lore' });
 
@@ -107,13 +109,14 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
         });
     }
 
-    async function apply(previewResult, { approvedIndexes = null } = {}) {
+    async function apply(previewResult, { approvedIndexes = null, sourceGuard = () => true } = {}) {
         if (!previewResult?.chatId || !Array.isArray(previewResult.operations)) {
             throw new TypeError('Lore apply requires a preview result.');
         }
         if (previewResult.skipped) return { ...previewResult, applied: [] };
 
-        const shouldCommit = createActiveChatGuard(getActiveChatId, previewResult.chatId);
+        const activeChat = createActiveChatGuard(getActiveChatId, previewResult.chatId);
+        const shouldCommit = () => activeChat() && sourceGuard();
         if (!shouldCommit()) {
             return { ...skippedPreview(previewResult.chatId, previewResult.generation), applied: [] };
         }
@@ -181,7 +184,7 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
     async function generate(payload = {}) {
         const previewResult = await preview(payload);
         if (previewResult.skipped) return { ...previewResult, applied: [] };
-        return apply(previewResult);
+        return apply(previewResult, { sourceGuard: createHelperSourceGuard({ payload, getActiveChatId, getContext, signal: payload.signal }) });
     }
 
     return Object.freeze({ preview, apply, generate, entityIndex });

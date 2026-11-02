@@ -18,11 +18,17 @@ Internal route IDs remain available to integrations: `sillytavern` follows `gene
 
 Saved-connection requests clone native generation settings and inherit the visible response-token limit, preserving explicit caller limits. They do not change the foreground source, model, or global token settings. Manual endpoints omit `max_tokens` unless a caller supplies a limit.
 
+The current-chat route also uses this isolated native path when the active API is Chat Completions. Other APIs retain the `generateRaw` fallback. **Helper temperature** is blank by default: native connections inherit their sampling settings and manual endpoints omit the temperature parameter. Set a number (including zero) to override helper sampling for native Chat Completions or manual endpoints. Explicit per-call temperatures take precedence. Other current-chat API types keep their native sampling.
+
 ## Helper routing
 
 The shared provider applies to every helper unless a memory, summary, or lore override is present. The fallback provider is attempted after the primary exhausts its configured retries. Timeouts and circuit-breaker limits protect foreground generation from a stalled provider.
 
 Post-reply helper toggles and minimum-message settings decide which jobs are eligible. Lore can also require a lore-worthy signal. Successful jobs keep a dedupe record; failed jobs may be retried later.
+
+Concurrency and the per-reply maximum count helper jobs, not HTTP requests. A normal memory job performs three extraction requests; summary and lore each perform one. Timeouts abort the request before retrying. Cancelling a job prevents its retry/fallback path and all later commits.
+
+Message deletion, edits, and swipe changes cancel affected work and invalidate obsolete memory and summaries. The next completed reply can schedule a fresh batch; mutation events never directly dispatch helpers. Already-applied lorebook changes remain available for manual review and are not automatically undone.
 
 ## Context
 
