@@ -23,7 +23,7 @@ export function createSummaryService({ generation, store, settings, logger, getA
                 previousSummary: payload.previousSummary ?? previous?.text ?? '',
                 maxLength: payload.maxLength ?? settings?.summaryMaxLength ?? 150,
             }),
-            maxTokens: payload.maxTokens ?? 500,
+            maxTokens: payload.maxTokens ?? null,
             temperature: payload.temperature ?? 0.2,
             metadata: { task: 'summary', chatId, engine: 'modular' },
         }, { provider: payload.provider, workflow: 'summary' });
