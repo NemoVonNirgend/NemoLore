@@ -64,6 +64,8 @@ Helper routing fields accept the provider names `sillytavern` and `async`:
 
 Jobs have bounded concurrency, timeouts, retries, circuit breaking, and replay deduplication. A helper failure is isolated from foreground chat generation. Failed jobs release their dedupe key so a later reply can retry them.
 
+Memory extraction, summary, and lore helpers do not impose a default output-token cap. With the `sillytavern` provider, they inherit the active **Max Response Length** through `generateRaw`. With the `async` provider, NemoLore omits `max_tokens` and the endpoint applies its default. A caller-supplied `maxTokens` still sets an explicit limit. Summary word targets and context-injection budgets remain separate from this output limit.
+
 ## Context injection
 
 Before foreground generation, NemoLore composes accepted preferences, the active modular summary, and relevant memory into the configured extension-prompt position. The inspector shows selected and omitted contributions and token use.

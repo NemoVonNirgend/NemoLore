@@ -25,7 +25,7 @@ export function createLlmExtractor({
         const result = await generation.generate({
             systemPrompt,
             prompt,
-            maxTokens: context.maxTokens ?? 1200,
+            maxTokens: context.maxTokens ?? null,
             temperature: context.temperature ?? 0.2,
             metadata: { task: `memory-extraction:${name}` },
         }, context.generationOptions);

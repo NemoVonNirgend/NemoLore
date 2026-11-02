@@ -74,7 +74,7 @@ export function createLoreGenerationService({ generation, lorebooks, lock, entit
         const result = await generation.generate({
             systemPrompt: payload.systemPrompt ?? SYSTEM_PROMPT,
             prompt: `Current lorebook:\n${JSON.stringify(current)}\n\nRecent roleplay:\n${payload.input ?? ''}`,
-            maxTokens: payload.maxTokens ?? 1000,
+            maxTokens: payload.maxTokens ?? null,
             temperature: payload.temperature ?? 0.2,
             metadata: { task: 'lore-generation', chatId: payload.chatId },
         }, { provider: payload.provider, workflow: 'lore' });

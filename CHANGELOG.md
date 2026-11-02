@@ -2,6 +2,13 @@
 
 All notable changes to NemoLore are documented here.
 
+## 1.4.0-rc.3 - 2026-11-01
+
+### Changed
+
+- Removed fixed output-token defaults of 1,200 for memory extraction, 500 for summaries, and 1,000 for lore generation.
+- SillyTavern-backed helpers now inherit the active Max Response Length by default. OpenAI-compatible helpers omit `max_tokens` by default. Explicit caller-supplied limits are preserved.
+
 ## 1.4.0-rc.2 - 2026-11-01
 
 ### Fixed
